@@ -17,7 +17,7 @@
     "typescript": "^7.0.0"
   },
   "dependencies": {
-    "@noble/curves": "2.3.0",
+    "@noble/curves": "2.4.0",
     "zod": "^4.6.7"
   }
 }
