@@ -10,14 +10,14 @@ import {
   IonModal,
   IonNote,
   IonSearchbar,
-  IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/react';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { add, search } from 'ionicons/icons';
+import { add, playOutline, search } from 'ionicons/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { ServerError } from '../data/api';
 import { isChannelInput, isChannelName } from '../data/channel-link';
@@ -25,12 +25,13 @@ import { isCancelled } from '../data/connection-check';
 import type { Subscription } from '../data/db';
 import { ensureDictionary, hasDictionary, type NamedChannel, searchDictionary } from '../data/dictionary';
 import { ageLabel } from '../data/format';
-import { AlreadyFollowing, type FoundChannel, findChannel, follow, TooManyChannels } from '../data/subscriptions';
+import { AlreadyFollowing, type FoundChannel, findChannel, follow, type LookUpStep, TooManyChannels } from '../data/subscriptions';
 
 /** Where a name's lookup goes on from: the dictionary, the search services, or the server's guessed handles. */
 type Step = 'dictionary' | 'search' | 'guess';
 import { useToast } from '../ui/toast';
 import { ChannelAvatar } from './ChannelAvatar';
+import { type LogEntry, LookUpLog, LookUpProgress } from './LookUpProgress';
 import { Section } from './Section';
 
 type Result =
@@ -40,10 +41,15 @@ type Result =
   | { status: 'matches'; matches: NamedChannel[]; next: Step }
   | { status: 'failed'; message: string };
 
-/** The window's state while it is open: its field, what was looked up for it, and how many channels were followed from it. */
+/**
+ * The window's state while it is open: its field, what was looked up for it, the steps that took
+ * and when they ended, and how many channels were followed from it.
+ */
 interface Finding {
   text: string;
   result: Result | null;
+  log: LogEntry[];
+  ended?: number;
   followed: number;
 }
 
@@ -56,6 +62,8 @@ export interface ChannelFinder {
   lookUp(text: string, from?: Step): Promise<void>;
   edit(text: string): void;
   followFound(): Promise<void>;
+  /** Closes the window on the feed of a channel followed. */
+  showVideos(channel: Subscription): void;
   close(): void;
 }
 
@@ -73,8 +81,9 @@ export interface ChannelFinder {
  * typed would be read letter by letter.
  */
 export function useChannelFinder(onClosed: () => void): ChannelFinder {
-  const { db, api, gate } = useAppData();
+  const { db, api, gate, setSecretOpened } = useAppData();
   const toast = useToast();
+  const navigate = useNavigate();
   const [finding, setFinding] = useState<Finding | null>(null);
   // Each lookup, edit or close moves this on, so a late answer never shows over newer text.
   const latest = useRef(0);
@@ -88,17 +97,32 @@ export function useChannelFinder(onClosed: () => void): ChannelFinder {
       }
 
       const id = ++latest.current;
+      const log: LogEntry[] = [];
       const show = (result: Result) => {
         if (id === latest.current) {
-          setFinding((current) => ({ text: current?.text ?? query, result, followed: current?.followed ?? 0 }));
+          const ended = result.status === 'searching' ? {} : { ended: Date.now() };
+          setFinding((current) => ({ text: current?.text ?? query, result, log: [...log], ...ended, followed: current?.followed ?? 0 }));
         }
+      };
+      // Another part of the same step (a slice, a chunk) continues its line.
+      const onStep = (step: LookUpStep) => {
+        const last = log.at(-1);
+
+        if (last?.step.kind === step.kind) {
+          log[log.length - 1] = { ...last, step };
+        } else {
+          log.push({ step, at: Date.now() });
+        }
+
+        show({ status: 'searching' });
       };
 
       try {
         const result = await gate.run(api, async (): Promise<Result> => {
           show({ status: 'searching' });
 
-          if (from === 'dictionary' && isChannelName(query) && (await ensureDictionary(db, api))) {
+          if (from === 'dictionary' && isChannelName(query) && (await ensureDictionary(db, api, onStep))) {
+            onStep({ kind: 'local' });
             const matches = await searchDictionary(db, query);
 
             if (matches.length > 0) {
@@ -106,7 +130,7 @@ export function useChannelFinder(onClosed: () => void): ChannelFinder {
             }
           }
 
-          const found = await findChannel(db, api, query, { search: from !== 'guess' });
+          const found = await findChannel(db, api, query, { search: from !== 'guess', onStep });
 
           return 'matches' in found ? { status: 'matches', matches: found.matches, next: 'guess' } : { status: 'found', found };
         });
@@ -123,7 +147,7 @@ export function useChannelFinder(onClosed: () => void): ChannelFinder {
 
   const edit = useCallback((text: string) => {
     latest.current += 1;
-    setFinding((current) => current && { ...current, text, result: null });
+    setFinding((current) => current && { ...current, text, result: null, log: [] });
   }, []);
 
   const followFound = useCallback(async () => {
@@ -163,7 +187,18 @@ export function useChannelFinder(onClosed: () => void): ChannelFinder {
     onClosed();
   }, [onClosed]);
 
-  return { finding, lookUp, edit, followFound, close };
+  // Leaving for the feed hides the secret channels, as from the channel list: a secret one opened
+  // here stays on its own.
+  const showVideos = useCallback(
+    (channel: Subscription) => {
+      close();
+      setSecretOpened(channel.secret ? channel.key : null);
+      navigate(`/feed?channel=${encodeURIComponent(channel.key)}`);
+    },
+    [close, navigate, setSecretOpened],
+  );
+
+  return { finding, lookUp, edit, followFound, showVideos, close };
 }
 
 /** The button that sends a link, a @handle or a name online, on the page and in the window. */
@@ -228,11 +263,13 @@ export function FindChannelModal({ finder }: { finder: ChannelFinder }) {
             <Hint>Type at least 3 letters of the channel’s name, or paste its link.</Hint>
           )
         ) : result.status === 'searching' ? (
-          <div className="ion-padding ion-text-center">
-            <IonSpinner aria-label="Looking up…" />
-          </div>
+          <LookUpProgress log={finding?.log ?? []} />
         ) : result.status === 'failed' ? (
-          <Hint alert>{result.message}</Hint>
+          <>
+            <Hint alert>{result.message}</Hint>
+            {/* Like a search engine's “Did you mean”: names close to it that the device knows. */}
+            <NameMatches text={text} onPick={(channel) => void finder.lookUp(channelLink(channel))} />
+          </>
         ) : result.status === 'matches' ? (
           <>
             <MatchList matches={result.matches} onPick={(channel) => void finder.lookUp(channelLink(channel))} />
@@ -243,15 +280,27 @@ export function FindChannelModal({ finder }: { finder: ChannelFinder }) {
             </div>
           </>
         ) : (
-          <FoundRow found={result.found} onFollow={() => void finder.followFound()} />
+          <>
+            <FoundRow found={result.found} onFollow={() => void finder.followFound()} onShow={finder.showVideos} />
+            <NameMatches
+              text={text}
+              exclude={'following' in result.found ? result.found.following.key : result.found.submitted.channel.key}
+              onPick={(channel) => void finder.lookUp(channelLink(channel))}
+            />
+          </>
+        )}
+        {result !== null && result.status !== 'searching' && (
+          <div className="ion-text-center">
+            <LookUpLog log={finding?.log ?? []} failed={result.status === 'failed'} {...(finding?.ended === undefined ? {} : { ended: finding.ended })} />
+          </div>
         )}
       </IonContent>
     </IonModal>
   );
 }
 
-function FoundRow({ found, onFollow }: { found: FoundChannel; onFollow(): void }) {
-  const { db } = useAppData();
+function FoundRow({ found, onFollow, onShow }: { found: FoundChannel; onFollow(): void; onShow(channel: Subscription): void }) {
+  const { db, secretsShown } = useAppData();
   const channel = 'following' in found ? found.following : found.submitted.channel;
   // How lively the channel is, as the channel list says: from the answer before following, from
   // the device once followed.
@@ -265,22 +314,31 @@ function FoundRow({ found, onFollow }: { found: FoundChannel; onFollow(): void }
   const answered = 'submitted' in found && found.submitted.items.length > 0 ? Math.max(...found.submitted.items.map((item) => item.published)) : null;
   const latest = 'submitted' in found ? answered : stored;
   const details = [
+    'following' in found ? 'Following' : null,
     channel.handle === null ? null : `@${channel.handle}`,
     latest === undefined ? null : latest === null ? 'No uploads yet' : `Last upload ${ageLabel(latest)}`,
   ].filter((detail) => detail !== null);
 
+  // A channel followed opens its feed from here, as from the channel list; a secret one only while
+  // the secret channels show.
+  const following = 'following' in found ? found.following : null;
+  const showable = following !== null && (!following.secret || secretsShown);
+
   return (
     <IonList inset>
-      <IonItem lines="none">
+      <IonItem lines="none" button={showable} detail={false} {...(showable ? { onClick: () => onShow(following) } : {})}>
         <ChannelAvatar title={channel.title} avatar={channel.avatar} slot="start" />
         <IonLabel>
           <h2>{channel.title}</h2>
           {details.length > 0 && <p>{details.join(' · ')}</p>}
         </IonLabel>
-        {'following' in found ? (
-          <IonNote slot="end" color="medium">
-            Following
-          </IonNote>
+        {following !== null ? (
+          showable && (
+            <IonButton slot="end" size="small" fill="outline" aria-label={`Show videos of ${channel.title}`}>
+              <IonIcon slot="start" icon={playOutline} />
+              Videos
+            </IonButton>
+          )
         ) : (
           <IonButton slot="end" size="small" aria-label={`Follow ${channel.title}`} onClick={onFollow}>
             <IonIcon slot="start" icon={add} />
@@ -296,8 +354,11 @@ export function channelLink(channel: NamedChannel): string {
   return `https://www.youtube.com/channel/${channel.id}`;
 }
 
-/** The channels the dictionary names like `text`, once the device has it: searched while typing, offline. */
-export function NameMatches({ text, onPick }: { text: string; onPick(channel: NamedChannel): void }) {
+/**
+ * The channels the dictionary names like `text`, once the device has it: searched while typing,
+ * offline, typos included. A @handle is searched too, without its @.
+ */
+export function NameMatches({ text, exclude, onPick }: { text: string; exclude?: string; onPick(channel: NamedChannel): void }) {
   const { db } = useAppData();
   const [matches, setMatches] = useState<NamedChannel[]>([]);
 
@@ -305,10 +366,11 @@ export function NameMatches({ text, onPick }: { text: string; onPick(channel: Na
     let current = true;
     const timer = setTimeout(() => {
       void (async () => {
-        const found = isChannelName(text) && (await hasDictionary(db)) ? await searchDictionary(db, text, 5) : [];
+        const words = isChannelName(text) || /^@[\w.-]{3,}$/.test(text.trim()) ? text : '';
+        const found = words !== '' && (await hasDictionary(db)) ? await searchDictionary(db, words, 6) : [];
 
         if (current) {
-          setMatches(found);
+          setMatches(found.filter((channel) => `youtube:${channel.id}` !== exclude).slice(0, 5));
         }
       })();
     }, 150);
@@ -317,12 +379,43 @@ export function NameMatches({ text, onPick }: { text: string; onPick(channel: Na
       current = false;
       clearTimeout(timer);
     };
-  }, [db, text]);
+  }, [db, text, exclude]);
 
-  return matches.length === 0 ? null : <MatchList heading="Channels with this name" matches={matches} onPick={onPick} />;
+  // Next to a channel found, names a typo away are other channels rather than what was meant.
+  return matches.length === 0 ? null : (
+    <MatchList
+      heading={exclude === undefined ? 'Channels with this name' : 'Other channels with this name'}
+      {...(exclude === undefined ? {} : { similarHeading: 'Similar names' })}
+      matches={matches}
+      onPick={onPick}
+    />
+  );
 }
 
-function MatchList({ heading, matches, onPick }: { heading?: string; matches: NamedChannel[]; onPick(channel: NamedChannel): void }) {
+/** Channels to choose from: those named as typed first, then those a typo away, apart, as a search engine suggests them. */
+function MatchList({
+  heading,
+  similarHeading,
+  matches,
+  onPick,
+}: {
+  heading?: string;
+  similarHeading?: string;
+  matches: NamedChannel[];
+  onPick(channel: NamedChannel): void;
+}) {
+  const named = matches.filter((channel) => channel.similar !== true);
+  const similar = matches.filter((channel) => channel.similar === true);
+
+  return (
+    <>
+      {named.length > 0 && <MatchSection {...(heading === undefined ? {} : { heading })} matches={named} onPick={onPick} />}
+      {similar.length > 0 && <MatchSection heading={similarHeading ?? (named.length > 0 ? 'Similar names' : 'Did you mean…')} matches={similar} onPick={onPick} />}
+    </>
+  );
+}
+
+function MatchSection({ heading, matches, onPick }: { heading?: string; matches: NamedChannel[]; onPick(channel: NamedChannel): void }) {
   return (
     <Section {...(heading === undefined ? {} : { heading })}>
       {matches.map((channel, index) => (

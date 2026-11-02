@@ -109,6 +109,30 @@ describe('the encrypted catalog', () => {
     expect(server.posted('/api/add')).toEqual([{ url: 'Léna Situations' }]);
   });
 
+  // The log the user reads while adding must tell the truth: a channel the catalog has is found without the step that sends it in clear, and a name gets that step only when it is sent.
+  it('reports the steps a lookup really goes through', async () => {
+    const { server, catalog } = encryptedServer();
+    catalog.publish(snapshotChannel(B, 1));
+    catalog.online.set('Léna Situations', snapshotChannel(A, 1, 'lenasituations'));
+    server.searchResults = [];
+    const db = freshDb();
+    const steps = async (input: string) => {
+      const kinds: string[] = [];
+      const before = server.paths.length;
+      await findChannel(db, server.api(), input, { onStep: (step) => kinds.push(step.kind) });
+
+      return { kinds, sent: server.paths.slice(before) };
+    };
+
+    const known = await steps(`https://www.youtube.com/channel/${B}`);
+    const name = await steps('Léna Situations');
+
+    expect(known.kinds).toEqual(['catalog', 'blind', 'group']);
+    expect(known.sent).not.toContain('POST /api/add');
+    expect(name.kinds).toEqual(['catalog', 'blind', 'handles', 'search', 'add']);
+    expect(name.sent.slice(-2)).toEqual(['POST /api/search', 'POST /api/add']);
+  });
+
   // The search services come after everything that names nothing: only a name the handle index doesn't know goes there, and its results are offered to choose from.
   it('searches a name on the server’s search services only when no guessed handle is in the catalog', async () => {
     const { server, catalog } = encryptedServer();

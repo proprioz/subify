@@ -1,6 +1,7 @@
 import { fromBase64Url } from '@subify/shared/codec';
 import type { Api } from './api';
 import { type DictionarySlice, getMeta, setMeta, type SubifyDb } from './db';
+import type { OnStep } from './subscriptions';
 
 /**
  * The Wikidata dictionary (docs/FEATURES.md, D16): the YouTube channels Wikidata names, with
@@ -36,7 +37,8 @@ const parsed = new WeakMap<SubifyDb, Promise<Entry[]>>();
  * Makes sure the device has the server's latest dictionary, downloading every slice if not.
  * False when neither the server nor the device has one.
  */
-export async function ensureDictionary(db: SubifyDb, api: Api): Promise<boolean> {
+export async function ensureDictionary(db: SubifyDb, api: Api, onStep: OnStep = () => {}): Promise<boolean> {
+  onStep({ kind: 'dictionary' });
   const latest = await api.dictionary();
 
   if (latest === null) {
@@ -50,6 +52,7 @@ export async function ensureDictionary(db: SubifyDb, api: Api): Promise<boolean>
   const slices: DictionarySlice[] = [];
 
   for (let slice = 0; slice < latest.slices; slice++) {
+    onStep({ kind: 'download', slice: slice + 1, slices: latest.slices });
     const { data } = await api.dictionarySlice(slice);
     slices.push({ slice, text: await gunzip(fromBase64Url(data)) });
   }

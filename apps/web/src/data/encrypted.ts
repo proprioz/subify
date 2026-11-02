@@ -15,6 +15,7 @@ import {
 } from '@subify/shared/codec';
 import { type Api, ServerError } from './api';
 import { itemUrl } from './channel-link';
+import type { OnStep } from './subscriptions';
 import { getMeta, putItems, type Slot, type StoredThumbnail, type Subscription, type SubifyDb, setMeta } from './db';
 
 /**
@@ -84,7 +85,12 @@ export async function ensureSlots(db: SubifyDb, api: Api, catalog: CatalogKey): 
  * A channel the catalog has, by its key or by the first of these @handles the handle index knows
  * (a handle typed, or those a name gives), or null. Two blind evaluations for handles.
  */
-export async function findInCatalog(api: Api, catalog: CatalogKey, input: { key: string } | { handles: readonly string[] }): Promise<NewChannel | null> {
+export async function findInCatalog(
+  api: Api,
+  catalog: CatalogKey,
+  input: { key: string } | { handles: readonly string[] },
+  onStep: OnStep = () => {},
+): Promise<NewChannel | null> {
   const { channelInput, handleInput } = await oprf();
   let key: string;
 
@@ -95,8 +101,9 @@ export async function findInCatalog(api: Api, catalog: CatalogKey, input: { key:
       return null;
     }
 
+    onStep({ kind: 'blind', inputs: input.handles.length });
     const entries = await evaluate(api, catalog, input.handles.map((handle) => handleInput('youtube', handle)));
-    const target = await readHandles(api, entries);
+    const target = await readHandles(api, entries, onStep);
 
     if (target === null) {
       return null;
@@ -105,7 +112,9 @@ export async function findInCatalog(api: Api, catalog: CatalogKey, input: { key:
     key = `${target.source}:${target.externalId}`;
   }
 
+  onStep({ kind: 'blind', inputs: 1 });
   const [slot] = await evaluate(api, catalog, [channelInput(key.slice(0, key.indexOf(':')), externalId(key))]);
+  onStep({ kind: 'group' });
   const found = await readSnapshots(api, [slot!], true);
   const channel = found.channels.get(hexOf(slot!.id));
 
@@ -123,14 +132,15 @@ export async function findInCatalog(api: Api, catalog: CatalogKey, input: { key:
  * chunks read are those of the entries when they all fall in one, else every chunk: the set of
  * chunks a name's guesses fall in would point the server to the name.
  */
-async function readHandles(api: Api, entries: readonly Slot[]): Promise<{ source: string; externalId: string } | null> {
+async function readHandles(api: Api, entries: readonly Slot[], onStep: OnStep): Promise<{ source: string; externalId: string } | null> {
   try {
     const bounds = (await api.handleBounds()).chunks.map(fromBase64Url);
     const wanted = new Set(entries.map((entry) => chunkOf(bounds, entry.id)));
     const read = wanted.size === 1 ? [...wanted] : bounds.map((_, chunk) => chunk);
     const chunks = new Map<number, Uint8Array>();
 
-    for (const chunk of read) {
+    for (const [index, chunk] of read.entries()) {
+      onStep({ kind: 'handles', chunk: index + 1, chunks: read.length });
       chunks.set(chunk, fromBase64Url((await api.handleChunk(chunk)).entries));
     }
 
