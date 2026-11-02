@@ -1,10 +1,20 @@
-import { IonButton, IonContent, IonInput, IonItem, IonList, IonNote, IonPage, IonSpinner, useIonAlert } from '@ionic/react';
+import { IonButton, IonContent, IonInput, IonItem, IonLabel, IonList, IonNote, IonPage, IonRadio, IonRadioGroup, IonSpinner, useIonAlert } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { lockClosedOutline, shieldCheckmarkOutline } from 'ionicons/icons';
+import { lockClosedOutline, shieldCheckmarkOutline, timerOutline } from 'ionicons/icons';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { EmptyState } from '../components/EmptyState';
 import { Column } from '../components/Page';
-import { addBiometrics, createVault, MINIMUM_PASSWORD_LENGTH, readKeyring, unlockWithBiometrics, unlockWithPassword } from '../data/vault';
+import {
+  addBiometrics,
+  createVault,
+  LOCK_AFTER_CHOICES,
+  type LockAfter,
+  MINIMUM_PASSWORD_LENGTH,
+  readKeyring,
+  setLockAfter,
+  unlockWithBiometrics,
+  unlockWithPassword,
+} from '../data/vault';
 import { biometricsKey, biometricsKeyAvailable, enrollBiometricsKey } from '../ui/biometrics';
 import { resetEverything } from '../ui/reset';
 import { useAppData } from './AppData';
@@ -60,32 +70,21 @@ function FirstVisit() {
   return stage === 'welcome' ? <Welcome onDone={(restore) => setStage({ restore })} /> : <ChoosePassword restore={stage.restore} />;
 }
 
-/** `restore`: the user came to restore a backup, which Settings offers once the password is chosen. */
+/**
+ * `restore`: the user came to restore a backup, which Settings offers once the password is chosen.
+ * Once typed, the user picks when the app asks for it again, then hears what losing it means.
+ */
 function ChoosePassword({ restore }: { restore: boolean }) {
   const { db, vaultOpened } = useAppData();
   const [presentAlert] = useIonAlert();
+  const [stage, setStage] = useState<'password' | 'lockAfter'>('password');
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const offerBiometrics = () => {
-    void presentAlert({
-      header: `Unlock with ${BIOMETRICS}?`,
-      message: 'Open Subify without typing your password. Your device keeps a passkey for this in the password manager you pick; it never leaves the device. The password keeps working.',
-      buttons: [
-        { text: 'Not now', role: 'cancel' },
-        { text: `Use ${BIOMETRICS}`, handler: () => void turnOnBiometrics(db) },
-      ],
-    });
-  };
-
-  const submit = async (event: FormEvent) => {
+  const submit = (event: FormEvent) => {
     event.preventDefault();
-
-    if (busy) {
-      return;
-    }
 
     if (password.length < MINIMUM_PASSWORD_LENGTH) {
       setError(`The password needs at least ${MINIMUM_PASSWORD_LENGTH} characters.`);
@@ -99,46 +98,72 @@ function ChoosePassword({ restore }: { restore: boolean }) {
       return;
     }
 
+    setError(null);
+    setStage('lockAfter');
+  };
+
+  const chosen = (lockAfter: LockAfter) => {
+    if (busy) {
+      return;
+    }
+
     // Said once, at the moment it matters, rather than on the screen where it would worry first.
     void presentAlert({
       header: 'Keep it somewhere safe',
-      message: 'No one can reset this password, not even whoever runs the server. If you lose it, the app’s data can’t be opened again: only a backup lets you start over.',
+      message: `No one can reset this password, not even whoever runs the server. If you lose it, the app’s data can’t be opened again: only a backup lets you start over.${
+        lockAfter === 'never' ? ' As the app won’t ask for it, write it down now.' : ''
+      }`,
       buttons: [
         { text: 'Back', role: 'cancel' },
-        { text: 'I’ll keep it safe', handler: () => void create() },
+        { text: 'I’ll keep it safe', handler: () => void create(lockAfter) },
       ],
     });
   };
 
-  const create = async () => {
+  const create = async (lockAfter: LockAfter) => {
     setBusy(true);
     setError(null);
 
     try {
       await createVault(db, password);
-
-      // The router starts once the app opens: it starts on Settings, which offers the backup.
-      if (restore) {
-        history.replaceState(null, '', '/settings?restore=1');
-      }
-
-      vaultOpened();
-
-      if (await biometricsKeyAvailable()) {
-        offerBiometrics();
-      }
+      await setLockAfter(db, lockAfter);
     } catch {
       setError('Something went wrong. Try again.');
       setBusy(false);
+
+      return;
+    }
+
+    // The router starts once the app opens: it starts on Settings, which offers the backup.
+    if (restore) {
+      history.replaceState(null, '', '/settings?restore=1');
+    }
+
+    vaultOpened();
+
+    // Face ID only matters to an app that asks again.
+    if (lockAfter !== 'never' && (await biometricsKeyAvailable())) {
+      void presentAlert({
+        header: `Unlock with ${BIOMETRICS}?`,
+        message: 'Open Subify without typing your password. Your device keeps a passkey for this in the password manager you pick; it never leaves the device. The password keeps working.',
+        buttons: [
+          { text: 'Not now', role: 'cancel' },
+          { text: `Use ${BIOMETRICS}`, handler: () => void turnOnBiometrics(db) },
+        ],
+      });
     }
   };
+
+  if (stage === 'lockAfter') {
+    return <ChooseLockAfter busy={busy} error={error} onBack={() => setStage('password')} onContinue={chosen} />;
+  }
 
   return (
     <Screen>
       <EmptyState icon={shieldCheckmarkOutline} heading="Lock your Subify">
         Your channels stay yours. This password locks everything Subify keeps on this device, so no one else can read it.
       </EmptyState>
-      <form onSubmit={(event) => void submit(event)}>
+      <form onSubmit={submit}>
         <IonList inset>
           <IonItem>
             <IonInput
@@ -161,10 +186,66 @@ function ChoosePassword({ restore }: { restore: boolean }) {
             />
           </IonItem>
         </IonList>
-        <Note error={error}>At least {MINIMUM_PASSWORD_LENGTH} characters. You choose in Settings when the app asks for it again.</Note>
+        <Note error={error}>At least {MINIMUM_PASSWORD_LENGTH} characters. Next, you choose when the app asks for it again.</Note>
+        <div className="ion-padding">
+          <IonButton expand="block" type="submit">
+            Continue
+          </IonButton>
+        </div>
+      </form>
+    </Screen>
+  );
+}
+
+/** “Never” first and chosen by default: the phone's own lock already guards the app. */
+const FIRST_LOCK_CHOICES = [...LOCK_AFTER_CHOICES.filter(({ value }) => value === 'never'), ...LOCK_AFTER_CHOICES.filter(({ value }) => value !== 'never')];
+
+interface ChooseLockAfterProps {
+  busy: boolean;
+  error: string | null;
+  onBack(): void;
+  onContinue(lockAfter: LockAfter): void;
+}
+
+function ChooseLockAfter({ busy, error, onBack, onContinue }: ChooseLockAfterProps) {
+  const [lockAfter, setChoice] = useState<LockAfter>('never');
+
+  return (
+    <Screen>
+      <EmptyState icon={timerOutline} heading="When to ask for the password again?">
+        Your phone already has its own lock. Subify can also ask for its password, now and then.
+      </EmptyState>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onContinue(lockAfter);
+        }}
+      >
+        <IonList inset>
+          <IonRadioGroup value={lockAfter} onIonChange={(event) => setChoice(event.detail.value as LockAfter)}>
+            {FIRST_LOCK_CHOICES.map(({ value, label }, i) => (
+              <IonItem key={String(value)} {...(i === FIRST_LOCK_CHOICES.length - 1 ? { lines: 'none' as const } : {})}>
+                <IonRadio value={value} justify="space-between">
+                  {value === 'never' ? (
+                    <IonLabel className="ion-text-wrap">
+                      <h2>{label}</h2>
+                      <p>The key stays on this device, behind your phone’s lock.</p>
+                    </IonLabel>
+                  ) : (
+                    label
+                  )}
+                </IonRadio>
+              </IonItem>
+            ))}
+          </IonRadioGroup>
+        </IonList>
+        <Note error={error}>You can change this at any time in Settings.</Note>
         <div className="ion-padding">
           <IonButton expand="block" type="submit" disabled={busy}>
             {busy ? <IonSpinner name="dots" aria-label="Encrypting…" /> : 'Continue'}
+          </IonButton>
+          <IonButton expand="block" fill="clear" color="medium" disabled={busy} onClick={onBack}>
+            Back
           </IonButton>
         </div>
       </form>

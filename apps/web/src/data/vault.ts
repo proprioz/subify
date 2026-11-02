@@ -142,7 +142,7 @@ export async function unlockWithPassword(db: SubifyDb, password: string): Promis
   const master = await masterFromPassword(db, password);
 
   if (master !== null) {
-    db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+    await opened(db, master);
   }
 
   return master !== null;
@@ -154,10 +154,25 @@ export async function unlockWithBiometrics(db: SubifyDb, output: Uint8Array): Pr
   const master = keyring?.biometrics ? openBytes(output, keyring.biometrics.sealed, aad('biometrics')) : null;
 
   if (master !== null) {
-    db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+    await opened(db, master);
   }
 
   return master !== null;
+}
+
+/** An unlock puts back the key “never” keeps, if the user locked the app by hand. */
+async function opened(db: SubifyDb, master: Uint8Array): Promise<void> {
+  db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+  const keyring = await readKeyring(db);
+
+  if (keyring?.lockAfter === 'never' && keyring.key === null) {
+    await db.keyring.update('local', { key: master });
+  }
+}
+
+/** The user locks the app by hand: a key kept on the device (“never”) goes too, until the next unlock. */
+export async function forgetKeptKey(db: SubifyDb): Promise<void> {
+  await db.keyring.update('local', { key: null });
 }
 
 /** Forgets the key in memory. A key kept on the device (“never”) stays. */

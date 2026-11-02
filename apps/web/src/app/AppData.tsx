@@ -9,7 +9,7 @@ import { countryFlag, countryName } from '../data/format';
 import { loadTheme } from '../data/settings';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../data/sync';
 import { dropOldThumbnails } from '../data/thumbnails';
-import { LockedError, lockVault, readKeyring, startVault } from '../data/vault';
+import { forgetKeptKey, LockedError, lockVault, readKeyring, startVault } from '../data/vault';
 import { applyTheme } from '../theme/palette';
 import { updateApp } from '../ui/app-update';
 import { type InstallState, installState } from '../ui/install';
@@ -26,6 +26,8 @@ interface AppData {
   vault: VaultState;
   /** The password was chosen or entered: the app shows. */
   vaultOpened(): void;
+  /** Locks the app now, whatever the user chose: it asks for the password at once and after a relaunch. */
+  lock(): Promise<void>;
   /** The server's client. Every step that uses it runs through `gate`. */
   api: Api;
   /** The connection check: `gate.run(api, step)` asks first when Settings says so. */
@@ -278,7 +280,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [installEvent]);
 
   return (
-    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), api, gate, sync, syncing, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
+    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: () => forgetKeptKey(db).then(() => setVault('locked')), api, gate, sync, syncing, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
       {children}
     </AppDataContext.Provider>
   );

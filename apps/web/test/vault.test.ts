@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SubifyDb } from '../src/data/db';
 import { loadFeed } from '../src/data/feed';
 import { forgetSecretChannels } from '../src/data/secret';
-import { createVault, isAppPassword, LockedError, setLockAfter, startVault, unlockWithPassword } from '../src/data/vault';
+import { createVault, forgetKeptKey, isAppPassword, LockedError, setLockAfter, startVault, unlockWithPassword } from '../src/data/vault';
 import { channel, FakeServer, item, NOW, subscribe } from './fake-server';
 
 const A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -75,5 +75,17 @@ describe('local database encryption', () => {
 
     await setLockAfter(next, 15);
     expect(await startVault(new SubifyDb(name))).toBe('locked');
+  });
+
+  it('locked by hand with “never”, asks for the password until it is typed, then opens without it again', async () => {
+    const { name, db } = await sealedDb();
+    await setLockAfter(db, 'never');
+    await forgetKeptKey(db);
+
+    const relaunched = new SubifyDb(name);
+    expect(await startVault(relaunched)).toBe('locked');
+    expect(await unlockWithPassword(relaunched, PASSWORD)).toBe(true);
+
+    expect(await startVault(new SubifyDb(name))).toBe('open');
   });
 });

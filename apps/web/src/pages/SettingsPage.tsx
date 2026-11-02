@@ -34,6 +34,7 @@ import {
   shieldCheckmarkOutline,
   sparklesOutline,
   sunnyOutline,
+  timerOutline,
   trashOutline,
 } from 'ionicons/icons';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
@@ -61,7 +62,7 @@ import { useToast } from '../ui/toast';
 type PasswordStep = { kind: 'export' } | { kind: 'restore'; file: string } | { kind: 'change' };
 
 export function SettingsPage() {
-  const { db, api, gate, install } = useAppData();
+  const { db, api, gate, install, lock } = useAppData();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -355,7 +356,7 @@ export function SettingsPage() {
         footer="Everything Subify keeps on this device is encrypted with your password. If you lose it, the app’s data can’t be opened again: only a backup lets you start over."
       >
         <IonItem>
-          <IonIcon slot="start" icon={lockClosedOutline} aria-hidden="true" />
+          <IonIcon slot="start" icon={timerOutline} aria-hidden="true" />
           <IonSelect
             key={lockChoiceDrawn}
             label="Ask for the password"
@@ -379,9 +380,13 @@ export function SettingsPage() {
             </IonToggle>
           </IonItem>
         )}
-        <IonItem button detail={false} lines="none" onClick={() => openPassword({ kind: 'change' })}>
+        <IonItem button detail={false} onClick={() => openPassword({ kind: 'change' })}>
           <IonIcon slot="start" icon={keyOutline} aria-hidden="true" />
           <IonLabel>Change the password</IonLabel>
+        </IonItem>
+        <IonItem button detail={false} lines="none" onClick={() => void lock()}>
+          <IonIcon slot="start" icon={lockClosedOutline} aria-hidden="true" />
+          <IonLabel>Lock now</IonLabel>
         </IonItem>
       </Section>
 
