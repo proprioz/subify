@@ -94,6 +94,23 @@ describe('the Wikidata dictionary on the device', () => {
     expect(await searchDictionary(db, 'ar')).toEqual([]);
   });
 
+  // People mistype names, as in a search engine: a typo must still find the channel, marked as a suggestion, while a short word must not match everything a letter away.
+  it('suggests names a typo or two away, marked as such', async () => {
+    const db = freshDb();
+    await ensureDictionary(db, server().api());
+
+    expect(await searchDictionary(db, 'lena sitaution')).toEqual([
+      { id: LENA, handle: 'lenasituations', name: 'Léna Situations', similar: true },
+      { id: LENA_FAN, handle: null, name: 'Léna Situations Fans Club', similar: true },
+    ]);
+    // Run together, and one letter short.
+    expect((await searchDictionary(db, 'lenasituation')).map((channel) => channel.id)).toEqual([LENA, LENA_FAN]);
+    expect((await searchDictionary(db, 'aeronautcs')).map((channel) => channel.id)).toEqual([NASA]);
+    expect((await searchDictionary(db, 'lena situations'))[0]).toEqual({ id: LENA, handle: 'lenasituations', name: 'Léna Situations' });
+    expect(await searchDictionary(db, 'are')).toEqual([]);
+    expect(await searchDictionary(db, 'zrte')).toEqual([]);
+  });
+
   // A server without WIKIDATA_USER_AGENT has no dictionary: the app must say so and fall back, not fail.
   it('reports no dictionary when the server has none', async () => {
     const db = freshDb();
