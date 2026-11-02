@@ -1,0 +1,8 @@
+{
+  "//": "DOM for TextEncoder and crypto.subtle: Web APIs that both server runtimes and the PWA provide.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,31 @@
+{
+  "//": "Node side: the shared core, the Node entry point and its tests. tsconfig.worker.json checks the same core against the Workers types, so a Node-only or Workers-only API in the core fails one of the two.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "#harness": [
+        "./test/harness/node.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "test/node",
+    "test/shared",
+    "test/support",
+    "test/fixtures",
+    "test/harness/node.ts",
+    "test/harness/types.ts",
+    "test/raw.d.ts",
+    "*.config.ts",
+    "scripts",
+    "test/harness/common.ts"
+  ],
+  "exclude": [
+    "src/entry/worker.ts",
+    "src/workers"
+  ]
+}

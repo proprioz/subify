@@ -1,0 +1,11 @@
+# Headers for every file of the PWA. Workers assets apply this file as is; the Node server reads
+# it from the build and applies the same rule (apps/server/src/node/web.ts), which takes only "/*".
+#
+# The policy also holds the app to two of its principles: it shows only images it already has
+# (img-src 'self' data: blob:) and talks only to the server that served it (connect-src 'self').
+# 'wasm-unsafe-eval' lets hash-wasm run Argon2id; Ionic's components set inline styles.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

@@ -1,0 +1,36 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Supply-chain guard: refuse package versions published less than 7 days ago.
+minimumReleaseAge: 10080
+
+# Packages allowed to run install scripts. Keep this list to packages that truly need one:
+# better-sqlite3 builds or downloads its native binding, esbuild and workerd fetch their binaries.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  workerd: true
+
+# Advisories that do not apply to this app, reviewed one by one.
+auditConfig:
+  ignoreGhsas:
+    # deepmerge <= 4.3.1, low: prototype poisoning of merged objects, no fixed version yet. It only
+    # runs at build time (vite-plugin-pwa > workbox-build), on the app's own build config, never on
+    # data from users or the network. Check again on 2026-11-27 for a fixed version.
+    - GHSA-gcqx-w48m-w2h4
+    # minimatch < 11.0.1, moderate: denial of service through globparts amplification, and glob <= 14.0.1,
+    # moderate: an AbortSignal that doesn't stop a walk. Both only run at build time (workbox-build,
+    # and ts-morph under Ionic's Stencil output target), on the app's own patterns, never on data
+    # from users or the network, and neither reaches the built app or server. The fixed versions
+    # are new majors younger than 7 days. Check again on 2026-11-11.
+    - GHSA-g3hv-75wg-m249
+    - GHSA-3g3m-2fjr-6pw4
+    # Ionic 9 requires React Router 6, and the next two are only fixed in React Router 7. Drop
+    # them once Ionic supports React Router 7.
+    # Open redirect when an attacker-supplied path reaches <Link> or navigate(). The app only
+    # navigates to its own fixed routes (rule in CONTRIBUTING.md).
+    - GHSA-wrjc-x8rr-h8h6
+    # Only affects Framework and Data Mode with server-side rendering. The app uses Declarative
+    # Mode (IonReactRouter) and no SSR.
+    - GHSA-337j-9hxr-rhxg

@@ -1,0 +1,993 @@
+/*
+ * The app's only stylesheet. The colours go through Ionic's CSS variables, here, so the look
+ * changes in one place. The dark palette is Ionic's own (dark.class.css), turned on by the
+ * `ion-palette-dark` class that src/theme/palette.ts sets, and recoloured below.
+ *
+ * The app's own colours: neutral greys, black (white in dark mode) as the accent, the platform's red for lives, removals and going online, white cards on a light grey
+ * page. Sizes, spacing, typography and how components behave stay Ionic's, per platform. The
+ * rules after the palette only lay out the app's own pieces.
+ */
+
+:root {
+  --ion-background-color: #fafafa;
+  --ion-background-color-rgb: 250, 250, 250;
+  --ion-text-color: #171717;
+  --ion-text-color-rgb: 23, 23, 23;
+  --ion-item-background: #ffffff;
+  --ion-card-background: #ffffff;
+  --ion-border-color: #e5e5e5;
+  --ion-item-border-color: #e5e5e5;
+  --ion-toolbar-background: #fafafa;
+  --ion-tab-bar-background: #fafafa;
+  --ion-tab-bar-color: #737373;
+  --ion-tab-bar-color-selected: #171717;
+  --ion-placeholder-color: #a3a3a3;
+  /* Secondary text (item lines, alert messages): a grey darker than Ionic's step. */
+  --ion-text-color-step-600: #737373;
+
+  /* The accent: near black, like the platform's own buttons. */
+  --ion-color-primary: #0f0f0f;
+  --ion-color-primary-rgb: 15, 15, 15;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #000000;
+  --ion-color-primary-tint: #272727;
+
+  --ion-color-danger: #ff0033;
+  --ion-color-danger-rgb: 255, 0, 51;
+  --ion-color-danger-contrast: #ffffff;
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: #e0002d;
+  --ion-color-danger-tint: #ff1a47;
+
+  --ion-color-medium: #737373;
+  --ion-color-medium-rgb: 115, 115, 115;
+  --ion-color-medium-contrast: #ffffff;
+  --ion-color-medium-contrast-rgb: 255, 255, 255;
+  --ion-color-medium-shade: #656565;
+  --ion-color-medium-tint: #818181;
+
+  /* Quiet buttons and badges: a light grey with dark text. */
+  --ion-color-light: #f0f0f0;
+  --ion-color-light-rgb: 240, 240, 240;
+  --ion-color-light-contrast: #262626;
+  --ion-color-light-contrast-rgb: 38, 38, 38;
+  --ion-color-light-shade: #d3d3d3;
+  --ion-color-light-tint: #f2f2f2;
+
+  /* Avatars and thumbnail placeholders. */
+  --app-avatar-background: #e5e5e5;
+  --app-avatar-color: #262626;
+  --app-placeholder-background: #e5e5e5;
+  --app-placeholder-color: #a3a3a3;
+}
+
+:root.ion-palette-dark {
+  --ion-background-color: #0a0a0a;
+  --ion-background-color-rgb: 10, 10, 10;
+  --ion-text-color: #f5f5f5;
+  --ion-text-color-rgb: 245, 245, 245;
+  --ion-item-background: #232323;
+  --ion-card-background: #232323;
+  --ion-border-color: #333333;
+  --ion-item-border-color: #333333;
+  --ion-toolbar-background: #0a0a0a;
+  --ion-tab-bar-background: #0a0a0a;
+  --ion-tab-bar-color: #a3a3a3;
+  --ion-tab-bar-color-selected: #ffffff;
+  --ion-placeholder-color: #737373;
+  --ion-text-color-step-600: #b5b5b5;
+
+  --ion-color-primary: #f1f1f1;
+  --ion-color-primary-rgb: 241, 241, 241;
+  --ion-color-primary-contrast: #0f0f0f;
+  --ion-color-primary-contrast-rgb: 15, 15, 15;
+  --ion-color-primary-shade: #d4d4d4;
+  --ion-color-primary-tint: #f2f2f2;
+
+  --ion-color-medium: #b5b5b5;
+  --ion-color-medium-rgb: 181, 181, 181;
+  --ion-color-medium-contrast: #0a0a0a;
+  --ion-color-medium-contrast-rgb: 10, 10, 10;
+  --ion-color-medium-shade: #9f9f9f;
+  --ion-color-medium-tint: #bcbcbc;
+
+  --ion-color-light: #393939;
+  --ion-color-light-rgb: 57, 57, 57;
+  --ion-color-light-contrast: #ffffff;
+  --ion-color-light-contrast-rgb: 255, 255, 255;
+  --ion-color-light-shade: #323232;
+  --ion-color-light-tint: #4d4d4d;
+
+  --app-avatar-background: #525252;
+  --app-avatar-color: #ffffff;
+  --app-placeholder-background: #262626;
+  --app-placeholder-color: #525252;
+}
+
+/* The platform's red, for lives and the one button that sends something online. */
+:root {
+  --ion-color-red: #ff0033;
+  --ion-color-red-rgb: 255, 0, 51;
+  --ion-color-red-contrast: #ffffff;
+  --ion-color-red-contrast-rgb: 255, 255, 255;
+  --ion-color-red-shade: #e0002d;
+  --ion-color-red-tint: #ff1a47;
+}
+
+.ion-color-red {
+  --ion-color-base: var(--ion-color-red);
+  --ion-color-base-rgb: var(--ion-color-red-rgb);
+  --ion-color-contrast: var(--ion-color-red-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-red-contrast-rgb);
+  --ion-color-shade: var(--ion-color-red-shade);
+  --ion-color-tint: var(--ion-color-red-tint);
+}
+
+ion-avatar {
+  background: var(--app-avatar-background);
+  color: var(--app-avatar-color);
+}
+
+ion-segment {
+  --background: rgba(var(--ion-text-color-rgb), 0.05);
+}
+
+.ion-palette-dark ion-segment-button {
+  --indicator-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Fixed grids (the pages' reading column) keep the full width below `lg`. */
+:root {
+  --ion-grid-width-xs: 100%;
+  --ion-grid-width-sm: 100%;
+  --ion-grid-width-md: 100%;
+}
+
+ion-toast {
+  --background: var(--ion-color-primary);
+  --color: var(--ion-color-primary-contrast);
+  --button-color: var(--ion-color-primary-contrast);
+}
+
+/* ---------------------------------------------------------------- The app's own pieces */
+
+/* The side menu on wide screens: narrow, plain rows on the page's background, the current one on grey. */
+ion-split-pane {
+  --side-max-width: 280px;
+}
+
+ion-menu ion-list {
+  --ion-item-background: transparent;
+}
+
+ion-menu ion-item {
+  --border-radius: 10px;
+  margin: 2px 8px;
+}
+
+/* A page's subtitle under iOS's large title (Page): a toolbar only so that it slides under the
+   title on scroll, without a toolbar's height. */
+ion-toolbar.page-subtitle {
+  --min-height: 0;
+  --padding-top: 0;
+  --padding-bottom: 0;
+  --padding-start: 0;
+  --padding-end: 0;
+}
+
+/* A page's bar on iOS phones (Page), stuck to the top of the screen in place of the toolbar. Opaque,
+   so the cards' text never shows through under the chips. The status bar never covers the page
+   (`apple-mobile-web-app-status-bar-style` is “default”), so the top of the screen is the top of
+   the page. */
+.page-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--ion-background-color);
+}
+
+.page-bar .channel-strip {
+  padding-block: 4px;
+}
+
+/* A page's floating button (Page) slides down out of the screen while the user scrolls down, and
+   back up when they scroll up. Hidden, it takes no taps and leaves the accessibility tree; it
+   turns visible again at once, and hidden only once it has slid away. */
+ion-fab {
+  transition:
+    transform 0.2s ease-out,
+    opacity 0.2s ease-out;
+}
+
+ion-fab.fab-hidden {
+  transform: translateY(calc(100% + 20px));
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.2s ease-in,
+    opacity 0.2s ease-in,
+    visibility 0s 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ion-fab,
+  ion-fab.fab-hidden {
+    transition: none;
+  }
+}
+
+/* Further from the screen's corner than Ionic's 10px, where the thumb rests, and clear of the
+   cards' edge. */
+ion-fab.fab-horizontal-end {
+  inset-inline-end: calc(20px + var(--ion-safe-area-right, 0px));
+}
+
+ion-fab.fab-vertical-bottom {
+  bottom: 20px;
+}
+
+/* The refresh button, the one that goes online, in the platform's red, lifted by a soft shadow of
+   its own colour; a little larger than Ionic's 56px, as it is the feed's main action. */
+ion-fab-button.ion-color-red {
+  --box-shadow: 0 4px 12px rgba(var(--ion-color-red-rgb), 0.35);
+  width: 60px;
+  height: 60px;
+}
+
+ion-fab-button.ion-color-red ion-icon {
+  font-size: 26px;
+}
+
+/* The channel strip above the feed: Ionic chips in one row, scrolling sideways, with room above so
+   that it does not touch the subtitle. */
+.channel-strip {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-top: 8px;
+}
+
+.channel-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* Larger than Ionic's chips, which are made for tags rather than the main way to pick a channel:
+   40px high with 32px avatars instead of 32px and 24px. Sizes are in em of the chip's text
+   (14px by default), as Ionic's own, so they follow the system's text size. */
+.channel-strip ion-chip {
+  flex-shrink: 0;
+  min-height: calc(40em / 14);
+  border-radius: calc(20em / 14);
+}
+
+.channel-strip ion-chip > ion-avatar {
+  width: calc(32em / 14);
+  height: calc(32em / 14);
+}
+
+.channel-strip ion-chip > ion-icon {
+  font-size: calc(22em / 14);
+}
+
+/* A channel shown by its avatar alone: a round chip around it, always outlined (the channel shown
+   gives its name), hence the border taken from the padding. Ionic's margins assume a label after
+   it, which would leave the avatar off centre. */
+.channel-strip ion-chip:has(> ion-avatar:only-child) {
+  padding-inline: calc(4em / 14 - 1px);
+}
+
+.channel-strip ion-chip > ion-avatar:only-child {
+  margin-inline: 0;
+}
+
+/* An empty page's icon: large, with room above it, as on both platforms' empty screens. */
+.empty-state {
+  padding-top: 10vh;
+}
+
+.empty-state > ion-icon {
+  font-size: 56px;
+}
+
+/* The first visit's welcome: the app's icon, its name and what it is for. */
+.welcome {
+  padding-top: 8vh;
+}
+
+.welcome-icon {
+  border-radius: 22%;
+}
+
+.welcome-name {
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+
+.welcome-headline {
+  margin-top: 16px;
+  font-size: 1.6rem;
+  line-height: 1.25;
+}
+
+/* Where the tour is: one dot per step, the current one in the text colour. */
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding-bottom: 24px;
+}
+
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ion-color-medium);
+  opacity: 0.4;
+}
+
+.tour-dot-on {
+  background: var(--ion-text-color);
+  opacity: 1;
+}
+
+/* The tour's steps, side by side: a swipe snaps to the next one. */
+.tour-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.tour-track::-webkit-scrollbar {
+  display: none;
+}
+
+.tour-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  padding: 16px 24px 0;
+  text-align: center;
+}
+
+.tour-slide h2 {
+  margin-top: 24px;
+}
+
+.tour-slide p {
+  margin: 8px auto 0;
+  max-width: 34ch;
+}
+
+/*
+ * The tour's pictures (src/app/TourShots.tsx): a small device, light or dark, iPhone or Android,
+ * whatever the app's own mode, so its colours are its own. Sizes are fixed: it is a picture.
+ */
+.shot-stage {
+  position: relative;
+  width: 210px;
+  height: 420px;
+  margin: 0 auto;
+}
+
+.shot {
+  --shot-background: #fafafa;
+  --shot-card: #ffffff;
+  --shot-text: #171717;
+  --shot-muted: #737373;
+  --shot-line: #e5e5e5;
+  --shot-accent: #0f0f0f;
+  --shot-accent-contrast: #ffffff;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 7px solid #1c1c1e;
+  border-radius: 34px;
+  background: var(--shot-background);
+  color: var(--shot-text);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: start;
+  box-shadow: 0 0 0 1px rgba(var(--ion-text-color-rgb), 0.15), 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.shot-ios {
+  font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+}
+
+.shot-android {
+  border-radius: 24px;
+  font-family: Roboto, 'Helvetica Neue', system-ui, sans-serif;
+}
+
+.shot-dark {
+  --shot-background: #0a0a0a;
+  --shot-card: #232323;
+  --shot-text: #f5f5f5;
+  --shot-muted: #b5b5b5;
+  --shot-line: #333333;
+  --shot-accent: #f1f1f1;
+  --shot-accent-contrast: #0f0f0f;
+}
+
+.shot-android.shot-dark {
+  --shot-background: #121212;
+  --shot-card: #1e1e1e;
+}
+
+.shot-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 18px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.shot-camera {
+  width: 52px;
+  height: 14px;
+  border-radius: 8px;
+  background: #000000;
+}
+
+.shot-android .shot-status {
+  padding: 0 12px;
+}
+
+.shot-android .shot-camera {
+  width: 9px;
+  height: 9px;
+}
+
+.shot-battery {
+  width: 16px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: linear-gradient(90deg, currentColor 70%, transparent 70%);
+}
+
+.shot-home {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  width: 64px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--shot-text);
+  opacity: 0.6;
+  transform: translateX(-50%);
+}
+
+.shot-large-title {
+  padding: 4px 12px 6px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.shot-toolbar {
+  padding: 8px 12px 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.shot-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 10px 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(118, 118, 128, 0.14);
+}
+
+.shot-caret {
+  width: 1px;
+  height: 11px;
+  margin-inline-start: -4px;
+  background: #0a84ff;
+}
+
+.shot-heading {
+  padding: 8px 14px 4px;
+  color: var(--shot-muted);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.shot-list {
+  margin: 0 10px 6px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--shot-card);
+}
+
+.shot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
+}
+
+.shot-row + .shot-row {
+  border-top: 1px solid var(--shot-line);
+}
+
+.shot-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shot-row-text b,
+.shot-row-text small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shot-row-text b {
+  font-weight: 500;
+}
+
+.shot-row-text small {
+  color: var(--shot-muted);
+  font-size: 8.5px;
+}
+
+.shot-avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.shot-secret {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--shot-card);
+  color: var(--shot-text);
+  font-size: 9px;
+}
+
+.shot-pill {
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: var(--shot-accent);
+  color: var(--shot-accent-contrast);
+  font-weight: 600;
+}
+
+.shot-spinner {
+  display: flex;
+  justify-content: center;
+  margin: -4px 0 6px;
+}
+
+.shot-spinner ion-icon {
+  padding: 5px;
+  border-radius: 50%;
+  background: var(--shot-card);
+  font-size: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.shot-video {
+  display: flex;
+  gap: 8px;
+  margin: 0 8px 6px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--shot-card);
+}
+
+.shot-video .shot-row-text {
+  justify-content: center;
+  padding-inline-end: 6px;
+}
+
+.shot-thumbnail {
+  flex: none;
+  width: 72px;
+  height: 42px;
+}
+
+.shot-kind {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--shot-line);
+  color: var(--shot-text);
+  font-weight: 700;
+}
+
+.shot-fab {
+  position: absolute;
+  right: 12px;
+  bottom: 48px;
+  display: flex;
+  padding: 9px;
+  border-radius: 12px;
+  background: var(--shot-accent);
+  color: var(--shot-accent-contrast);
+  font-size: 15px;
+}
+
+.shot-tabs {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  justify-content: space-around;
+  padding: 5px 0 14px;
+  border-top: 1px solid var(--shot-line);
+  background: var(--shot-background);
+  color: var(--shot-muted);
+  font-size: 8px;
+}
+
+.shot-tabs span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.shot-tabs ion-icon {
+  font-size: 14px;
+}
+
+.shot-tabs .shot-tab-on {
+  color: var(--shot-text);
+}
+
+.shot-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding-bottom: 16px;
+  border-radius: 14px 14px 0 0;
+  background: #1c1c1e;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45);
+}
+
+.shot-sheet .shot-list {
+  background: #2c2c2e;
+}
+
+.shot-sheet-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+.shot-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--shot-muted);
+  border-radius: 50%;
+}
+
+.shot-check-on {
+  border-color: var(--shot-accent);
+  background: var(--shot-accent);
+  color: var(--shot-accent-contrast);
+}
+
+.shot-note {
+  margin: 0 14px;
+  color: var(--shot-muted);
+  font-size: 8.5px;
+}
+
+/* A tooltip over the picture, in the page's inverse colours, with an arrow towards what it names. */
+.shot-tip {
+  position: absolute;
+  z-index: 1;
+  max-width: 150px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--ion-text-color);
+  color: var(--ion-background-color);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: start;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.3s ease 0.25s, transform 0.3s ease 0.25s;
+}
+
+.tour-slide-on .shot-tip {
+  opacity: 1;
+  transform: none;
+}
+
+.shot-tip::after {
+  position: absolute;
+  left: 24px;
+  border: 6px solid transparent;
+  content: '';
+}
+
+.shot-tip-up::after {
+  bottom: 100%;
+  border-bottom-color: var(--ion-text-color);
+}
+
+.shot-tip-down::after {
+  top: 100%;
+  border-top-color: var(--ion-text-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-tip {
+    transition: none;
+  }
+}
+
+/* A video's thumbnail, or its placeholder, edge to edge with the card: no padding before it, the
+   card's full height, its corners rounded by the card. At least 16:9, like the thumbnails; a
+   taller card crops them a little rather than leaving a gap. */
+.video-card ion-item {
+  --padding-start: 0;
+}
+
+ion-thumbnail.video-thumbnail {
+  position: relative;
+  align-self: stretch;
+  width: 128px;
+  height: auto;
+  min-height: 72px;
+  margin-block: 0;
+  background: var(--app-placeholder-background);
+  color: var(--app-placeholder-color);
+}
+
+/* The placeholder's “why no thumbnail” icon: large enough to read as something to tap. */
+.video-thumbnail ion-button ion-icon {
+  font-size: 28px;
+}
+
+/* Two cards side by side on extra-wide screens (FeedPage) share the row's height. */
+.feed-row ion-col {
+  display: flex;
+}
+
+.feed-row .video-card {
+  display: flex;
+  flex: 1;
+}
+
+/* The item takes the card's height, so the thumbnail reaches its bottom edge. */
+.feed-row .video-card ion-item {
+  flex: 1;
+}
+
+.feed-row .video-card ion-item::part(native) {
+  height: 100%;
+}
+
+/* The feed's cards sit 12px apart rather than iOS's 24px, so that a period's heading sits nearer
+   its own cards than the ones before it. */
+ion-card.video-card {
+  margin-block: 12px;
+}
+
+/* Titles take two lines at most, cut short with “…”. The label's own rule sets `overflow: inherit`
+   on its headings with the same weight as `.video-card h3`, and comes after this stylesheet in a
+   build: the selector names the label, so that it wins whatever the order. */
+.video-card ion-label h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* The line under the title keeps to one line: the channel's name is cut short to leave room for
+   the kind's badge and the date. */
+.video-card .video-meta {
+  display: flex;
+  align-items: center;
+  white-space: pre;
+}
+
+.video-card .video-channel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The kind's badge: a small tinted square the height of the line's capitals, rather than Ionic's
+   filled pill, which outweighed the title. Grey for a Video or a Short, the platform's red for
+   a Live. */
+.video-card .video-meta ion-badge {
+  --background: rgba(var(--ion-text-color-rgb), 0.08);
+  --color: var(--ion-color-medium);
+  --padding-top: 2px;
+  --padding-bottom: 2px;
+  --padding-start: 4px;
+  --padding-end: 4px;
+  flex-shrink: 0;
+  min-width: 1.5em;
+  margin-inline-end: 6px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+}
+
+.video-card .video-meta ion-badge.kind-live {
+  --background: rgba(var(--ion-color-red-rgb), 0.12);
+  --color: var(--ion-color-red);
+}
+
+.video-card .video-unavailable h3 {
+  color: var(--ion-color-medium);
+}
+
+.secret-mark {
+  margin-inline-end: 3px;
+  vertical-align: -2px;
+  color: var(--ion-color-medium);
+}
+
+/* Shown secret channels (D5). The banner while they show: in the accent's colours, as a passing
+   state stands out from the page, with its button in the banner's text colour. */
+ion-item.secrets-banner {
+  --border-radius: 12px;
+  --min-height: 44px;
+  margin: 8px 16px;
+  font-size: 0.9375rem;
+}
+
+ion-item.secrets-banner > ion-icon {
+  margin-inline-end: 12px;
+  font-size: 20px;
+}
+
+ion-item.secrets-banner ion-button {
+  --color: var(--ion-color-primary-contrast);
+  font-weight: 600;
+}
+
+/* On a secret video's thumbnail, the way the platform marks a video's length: a dark pill in a
+   corner, readable on any image. */
+.secret-tag {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+/* On a secret channel's avatar, a badge in the corner, as a status on a profile picture. */
+ion-avatar {
+  position: relative;
+}
+
+.secret-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  font-size: 11px;
+}
+
+/* The fallback for copying a link: off screen, never seen. */
+.copy-buffer {
+  position: fixed;
+  top: -1000px;
+  opacity: 0;
+}
+
+/* File pickers are opened from Ionic buttons; the native input stays hidden. */
+.file-input {
+  display: none;
+}
+
+/* The title row on wide screens, where the refresh bar sits along its bottom. */
+.page-title {
+  position: relative;
+}
+
+/* The refresh bar: a thin line of the platform's red along the bottom of the header, on a
+   grey track, laid over it, above the toolbar, so the header keeps its height when the bar shows. */
+ion-progress-bar.refresh-bar {
+  --background: var(--ion-border-color);
+  --progress-background: var(--ion-color-red);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 11;
+  height: 2px;
+}
+
+/* The refresh button's icon turns while the loading bar shows (Page), unless motion is reduced. */
+@media (prefers-reduced-motion: no-preference) {
+  .refreshing ion-icon.refresh-icon {
+    animation: spinning 1s linear infinite;
+  }
+}
+
+@keyframes spinning {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The browser's icons named in the install guide's steps, in line with the text. */
+.install-step ion-icon {
+  vertical-align: text-bottom;
+}
+
+/* The connection check's country, with its flag: larger than Ionic's subtitle, as it is what the
+   dialog asks the user to check. */
+.connection-alert .alert-sub-title {
+  margin-top: 8px;
+  font-size: 1.25rem;
+  color: var(--ion-text-color);
+}
+
+/* The contact form's field for robots (src/components/ContactModal.tsx): there, but out of sight. */
+.contact-trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* The contact link: as quiet as the small print at the bottom of a page. */
+.quiet-link {
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--ion-color-medium);
+  font: inherit;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+/* A link inside a sentence that opens something in the app rather than a page. */
+.text-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

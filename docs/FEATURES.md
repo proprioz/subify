@@ -1,0 +1,195 @@
+# Features and design decisions
+
+Subify lets you follow your favourite video creators without an account, without being tracked, and without seeing content you didn't ask for: only the latest videos of the channels you chose. This document describes what the app does and why. Design decisions are numbered (D1, D2…): the code and the other documents refer to them.
+
+## 1. Feed (Feed tab)
+
+- **Latest uploads** of the followed channels, sorted by publication date (`published`), never by arrival order. No seen / unseen status, no history (D1).
+- **Period headers** (Today, Yesterday, This week, Earlier this month, month, month + year) and a relative age on each card (“3 days ago”).
+- **Format badge** V / S / L on each card; items the server could not classify (`unknown`) have none.
+- **“Show in feed” filters**: videos, lives, Shorts, at least one on, all shown by default. They combine with the types chosen for each channel: an item shows only if both allow it. `unknown` items stay visible as long as “videos” is on.
+- **Upcoming** (D13): premieres and lives not yet aired come first, under the “Upcoming” header, with “Upcoming” in place of the age. An “Upcoming” checkbox, checked by default, hides them.
+- **Avatar strip** above the feed: “Options”, then “All” and one avatar per channel (from two channels), tap to filter. “Options” opens on Close / Search / Show / Sort (Sort from two channels).
+- **Channel sort** (recently added, oldest, A→Z, Z→A), shared with the Channels tab and stored in `meta`.
+- **Local search** in titles and channel names (`%` and `_` taken literally): a Dexie filter, with no network request.
+- **Paged loading**, 15 at a time (`IonInfiniteScroll`).
+- **Refresh**: a round button next to the title, and `IonRefresher` (pull to refresh). No automatic sync (D12). The app reads the sync stream of its groups (`/stream`, D16), page by page. The progress bar advances with time (capped at 95 / 99 %, visible for at least 500 ms), without a percentage since there is no real progress to show; the icon spins as long as the bar is visible. If the sync fails, the subtitle shows the error in red until the next successful sync; nothing otherwise.
+- **Feed freshness**: an “Updated X ago” subtitle (minutes, hours, then days).
+- **Tapping a card copies its link** (D2): `navigator.clipboard` (falling back to a `textarea`), a vibration where `navigator.vibrate` exists (not on iOS), a “Link copied.” toast.
+- **`⋯` menu**: Open in YouTube, Share… (Web Share), More from <channel>. Links open with `noopener,noreferrer`.
+- **Deleted videos**: `at:deleted-entry` (WebSub) makes a **tombstone** in the channel's slot: the item keeps its id and is marked deleted; the next pass passes it on through the stream and the app greys out the card (“Unavailable”, not copyable). A video that disappears from a feed during polling is not marked deleted: windows of 15 entries would give false positives.
+- **Thumbnails** kept on the device (D3): `default.jpg` (120×90), given by the server with a channel when it is added, for its last 7 days and upcoming videos; the device keeps them 30 days. Later videos, and older ones, keep a neutral 16:9 placeholder.
+- **Empty states** (no channel, nothing for the search or the channel, nothing yet) with “Add a channel” / “Restore a backup”.
+
+## 2. Channels (Channels tab)
+
+- **Channel list** with avatar, name and latest activity (“Last upload 2 days ago”), computed locally.
+- **A single field**, “Search or add a channel”: it filters the list locally. The “Look up @handle online” / “Look up this link online” button appears below the list for a link, a `@handle` or a `UC…` id (`isChannelInput`), and “Look up “Léna Situations” online” for a name (`isChannelName`, the `@` optional). Enter looks up only the first kind: a name is also words to search the list, so only its button sends it to the server. Results open over the page: the channel (name, `@handle`, date of its latest upload) with “Follow”, or “Following” if it is already followed. They stay open to add several, and clear the field once closed. The answer is kept in memory: “Follow” saves it without another request, and closing without following leaves nothing on the device. Nothing is looked up while typing, since each unknown channel costs the server a read online: Enter or the button.
+- **Accepted links**: `/channel/UC…`, `@handle`, `/c/`, `/user/`, feed URL, bare id, and video links (`watch?v=`, `youtu.be`, `/shorts/`, `/live/`, D7). A channel id or a `@handle` is first looked up blindly (D16): the app finds the channel in the catalog without naming it, through a blind evaluation and its group's snapshot, or through the handle index. Only a channel the catalog lacks, or a video link, goes to the server in clear (`POST /add`), which reads it online; the answer comes after at least 8 seconds either way, and the channel enters the catalog at the next pass. `/channel/UC…`, feed URLs and ids are also read locally, to refuse an already followed channel without a request. For a video link, the server validates the id (`^[A-Za-z0-9_-]{11}$`), calls oEmbed with a URL rebuilt from that id, then reads the author's page, as for a `@handle`.
+- **A name** (“Léna Situations”) is first looked for in the Wikidata dictionary (D16): about 157,000 YouTube channels Wikidata names, with their `@handle`s and names in six languages (mul, en, fr, de, es, it). The app downloads all of it (64 slices, about 5 MB) the first time a name is looked up, and again only when the server has a newer one; it keeps it out of backups. It then searches it on the device, accents and case aside: the whole name first, then its start, then every word, and shows up to 10 channels, which are then looked up by their id like a link. Once the device has it, the names that match appear under the field while typing, offline (5 at most). A server without `WIKIDATA_USER_AGENT` has no dictionary. When the dictionary doesn't list the channel (“Not listed?”), a name is looked up as the `@handle`s it likely gives (`guessHandles`): its words run together (`lenasituations`), then joined by `.`, `_` or `-`, lowercase and without accents, and last run together with their accents. The app looks them up blindly in the catalog's handle index (D16): one chunk of it for a `@handle` typed, the whole index when a name's guesses fall in several chunks, since the set of chunks read would point to the name. Only a name none of them finds goes to the server: first to the search services its admin turned on (Invidious, Piped: `POST /search`), whose results, each checked against the channel's feed, are offered to choose from, with “Not listed?” to go on; last, the server reads the guessed handles online, the first three at most, each read counted in the budgets. A channel whose handle doesn't follow its name still needs its link or `@handle`.
+- **Per-channel menu**: Show videos, types shown (videos / Shorts / lives), Make secret / Stop keeping secret, Remove (with confirmation). Swiping a row also offers Remove.
+- **Channels that need attention** come first, in their own group (“Need your attention”), each with the explanation and one button: “Try again” for a channel that couldn't be found online, “Remove” for a channel that no longer exists on YouTube (its videos stay in the feed until then). Swiping offers Remove for both.
+- **Avatars** (D4): read by the server when the channel enters the catalog and sent with it; initials otherwise.
+- **`@handle`** kept locally when the server knows it: the one that led to the channel, or else the one oEmbed names as the author of its latest video when it enters the catalog (one request; a channel without videos has none).
+
+## 3. Local password and secret channels (D5)
+
+**The app's password.** Everything the app keeps on the device is sealed with a key that only the user's password, or Face ID / a fingerprint, unlocks (`src/data/vault.ts`).
+
+- Chosen at the first launch, before anything else (at least 8 characters, letters allowed); an app already in use asks for it at its next opening. A lost password can't be recovered: the only way out is to reset the app and restore a backup.
+- Sealing sits under Dexie (a DBCore middleware): each row of `subscriptions`, `items`, `thumbnails` and `meta` is stored as an XChaCha20-Poly1305 blob, bound to its table and key. Only the fields indexes need stay readable: dates, order of addition and status. Channel and video ids, as keys or index values, become keyed hashes (AES-CMAC), so a copy of the database names no channel and no video; lookups by id stay exact matches. The theme stays readable, for the locked screen. The dictionary (public data) is not sealed.
+- The key (64 random bytes) sits in the `keyring` table, sealed by a key stretched from the password (Argon2id, 64 MiB, 2 passes) and, when turned on, by what the device's passkey gives (WebAuthn PRF: iOS 18.4+ with iCloud Keychain, Android with Google Password Manager). Where the browser can't, the password alone.
+- “Ask for the password” (Settings, Lock): each time the app opens (default), each time the user comes back to it, after 5, 15 or 60 minutes unused, or never. With “never”, the key is kept on the device, unsealed, and the app says so before: the data can then be read there.
+
+**Secret channels.**
+
+- Hidden from the feed, the strip and the list (the subscription's `secret` field), on top of the app's password.
+- They unlock with the app's password (or Face ID / a fingerprint when the app has them), or with a PIN of their own, 4 to 8 digits, apart from the password: the user picks when making a first channel secret. Of the PIN only an Argon2id hash is stored; after 5 wrong PINs, each new attempt has to wait, twice as long each time. With a PIN, Face ID or a fingerprint can show them too, through a WebAuthn passkey that only guards the screen.
+- Double tap on “All” (when the strip shows it), or “Show secret channels” in the Channels tab's menu.
+- Hidden again as soon as the user goes to another screen of the app, or the app leaves the screen (`visibilitychange`).
+- A secret channel can be opened on its own from the list, without revealing the others; it hides again in the same way.
+- While they show, or one of them opened on its own, a banner at the top of the Feed and Channels tabs says so, with “Hide”. Each secret video carries a “Secret” tag on its thumbnail, and each secret channel an eye-off badge on its avatar; their text stays as any other's.
+- A forgotten PIN can't be recovered: the secret channels are deleted, with their videos, and the PIN.
+- The backup holds the secret status and the PIN's hash: a restored device asks for the same PIN.
+- Error messages never name a hidden secret channel.
+
+## 4. Settings (Settings tab)
+
+- **Theme** light / dark / system, stored in `meta`. The app's colours (neutral greys, black accent, white in dark mode, red kept for lives, deletions and actions online, white cards on a light grey page) go through Ionic's variables in `theme.css`. Behaviour, sizes, spacing and typography stay Ionic's, per platform (iOS or Material): collapsible large titles on iOS, Ionic popovers for the `⋯` menus, etc.
+- **Backup** (D6): a file sealed with a password (Argon2id + XChaCha20-Poly1305) of at least 8 characters: the app's password by default, checked against it, or another one; never stored; date of the last export. The libraries (hash-wasm, @noble/ciphers) load on demand.
+- **Restore**: replaces everything, after confirmation. Channels the catalog knows are filled at once from the snapshots of their groups, found blindly (D16); the others go through the submission queue (`POST /add`), one at a time, which carries on by itself, even after a relaunch.
+- **Connection check** (D11): off by default, kept in backups.
+- **Reset the app**: empties Dexie and the service worker's cache, after confirmation.
+- **About**: “Why Subify” (what the app does and doesn't do), the Privacy page (with “Show who runs this server”, which asks the server for its name and operator only when tapped), “Install the app” when the browser allows it, and a message on the server's retention (6 months). A “Contact” link at the bottom, also on the welcome screen before unlocking, opens a form whose message the server emails to its operator, keeping none of it, when its admin turned it on (`MESSAGES_TO`, `apps/server/src/contact.ts`). No server URL in the settings: the app only talks to the server that serves it (D14).
+
+## 5. Platform and safeguards
+
+- **Each server names its app.** The app's build is the same everywhere; the server answers its manifest (`/api/manifest.webmanifest`) and icon links (`/api/icons/…`, redirects to `/icons/red/` or `/icons/blue/`) for the host the request came to: the name its admin set (`INSTANCE_NAME`, required), and the Subify icon in red on `subify.tv`, in blue on any other host, so that a self-hosted app is never mistaken for the official one (`apps/server/src/instance.ts`).
+
+- **Installable PWA.** An invitation to install from the empty feed, then a card in the feed (“Not now” hides it for 7 days; the third time it comes back, it offers “Don’t show again”), and always in Settings. At launch, if the app isn't installed, the browser hasn't promised to keep its data (`storage.persist()`) and a channel was added since the last backup, a toast warns that channels could disappear, at most once a day and never at the same time as the card (`src/data/storage-warning.ts`). Installing goes through the browser's dialog when it offers one (Chromium), otherwise through a step-by-step guide for the browser (Safari and other iOS browsers, Android, Safari on Mac, `src/ui/install.ts`). On iOS, the installed app has its own storage, separate from the browser's: the guide says so and points to a backup when channels are already followed.
+- **Files**: `<input type="file">` to read; to export, a download or file sharing (Web Share).
+- **Every network call is declared.** On the client, a single `api` module (`credentials: 'omit'`, `referrerPolicy: 'no-referrer'`). On the server, a single injected `Fetcher`, which only accepts URLs rebuilt by the source adapter. Tested.
+- **Polling rate**: inside the pass, one channel at a time with a random gap (up to 2 s), a cap per pass (`POLL_BATCH_SIZE` per minute of its period), ±10 % jitter, and backoff after any failure (30 min, doubling up to a day).
+- **Source adapter**: everything YouTube-specific (link resolution, which feeds to read, classification) lives behind an interface, so that other platforms can be added.
+- **Classification** by the `UULF` / `UUSH` / `UULV` playlists, falling back on the channel feed; lives win when an id appears in several feeds; an id is inserted only once. In the fallback, a `/shorts/` link in the channel feed is enough to classify it as `short`, otherwise `unknown`.
+- **A known item keeps its type and date**; title and thumbnail are updated. Exception: an `unknown` item can be reclassified. Every real change reaches devices through the next pass's batch of the stream.
+- **Fixtures**: real recorded feeds (`fixtures:record`). No test contacts YouTube. A real feed already shows a trap: `<yt:channelId>` is written there without the `UC` prefix.
+- **Language** (D8): interface in English, neutral wording (“the platform”) except “Open in YouTube”, typographic punctuation. Code, comments, commits and documents in English.
+- **Dependencies**: pnpm, a 7-day `minimumReleaseAge`, install scripts forbidden except for a minimal list (`better-sqlite3`, `esbuild`, `workerd`), Dependabot, a weekly audit.
+
+## Limits
+
+Subify only reads what the platform publishes for everyone: the Atom feeds of channels and their playlists, oEmbed, and a channel's public page. What these data don't contain, the app doesn't show:
+
+- **Video durations, start times of upcoming lives**: missing from the Atom feeds.
+- **Searching channels by name**: Subify itself never searches YouTube. A name is found in the Wikidata dictionary on the device, as the `@handle`s it likely gives, or, when the server's admin turns them on, through Invidious and Piped instances (third parties, see “A name” above); otherwise the app asks for a link or a `@handle`.
+- **Videos older** than the latest 15 of each feed, when a channel is added. After that, the server follows the channel continuously and misses nothing.
+- **Background refresh**: no reliable equivalent in a PWA, and no need for one: the server follows the channels continuously, the app only has to download when asked.
+
+## Decisions
+
+| | Subject | Decision |
+|---|---|---|
+| D1 | Seen / unseen | No status and no viewing data. |
+| D2 | Tapping a card | Copies the link. |
+| D3 | Images | The app never loads an image from the network: it only shows copies kept on the device, which the server passed to it. **Avatars**: the server downloads the image (88 px, JPEG/PNG/WebP, never SVG) once, when the channel enters the catalog, and keeps it in the channel's slot; it goes with the channel in the add answer, the snapshots and the stream. **Thumbnails**: the server reads each new video's `default.jpg` (120×90) once, when the video arrives, and keeps it encrypted for 30 days in the thumbnail ring (cases of 8 KB; a larger one isn't kept). A device gets thumbnails only when it adds a channel, for that channel's last 7 days and its upcoming videos (at most 12 in the add answer); it keeps them 30 days. Later videos show the placeholder: sending thumbnails continuously would cost each device about 7 MB a day, and asking for them one by one would tell the server which videos a device shows. **For later**: an option, off by default, to load thumbnails directly from the platform (the platform then sees the IP and the videos shown); it would break two principles. |
+| D4 | Channel icon | The Atom feed has none. The server reads the channel page once when a channel enters the catalog (id, title, avatar), the same read that resolves a `@handle`. If it fails, the app shows initials. |
+| D5 | Local password, secret channels | The device's data sealed with a mandatory password, Face ID / fingerprint through WebAuthn PRF; secret channels behind that password or a PIN of their own. |
+| D6 | Backup | A file sealed with a password, never in plain text, in the versioned `subify-backup` format. Every version of the app restores the backups of every earlier version: a change to the format raises its version and keeps reading the old ones, protected by fixtures that are never regenerated (`apps/web/test/fixtures/backup-v1.json`). |
+| D7 | Adding from a video link | oEmbed + one read of the author's page. |
+| D8 | Language | English. |
+| D9 | Hosting | On Workers, the server needs the Paid plan: the pass rewrites the whole catalog every 10 minutes or more. On Node, these limits don't exist. See below. |
+| D10 | Trust model | The server never learns which channels a device follows when the catalog has them (D16); it sees a channel when a device adds one it lacks, and which groups a device reads, and keeps nothing of either. See below. |
+| D11 | Connection check | The server looks at where a request comes from for that request only, never otherwise. See below. |
+| D12 | No connection the user didn't ask for | The app goes online only on a user action: Refresh, pull to refresh, adding a channel, restoring a backup. No sync at launch or on return to the foreground. A sync the user started goes on if they leave the app, as long as the system lets it run; if the device cuts the request, it resumes back in the foreground, at the cursor of the last page written. The submission queue carries on by itself, even after a relaunch, since the user started it. The only request outside an action: at launch, the browser checks whether `sw.js` changed, with the server that serves the app; it carries nothing about the user, and without a service worker every launch would download the whole app. |
+| D13 | “Upcoming” without a start time | A premiere or an upcoming live appears in the typed playlists (not in the channel feed) with `views="0"`. The server marks as `upcoming` a **new** item with 0 views published more than an hour ago (before that, it is a fresh upload whose counter isn't up to date); an item already known never becomes one. As long as a channel has an upcoming item, every polling pass also reads the typed playlists. When views appear, the item stops being upcoming and takes as `published` the time the server saw it (otherwise it would stay dated from the day it was scheduled); if it no longer appears in any feed read in full (cancelled, or out of the latest 15), it stops being upcoming and keeps its date. Limits: no start time; a scheduled live is only discovered at the next pass that reads the typed playlists (a WebSub notification, a new upload); a video from a very small channel still at 0 views after an hour can pass for upcoming. |
+| D14 | One app, its server | The PWA only talks to the server that served it, on the same origin: no server URL in the settings, no CORS. The app and the server come out of the same deployment (one `wrangler deploy`, or one Node build serving both), so the client is never newer than the server; the only possible gap is a page left open during a deployment. When the server answers in a version `v` the app doesn't know, the app asks the service worker for the new version and reloads (`src/ui/app-update.ts`); this check starts from a request the user made (D12). Self-hosting means installing the app from your own server. Changing servers means exporting a backup and restoring it in the other app, since a PWA's data are tied to its origin; the videos come back from the new server. Since the app and the server are always the same version, the API's types come straight from the server's code: routes declared with `@hono/zod-openapi` from the Zod schemas in `packages/shared`, an `hc<AppType>` client (Hono RPC) in the PWA, no validation of answers at run time. The contract is versioned in `apps/server/openapi.json`, which a test keeps up to date: every change to the API shows in a diff. What travels sealed (stream entries, snapshots, handle entries, thumbnails) and what the server stores in its blobs is typed the same way, by one codec per payload in `packages/shared/src/codec/`, shared by the server and the app (CONTRIBUTING.md, Payloads). Ruled out: oRPC, tRPC (a protocol of its own, incompatible with versioned routes), `openapi-fetch` (a generation step with no gain on a single origin). |
+| D15 | Seeding the catalog | The server adds channels to the catalog on its own, so that a channel being there doesn't tell whether someone follows it, not even to the server's operator. See below. |
+| D16 | An encrypted catalog | The database holds only fixed-size encrypted rows, all rewritten by a pass every 10 minutes or more; devices find their channels without naming them. See below. |
+
+### D10: what the server sees, and what it keeps
+
+A server that knew nothing would send everyone the same answers: the changes of the whole catalog, and enough to recognise one's channels without naming them. Each device would then download data in proportion to the size of the catalog, not to its subscriptions. Subify stands between the two (D16):
+
+- **Adding a channel the catalog has**, or **restoring a backup**: the device finds each channel blindly (a blind evaluation, then the snapshot of its group, about 40 channels), so the server learns which groups it read, never which channels.
+- **Adding a channel the catalog lacks**, or **by a video link**: the PWA sends the link (`POST /add`). The server reads the channel online and answers with it, its latest videos (at most 15 per type, plus any upcoming ones) and the thumbnails of its last 7 days. It sees which channel is added, as before.
+- **Staying up to date**: the device downloads the stream's batches of its groups, every entry padded to the same size, and opens only its own channels' entries.
+
+What stays guaranteed: no account, no identifier, no cookie; the server stores nothing about users (a test checks that the read routes write nothing to the database); the server's code logs no IP, URL or list of channels, and no log shows which channels anyone follows; no IP header read. Anyone who doesn't want to trust the official instance hosts their own and installs the app from it (D14).
+
+### D11: the connection check, the only exception to “no IP read”
+
+Before going online, the user may want to check which country their connection appears from, for example to make sure their VPN is on. The device only talks to the server: so the server answers, and the country it sees is what matters, since it is the one that sees the IP.
+
+- `GET /api/connection` answers `{ v: 2, country: "CH" | null }`. On Cloudflare, the country comes from `request.cf.country`, which Cloudflare computes anyway: no extra service or GeoIP database. Only the Worker entry reads it, and only when this route calls for it (a lazy function passed in the bindings); it is neither stored nor logged. On Node (self-hosting), there is no country: the answer is `null` and the app says it can't tell.
+- Tests guarantee it: only this route reads the country and it writes nothing to the database (`test/shared/connection.test.ts`); only `src/entry/worker.ts` touches the request's `cf` properties (`test/node/privacy-source.test.ts`).
+- On the client, every step that goes online passes through `ConnectionGate` (`src/data/connection-check.ts`), and each `Api` refuses a request made outside an approved step. With the check on, a refresh or an addition shows the dialog; the submission queue only moves on while an approval is remembered, and never opens the dialog itself.
+- The remembered approval (minutes, an hour, a day, until the app is closed) stays on the device, never in a backup, and is forgotten when the setting changes or a backup is restored.
+
+### D15: seeding the catalog
+
+A catalog holding only the channels users added would say too much: anyone holding its key, starting with the server's operator, would know that at least one person follows each. Asking whether a channel is in it is also possible (D16, “Accepted limit”). For a small channel, that would come close to pointing at someone. So the server seeds its catalog with channels it adds itself, and a channel being there no longer tells whether someone follows it.
+
+- **What the server does.** A scheduled task (`src/catalog/seeding.ts`, every minute) adds a channel now and then, `SEEDED_CHANNELS_PER_DAY` a day on average. Seeding is off by default (0): the official instance turns it on (24 a day), and a self-hosted catalog fills only with its users' channels unless its admin sets it. It goes through the same code as a user (`submitInput`): the same page read, the same budgets, the same update waiting for the pass, the same slot. Nothing stored and no log tells a seeded channel apart.
+- **Only channels the catalog cites.** The code ships no list of channels: seeded channels are only the channels cited in the descriptions of the catalog's videos (`/channel/UC…`, `/@handle`, `/c/`, `/user/` links, at most three per channel read), read from the feeds already downloaded. They wait in the seed pool, 64 encrypted rows of a fixed size rewritten at every pass. A candidate is drawn only 30 days after it was first cited, once the citing video has likely left the public feed, and candidates cited once come first. Every channel entering, by a user or by the server, erases the candidates that lead to it: a candidate left next to its channel would tell that a user added it. A link that leads to no channel is forgotten.
+- **When.** The pass counts users' additions by hour of day, in 24 counters halved every week: seeded channels enter at the hours users add at, whatever their time zone, without any date kept per channel.
+- **How many.** Removing seeded channels later would set them apart. So seeding slows down as the catalog fills, and stops at half its capacity (900 channels by default): the rest is for users.
+- **Cost.** A seeded channel costs what an addition costs: one page read, up to four feeds, an avatar, the thumbnails of its last 7 days and, without a known `@handle`, one oEmbed request, then polling.
+- **Limits.** Seeding starts from the channels users added: a new catalog's first channels are its users', and seeding protects them only as others join them. A channel that nothing in the catalog cites is still likely a user's addition: with as many seeded channels as users' channels, about 87 % of uncited channels are users'; 41 % with ten times more seeded channels (estimates, with 90 % of seeded and 30 % of users' channels cited). The more the catalog grows, the more channels it cites.
+- **Principles.** A seeded channel is read like any channel: its public page once, when it enters the catalog, then its feeds. The server reads no page to find channels to add.
+
+### D9: hosting on Workers' Paid plan
+
+Limits, from [developers.cloudflare.com](https://developers.cloudflare.com/workers/platform/limits/): on the Paid plan ($5 a month), 30 s of CPU per Cron Trigger that runs more often than hourly (time waiting on the network or D1 doesn't count), 15 minutes of wall time, 1,000 D1 queries per invocation (a `db.batch()` counts as one), 50 M D1 rows written a month included, 10 GB per database.
+
+- **The pass** (D16) reads and rewrites every row of the catalog, in batches of 50: at 2,500 slots, about 10.8 M rows written a month. Its period is 10 minutes, and grows once the table would write more than about 45 M rows a month (past about 10,400 rows a pass, `src/catalog/sizing.ts`).
+- **Polling inside the pass**: `POLL_BATCH_SIZE` (5 by default) channels per minute of the period, spread over the pass. The same value is the default on Node, and a self-hoster can raise it.
+- **No conditional requests at YouTube**: its feeds send neither `ETag` nor `Last-Modified`. The adaptive rate, reading only the channel feed when nothing is new, and WebSub are what limit the volume.
+- **CPU**: thrifty Atom parsing (one pass, no DOM); streamed read of a `@handle` page, stopped as soon as the id, the title and the avatar are found, instead of loading 1 MB of HTML. Blind evaluations go by batches of 10 or 50, limited by `BLIND_BATCHES_PER_MINUTE`.
+- **Between passes, nothing is written to D1** but the dictionary refresh: updates and the shared budgets wait in a Durable Object (`COORDINATOR`), in memory on Node.
+- **WebSub**: the notification answers right away; reading the feeds by type fits in `waitUntil` (under 30 s, 4 subrequests), and what it learnt waits for the pass.
+- **Rate limiting**: on Workers, request rates can be limited at the edge, in Cloudflare's dashboard, without the app seeing addresses.
+
+### D16: a catalog the server stores without reading it
+
+The app calls this design, seeding included (D15), **Sealring** (Why Subify), after the seal ring that closed letters: the sync stream's ring of sealed batches is part of it.
+
+A readable catalog would tell anyone holding a copy of the database (a dump, a restore of an earlier state, a legal request) its channels, their videos, and roughly when each channel entered it. So the server stores the catalog without being able to read it at rest; who follows what is never stored at all.
+
+**Goals.** The database alone reveals nothing, even across many copies over time: not which channels, not how many beyond a coarse size class, not their order of arrival, not what changed or when. With the server's secret, the catalog is readable, but never who follows what, which channels were seeded, or when one entered. Through the API, without the secret, nobody can list or download the catalog.
+
+**Out of scope**: an operator who serves modified code; the hosting platform reading the server's memory; account-level metrics (request and query counts); the WebSub hub seeing which channels the server follows; IP addresses (a VPN, which D11 checks).
+
+**Keys.** One master secret (`MASTER_SECRET`: a Workers secret, or a generated file on Node, `src/node/secret.ts`), never in the database. HKDF derives from it an AES-256-GCM key for every row and a VOPRF key (RFC 9497, ristretto255-SHA512). For a channel, `O = VOPRF("<source>:<id>")`: its slot id, its transit key `K_c` and its group are derived from O. A device gets O by blind evaluation: the server computes it without learning the channel. Losing the secret makes the catalog unreadable; devices then add their channels back by themselves.
+
+**What the database holds** (`migrations/0001_slots.sql`). Every table is `WITHOUT ROWID`, keyed by pseudorandom ids or fixed positions, every blob of a table the same size; no plaintext column, no per-channel date. On Node, the SQLite file is rewritten once a day so that its layout keeps no trace of the order of writes. D1 keeps 30 days of Time Travel, which can't be turned off: every restorable state is as unreadable as the current one.
+
+- **Slots**: one channel or one decoy per row, 40 KB: the channel, its schedule (next poll, failures, WebSub state, its secret and callback token, days “not found”) and its items (at most 400, none older than `RETENTION_DAYS`; the oldest go first when titles don't fit, so a busy channel with long CJK or emoji titles keeps about 70 to 90).
+- **Size class**: the table starts at 2,500 slots and grows by ×1.5 when half of it is taken, at a time drawn within the 3 days after: a growth step tells only that the catalog, seeded channels included, crossed that size.
+- **Other rows**, all rewritten by the pass: the catalog's state, the seed pool and the hour counters (D15), the thumbnail ring (D3), the stream's batches, the handle index. The Wikidata dictionary is public data, kept in clear.
+
+**The pass** (`src/catalog/pass.ts`). Every 10 minutes or more (D9), it reads every slot and rewrites it with a fresh nonce, changed or not, applying on the way what waits in the coordinator and polling the channels due. Between passes nothing is written: an addition, a WebSub notification, the budgets wait in the coordinator, sealed.
+
+**Staying up to date: the sync stream.** Each pass publishes one batch: for each group, the same number of 512-byte entries, real changes sealed under `K_c` behind a tag that changes at every pass, and random entries for the rest, with a ×3 margin over the expected changes (changes without room wait for the next pass). A device downloads its groups' entries whole and keeps those its channels' tags match: the server learns which groups a device reads (about 40 channels each), nothing finer. The stream keeps 30 days; a device away longer reads its groups' snapshots.
+
+**Adding a channel.** A channel the catalog has is found blindly: by its id (up to 50 per evaluation request), or by its `@handle` in the handle index (one chunk for a typed handle, the whole index for a name whose guessed handles fall in several chunks). The device then reads its group's snapshot, computed on request: every slot of the group, each channel sealed under its own key, with the thumbnails of the last 7 days when it adds. A channel the catalog lacks, a video link (there is no index of videos), and a handle entered since the last hourly rebuild of the index go the clear way, `POST /add`, alone in their request; the answer has a fixed size and comes after at least 8 seconds, known channel or not, and the channel gets its slot at the next pass. An hour later, a refresh checks the snapshots, and a channel still missing goes back to the import queue (the safety net). A restored backup reads the snapshots of its groups once, about 40 MB at the start, without thumbnails.
+
+**Accepted limit: membership tests.** Anyone can test whether a guessed channel is in the catalog, through a blind evaluation and a snapshot. That is the price of finding known channels without naming them. The protection is seeding (D15): being there doesn't mean being followed. Evaluations and snapshots are rate-limited (`BLIND_BATCHES_PER_MINUTE`, 120 snapshots a minute).
+
+**Dead channels.** A channel is removed one way only: its channel feed answers “not found” on 30 consecutive days, each day counted only when other channels' feeds answered in the same pass (YouTube's feeds have site-wide outages of hours to days), and a read of its `/channel/` page confirms it is gone. Its slot becomes a decoy under a new id at the next pass, and the stream tells devices: the app shows it under “Need your attention” with “Remove”.
+
+**Search by name.** In this order: the Wikidata dictionary, downloaded whole to the device and searched there (the server never sees a name it matches); guessed handles in the handle index, blindly; then, when the server's admin turns them on (`SEARCH_SOURCES`), Invidious and Piped instances, which the server alone queries, with decoy searches drawn from the dictionary and common words, never from the catalog, each result checked against the channel's feed; last, the guessed handles online.
+
+## Design notes
+
+1. **API under `/api`** and a **versioned answer format** (`v`), unknown parameters and fields refused.
+2. **Streamed page read**: a channel's page weighs about 2 MB and what is needed (id, title, avatar) is around 820 KB in; the read stops there. It carries a fixed consent cookie (`SOCS`), the same for every request, which identifies no one.
+3. **Client-side retention**: the app keeps its local history beyond the server's 6 months. The “limited history” message shows when subscribing to a channel for which the server only has recent items.
+4. **Fixed sizes everywhere** (D16): every stored blob and every answer that could say something about the catalog has a size set by the code, never by the content; codecs in `packages/shared/src/codec/` pad or cut by a documented rule.
+
+## Coming next
+
+- A multi-stage **Docker image** (non-root, PWA and API on the same origin, `/data` as a volume), tested in CI.
+- **`docker-compose.selfhost.yml` with Caddy**: automatic HTTPS, no access log, without passing on `X-Forwarded-For` or `X-Real-IP`, with `rate_limit`.
+- **Fresh videos**: briefly highlight the videos that arrived with the last sync, without storing a “seen” status.
+- A **warning when the last successful sync is old** (offline for a long time).

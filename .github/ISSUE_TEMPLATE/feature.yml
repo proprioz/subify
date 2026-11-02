@@ -1,0 +1,24 @@
+name: Feature idea
+description: Suggest something Subify could do.
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Subify keeps a few principles that no feature may break: no account, nothing that identifies a user, the server keeps no link between a user and their channels, and it reads only what the platform publishes for everyone. They are listed in [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md#non-negotiable-principles).
+  - type: textarea
+    id: need
+    attributes:
+      label: What you'd like to do
+      description: The need first, before any solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+  - type: textarea
+    id: privacy
+    attributes:
+      label: What the server or the platform would learn
+      description: If the idea needs a request online, what would it reveal, and to whom?
