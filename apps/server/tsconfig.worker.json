@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "@cloudflare/workers-types",
+      "@cloudflare/vitest-plugin/types"
+    ],
+    "paths": {
+      "#harness": [
+        "./test/harness/workers.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "test/workers",
+    "test/shared",
+    "test/support",
+    "test/fixtures",
+    "test/harness/workers.ts",
+    "test/harness/types.ts",
+    "test/raw.d.ts",
+    "test/env.d.ts",
+    "test/harness/common.ts"
+  ],
+  "exclude": [
+    "src/entry/node.ts",
+    "src/node"
+  ]
+}

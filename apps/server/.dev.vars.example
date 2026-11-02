@@ -1,0 +1,11 @@
+# Copy to .dev.vars for `wrangler dev`. Same variables as .env.example, without the Node-only ones.
+# Required: the installed app's name.
+INSTANCE_NAME=Subify dev
+OPERATOR_NAME=
+OPERATOR_CONTACT=
+WIKIDATA_USER_AGENT=
+PUBLIC_BASE_URL=
+# Optional address added to the User-Agent. Leave empty to stay anonymous.
+CONTACT_URL=
+POLL_BATCH_SIZE=5
+RETENTION_DAYS=183

@@ -1,0 +1,23 @@
+{
+  "name": "@subify/shared",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas": "./src/schemas.ts",
+    "./codec": "./src/codec/index.ts",
+    "./oprf": "./src/oprf.ts",
+    "./proof": "./src/proof.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "^7.0.0"
+  },
+  "dependencies": {
+    "@noble/curves": "2.3.0",
+    "zod": "^4.6.7"
+  }
+}

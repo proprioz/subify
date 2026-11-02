@@ -1,0 +1,18 @@
+{
+  "name": "subify",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @subify/server --filter @subify/web dev",
+    "dev:worker": "pnpm --filter @subify/web build && pnpm --filter @subify/server dev:worker",
+    "build": "pnpm --filter @subify/web build && pnpm --filter @subify/server build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:all": "pnpm -r test:all"
+  }
+}

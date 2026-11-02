@@ -1,0 +1,74 @@
+# Subify on Cloudflare Workers, without any instance's own values. scripts/deploy-config.ts writes
+# wrangler.deploy.toml from this file and the instance's variables (domain, database, names), and
+# deploys use that file (docs/SELF-HOSTING.md). Local runs use this one, with .dev.vars.
+name = "subify"
+main = "src/entry/worker.ts"
+compatibility_date = "2026-10-01"
+# Only the custom domain serves the app: rate limiting and other WAF rules apply to a zone, so a
+# *.workers.dev or preview URL would reach the same Worker and the same quotas without them.
+# Cloudflare creates the DNS record and the certificate for it. Set by the deploy script.
+routes = []
+workers_dev = false
+preview_urls = false
+
+# Privacy: no Workers Logs, no traces, no Logpush. The app never logs URLs or IPs either.
+logpush = false
+# No usage telemetry from Wrangler itself.
+send_metrics = false
+
+[observability]
+enabled = false
+
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+# The PWA is served from the same origin as the API. Only /api/* reaches the Worker; every
+# other path is a static file, or index.html for the PWA's own routes.
+[assets]
+directory = "../web/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "subify"
+# The id `wrangler d1 create subify` gives; set by the deploy script (D1_DATABASE_ID).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# The encrypted catalog's coordinator (src/workers/coordinator.ts): the updates waiting for the
+# next pass, sealed, and the shared budgets, in memory. One instance for the whole server.
+[[durable_objects.bindings]]
+name = "COORDINATOR"
+class_name = "CoordinatorObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CoordinatorObject"]
+
+# One trigger every minute: the scheduled tasks decide themselves which of them are due, so
+# the Node scheduler can run exactly the same dispatch (see src/tasks.ts).
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Set by the deploy script from the instance's variables; empty here.
+# What the installed app is called; required: the server refuses to serve without it.
+INSTANCE_NAME = ""
+# Who runs the server, on the app's Privacy page; optional.
+OPERATOR_NAME = ""
+OPERATOR_CONTACT = ""
+# The contact form (src/contact.ts): where messages go, never shown; empty turns it off. The deploy
+# script adds the send_email binding it needs.
+MESSAGES_TO = ""
+MESSAGES_FROM = ""
+# Sent to Wikidata only, which asks automated clients for a name and a contact: the dictionary of channel names.
+WIKIDATA_USER_AGENT = ""
+# The app and its API share this origin; the WebSub callback needs it to be public.
+PUBLIC_BASE_URL = ""
+CONTACT_URL = ""
+# Seeding (docs/FEATURES.md, D15): off unless the instance turns it on.
+SEEDED_CHANNELS_PER_DAY = "0"
+# Name search (docs/FEATURES.md, D16): the Wikidata dictionary, then optionally Invidious and Piped.
+SEARCH_SOURCES = "wikidata"

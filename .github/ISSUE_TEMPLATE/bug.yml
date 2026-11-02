@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in the app or the server doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security issue? Don't open an issue: follow [SECURITY.md](../blob/main/SECURITY.md).
+        Please don't paste the list of channels you follow, your backup file or your secret code.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Channels tab
+        2. …
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: iPhone 16, iOS 26, installed app (or Safari, Chrome on Android…)
+    validations:
+      required: true
+  - type: dropdown
+    id: instance
+    attributes:
+      label: Server
+      options:
+        - The official instance (subify.tv)
+        - A self-hosted server
+        - Local development
+    validations:
+      required: true

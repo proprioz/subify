@@ -1,0 +1,13 @@
+{
+    "format": "subify-backup",
+    "format_version": 1,
+    "encryption": {
+        "cipher": "xchacha20poly1305-ietf",
+        "kdf": "argon2id13",
+        "opslimit": 2,
+        "memlimit": 67108864,
+        "salt": "SLcjBvM90m5lmpNtAgj3KA==",
+        "nonce": "RJyrpwupqP5XJ4RTYJb/dt2Ui5nk82FF"
+    },
+    "ciphertext": "tjD15ygdDQV8NG2xpR0fhoS/7pdGITbHJBEWN845aora5brwrfEtljuS+UzNs+eUnbu51BrTvs92NLYsz3CxLF8UuwYglUfINmlAWh6g3VRVrNFEYA5SVvftTjz0X+B/gwXpeHnNeejQycPUvO8S6doLb1EPH3ImQOZ1BxYjtkPS/4l20yWwlrpKqlEOBlCGmmQpv5JJ+s/5QF/1v2g5V8gT+z+hfnXlahUcOkQH+iu4REvr01wjj+rMUgjyOacNV2KUZj/wjgJ5+j9hwp2GY2woBvOpI/Gu3Q/CnVcusx8ec0s5ah3U48aonHJcinCflGrbdo6O+Om0UH+V7w9jGEw+c8go4u9At6rlxtTe7eBS7M9dJ8ZbcwuMrZoFzzMVRAd/+gW3zCwpFrisUuhlV24+pjGIq2uVg2E2vSz3xy/BYYehFImglpvwXfNy5slamloFBJzek7lT+iXWPukCPa4PMQPENshPs4bqCtARyIHzDJpHNxY8Po0A3+8WMc579ut6i2RUPZBfxCrpDf5LkMzb+kutkd2IXyi+Xc+Fs+dcM75urbYkl4kYM2GfUkvX+boIim17/bCEh2lfcY5S2Ej+AWGPFMgaulu6cw91ezxrhSb2tY4HYmBfCn0Kd7Ul+cJRjx6JgbU67OUsh1K5Vryd+Huu9khXy/Ex7BYEjG6QpOg3dr85/JM9liM5r0hxQq06XJXDEobzrCG+a/SDwHAbJh9dJ84W6Agk2LFMVmnibF+WcXO9dAlPNbVgIbWoElGn1wI="
+}

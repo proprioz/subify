@@ -1,0 +1,47 @@
+{
+  "name": "@subify/server",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    "./app": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env.development --env-file-if-exists=.env src/entry/node.ts",
+    "dev:worker": "wrangler dev",
+    "build": "pnpm build:node && pnpm build:worker",
+    "build:node": "vite build --config vite.node.config.ts",
+    "build:worker": "wrangler deploy --dry-run --outdir dist/worker",
+    "start": "node dist/node/node.js",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "test": "vitest run --project node",
+    "test:workers": "vitest run --project workers",
+    "test:all": "vitest run",
+    "fixtures:record": "tsx scripts/record-fixtures.ts",
+    "deploy:config": "tsx scripts/deploy-config.ts",
+    "dev:seed": "tsx --tsconfig tsconfig.json scripts/seed-dev.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.0",
+    "@hono/zod-openapi": "^1.6.3",
+    "@subify/shared": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "fast-xml-parser": "^5.11.2",
+    "hono": "^4.13.0",
+    "kysely": "^0.29.6",
+    "nodemailer": "^10.2.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.8",
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "tsx": "^4.20.0",
+    "typescript": "^7.0.0",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.153.0"
+  }
+}

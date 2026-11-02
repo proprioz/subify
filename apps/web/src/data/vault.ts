@@ -1,0 +1,647 @@
+import { cmac } from '@noble/ciphers/aes.js';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import type { DBCore, DBCoreCursor, DBCoreIndex, DBCoreKeyRange, DBCoreMutateRequest, DBCoreMutateResponse, DBCoreTable, Middleware } from 'dexie';
+import type { SubifyDb } from './db';
+
+/**
+ * Everything the app keeps about the user is sealed on the device with a key only the user's
+ * password (or Face ID / a fingerprint) unlocks. The sealing sits under Dexie, so the rest of the
+ * app reads and writes plain values: each row is stored as its sealed value, plus the fields its
+ * indexes need. Dates, order of addition and status stay readable; channel and video ids become
+ * keyed hashes, so a copy of the database names no channel and no video.
+ *
+ * The ciphers are synchronous (@noble/ciphers): awaiting WebCrypto inside a transaction would let
+ * IndexedDB commit it half-way.
+ */
+
+/** The password's minimum length: letters allowed. */
+export const MINIMUM_PASSWORD_LENGTH = 8;
+
+/** When the app asks for the password again: minutes unused, or never (the key is then kept on the device). */
+export type LockAfter = 'open' | 'foreground' | 5 | 15 | 60 | 'never';
+
+export const LOCK_AFTER_CHOICES: readonly { value: LockAfter; label: string }[] = [
+  { value: 'open', label: 'Each time the app opens' },
+  { value: 'foreground', label: 'Each time you come back to it' },
+  { value: 5, label: 'After 5 minutes unused' },
+  { value: 15, label: 'After 15 minutes unused' },
+  { value: 60, label: 'After 60 minutes unused' },
+  { value: 'never', label: 'Never' },
+];
+
+/** What the keyring table holds: the key, sealed by each way of unlocking it. Never sealed itself. */
+export interface Keyring {
+  id: 'local';
+  kdf: { salt: Uint8Array; iterations: number; memoryKiB: number };
+  /** The key, sealed with the password's key. */
+  password: Uint8Array;
+  /** The key, sealed with what the device's passkey gives for `salt` (WebAuthn PRF). */
+  biometrics: { credential: string; salt: Uint8Array; sealed: Uint8Array } | null;
+  /** The key itself, only when the user chose never to be asked. */
+  key: Uint8Array | null;
+  lockAfter: LockAfter;
+}
+
+export class LockedError extends Error {
+  override readonly name = 'LockedError';
+
+  constructor() {
+    super('The app is locked.');
+  }
+}
+
+interface Keys {
+  /** 64 bytes: what the keyring seals. */
+  master: Uint8Array;
+  seal: Uint8Array;
+  hash: Uint8Array;
+}
+
+type State = { kind: 'plain' } | { kind: 'locked' } | { kind: 'open'; keys: Keys };
+
+/** Whether the database is sealed and, if so, whether its key is in memory. */
+export class LocalCipher {
+  state: State = { kind: 'plain' };
+
+  get isOpen(): boolean {
+    return this.state.kind === 'open';
+  }
+}
+
+const KEY_BYTES = 64;
+const KDF = { iterations: 2, memoryKiB: 64 * 1024 };
+/** A keyring asking for more is refused: it would freeze the app at each unlock. */
+const MAX_KDF = { iterations: 4, memoryKiB: 256 * 1024 };
+
+export async function readKeyring(db: SubifyDb): Promise<Keyring | undefined> {
+  return db.keyring.get('local');
+}
+
+/** At launch: no keyring yet asks for a password; a kept key opens at once; otherwise locked. */
+export async function startVault(db: SubifyDb): Promise<'setup' | 'locked' | 'open'> {
+  const keyring = await readKeyring(db);
+
+  if (keyring === undefined) {
+    db.cipher.state = { kind: 'plain' };
+
+    return 'setup';
+  }
+
+  if (keyring.key !== null) {
+    db.cipher.state = { kind: 'open', keys: deriveKeys(keyring.key) };
+
+    return 'open';
+  }
+
+  db.cipher.state = { kind: 'locked' };
+
+  return 'locked';
+}
+
+/** Chooses the password and seals what the device already holds, in one transaction. */
+export async function createVault(db: SubifyDb, password: string, random: (bytes: number) => Uint8Array = randomBytes): Promise<void> {
+  checkLength(password);
+  const master = random(KEY_BYTES);
+  const salt = random(16);
+  const passwordKey = await stretch(password, salt, KDF.iterations, KDF.memoryKiB);
+  const keyring: Keyring = {
+    id: 'local',
+    kdf: { salt, ...KDF },
+    password: sealBytes(passwordKey, master, aad('password'), random),
+    biometrics: null,
+    key: null,
+    lockAfter: 'open',
+  };
+
+  await db.transaction('rw', [db.subscriptions, db.items, db.thumbnails, db.meta, db.keyring], async () => {
+    const rows = {
+      subscriptions: await db.subscriptions.toArray(),
+      items: await db.items.toArray(),
+      thumbnails: await db.thumbnails.toArray(),
+      meta: await db.meta.toArray(),
+    };
+
+    await Promise.all([db.subscriptions.clear(), db.items.clear(), db.thumbnails.clear(), db.meta.clear()]);
+    db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+
+    try {
+      await db.subscriptions.bulkPut(rows.subscriptions);
+      await db.items.bulkPut(rows.items);
+      await db.thumbnails.bulkPut(rows.thumbnails);
+      await db.meta.bulkPut(rows.meta);
+      await db.keyring.put(keyring);
+    } catch (error) {
+      db.cipher.state = { kind: 'plain' };
+      throw error;
+    }
+  });
+}
+
+/** Opens the database with the password. False when it isn't the right one. */
+export async function unlockWithPassword(db: SubifyDb, password: string): Promise<boolean> {
+  const master = await masterFromPassword(db, password);
+
+  if (master !== null) {
+    db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+  }
+
+  return master !== null;
+}
+
+/** Opens the database with what the passkey gave. False when it doesn't open the key. */
+export async function unlockWithBiometrics(db: SubifyDb, output: Uint8Array): Promise<boolean> {
+  const keyring = await readKeyring(db);
+  const master = keyring?.biometrics ? openBytes(output, keyring.biometrics.sealed, aad('biometrics')) : null;
+
+  if (master !== null) {
+    db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
+  }
+
+  return master !== null;
+}
+
+/** Forgets the key in memory. A key kept on the device (“never”) stays. */
+export function lockVault(db: SubifyDb): void {
+  if (db.cipher.state.kind === 'open') {
+    db.cipher.state = { kind: 'locked' };
+  }
+}
+
+/** Whether a password is the app's, without changing anything. */
+export async function isAppPassword(db: SubifyDb, password: string): Promise<boolean> {
+  return (await masterFromPassword(db, password)) !== null;
+}
+
+export async function changePassword(db: SubifyDb, current: string, next: string, random: (bytes: number) => Uint8Array = randomBytes): Promise<boolean> {
+  checkLength(next);
+  const master = await masterFromPassword(db, current);
+
+  if (master === null) {
+    return false;
+  }
+
+  const salt = random(16);
+  const passwordKey = await stretch(next, salt, KDF.iterations, KDF.memoryKiB);
+  await db.keyring.update('local', { kdf: { salt, ...KDF }, password: sealBytes(passwordKey, master, aad('password'), random) });
+
+  return true;
+}
+
+/** Only while unlocked: “never” keeps the key on the device, any other choice removes it. */
+export async function setLockAfter(db: SubifyDb, lockAfter: LockAfter): Promise<void> {
+  const keys = openKeys(db);
+  await db.keyring.update('local', { lockAfter, key: lockAfter === 'never' ? keys.master : null });
+}
+
+export async function addBiometrics(db: SubifyDb, credential: string, salt: Uint8Array, output: Uint8Array, random: (bytes: number) => Uint8Array = randomBytes): Promise<void> {
+  const keys = openKeys(db);
+  await db.keyring.update('local', { biometrics: { credential, salt, sealed: sealBytes(output, keys.master, aad('biometrics'), random) } });
+}
+
+export async function removeBiometrics(db: SubifyDb): Promise<void> {
+  await db.keyring.update('local', { biometrics: null });
+}
+
+async function masterFromPassword(db: SubifyDb, password: string): Promise<Uint8Array | null> {
+  const keyring = await readKeyring(db);
+
+  if (keyring === undefined) {
+    return null;
+  }
+
+  const { salt, iterations, memoryKiB } = keyring.kdf;
+
+  if (iterations > MAX_KDF.iterations || memoryKiB > MAX_KDF.memoryKiB) {
+    return null;
+  }
+
+  return openBytes(await stretch(password, salt, iterations, memoryKiB), keyring.password, aad('password'));
+}
+
+function openKeys(db: SubifyDb): Keys {
+  if (db.cipher.state.kind !== 'open') {
+    throw new LockedError();
+  }
+
+  return db.cipher.state.keys;
+}
+
+function checkLength(password: string): void {
+  if (password.length < MINIMUM_PASSWORD_LENGTH) {
+    throw new Error(`The password needs at least ${MINIMUM_PASSWORD_LENGTH} characters.`);
+  }
+}
+
+/** hash-wasm loads only when a password is checked, not with the app. */
+async function stretch(password: string, salt: Uint8Array, iterations: number, memoryKiB: number): Promise<Uint8Array> {
+  const { argon2id } = await import('hash-wasm');
+
+  return argon2id({ password, salt, iterations, memorySize: memoryKiB, parallelism: 1, hashLength: 32, outputType: 'binary' });
+}
+
+function deriveKeys(master: Uint8Array): Keys {
+  return { master, seal: master.slice(0, 32), hash: master.slice(32, 64) };
+}
+
+function aad(...parts: string[]): Uint8Array {
+  return new TextEncoder().encode(['subify-local', ...parts].join('|'));
+}
+
+const NONCE_BYTES = 24;
+
+function sealBytes(key: Uint8Array, plaintext: Uint8Array, associated: Uint8Array, random: (bytes: number) => Uint8Array = randomBytes): Uint8Array {
+  const nonce = random(NONCE_BYTES);
+  const ciphertext = xchacha20poly1305(key, nonce, associated).encrypt(plaintext);
+  const sealed = new Uint8Array(NONCE_BYTES + ciphertext.length);
+  sealed.set(nonce);
+  sealed.set(ciphertext, NONCE_BYTES);
+
+  return sealed;
+}
+
+function openBytes(key: Uint8Array, sealed: Uint8Array, associated: Uint8Array): Uint8Array | null {
+  try {
+    return xchacha20poly1305(key, sealed.subarray(0, NONCE_BYTES), associated).decrypt(sealed.subarray(NONCE_BYTES));
+  } catch {
+    return null;
+  }
+}
+
+function randomBytes(count: number): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(count));
+}
+
+// --- The sealing middleware ---
+
+interface TableSpec {
+  /** Whether the primary key is a channel or video id, stored as a keyed hash. */
+  hashKey: boolean;
+  /** Fields kept readable for their indexes. */
+  clear: readonly string[];
+  /** Fields stored as a keyed hash for their indexes. */
+  hashed: readonly string[];
+}
+
+const SEALED: Record<string, TableSpec> = {
+  subscriptions: { hashKey: true, clear: ['addedAt', 'status'], hashed: [] },
+  items: { hashKey: true, clear: ['published', 'upcoming'], hashed: ['channel'] },
+  thumbnails: { hashKey: true, clear: [], hashed: ['channel'] },
+  meta: { hashKey: false, clear: [], hashed: [] },
+};
+
+/** Settings the locked screen needs, stored readable: nothing about the user's channels. */
+const CLEAR_META = new Set(['theme']);
+
+const RANGE_EQUAL = 1;
+const RANGE_ANY = 3;
+const RANGE_NEVER = 4;
+
+export function sealing(cipher: LocalCipher): Middleware<DBCore> {
+  return {
+    stack: 'dbcore',
+    name: 'sealing',
+    create: (down) => ({
+      ...down,
+      table: (name) => {
+        const table = down.table(name);
+        const spec = SEALED[name];
+
+        return spec === undefined ? table : sealedTable(table, name, spec, cipher);
+      },
+    }),
+  };
+}
+
+interface Row {
+  key: string;
+  /** The real key, sealed: only for hashed keys. */
+  x?: Uint8Array;
+  v: Uint8Array;
+  [field: string]: unknown;
+}
+
+function isSealedRow(row: unknown): row is Row {
+  return typeof row === 'object' && row !== null && (row as { v?: unknown }).v instanceof Uint8Array;
+}
+
+function sealedTable(table: DBCoreTable, name: string, spec: TableSpec, cipher: LocalCipher): DBCoreTable {
+  const clearKey = (key: unknown) => !spec.hashKey && typeof key === 'string' && CLEAR_META.has(key);
+
+  /** The keys, null while nothing is sealed yet. */
+  const keys = (): Keys | null => {
+    switch (cipher.state.kind) {
+      case 'plain':
+        return null;
+      case 'locked':
+        throw new LockedError();
+      case 'open':
+        return cipher.state.keys;
+    }
+  };
+
+  const hash = (keys: Keys, value: unknown): unknown =>
+    typeof value === 'string' ? toBase64Url(cmac(new TextEncoder().encode(value), keys.hash)) : value;
+  const stored = (keys: Keys, key: unknown) => (spec.hashKey ? hash(keys, key) : key);
+
+  const seal = (keys: Keys, value: Record<string, unknown>): unknown => {
+    if (clearKey(value.key)) {
+      return value;
+    }
+
+    const key = stored(keys, value.key) as string;
+    const row: Row = { key, v: sealBytes(keys.seal, encodeValue(value), aad(name, key)) };
+
+    for (const field of spec.clear) {
+      if (value[field] !== undefined) {
+        row[field] = value[field];
+      }
+    }
+
+    for (const field of spec.hashed) {
+      row[field] = hash(keys, value[field]);
+    }
+
+    if (spec.hashKey) {
+      row.x = sealBytes(keys.seal, new TextEncoder().encode(String(value.key)), aad(name, key, 'key'));
+    }
+
+    return row;
+  };
+
+  const open = (row: unknown): unknown => {
+    if (!isSealedRow(row)) {
+      return row;
+    }
+
+    const opened = openBytes(sealKey(), row.v, aad(name, row.key));
+
+    if (opened === null) {
+      throw new Error(`A row of ${name} doesn’t open with this key.`);
+    }
+
+    return decodeValue(opened);
+  };
+
+  const realKey = (row: unknown): unknown => {
+    if (!isSealedRow(row) || !spec.hashKey) {
+      return (row as { key?: unknown } | undefined)?.key;
+    }
+
+    const opened = row.x === undefined ? null : openBytes(sealKey(), row.x, aad(name, row.key, 'key'));
+
+    if (opened === null) {
+      throw new Error(`A key of ${name} doesn’t open with this key.`);
+    }
+
+    return new TextDecoder().decode(opened);
+  };
+
+  // A sealed row read without the key means the app is locked, whatever the state says.
+  const sealKey = (): Uint8Array => {
+    if (cipher.state.kind !== 'open') {
+      throw new LockedError();
+    }
+
+    return cipher.state.keys.seal;
+  };
+
+  const hashedParts = (index: DBCoreIndex): boolean[] => {
+    const paths = Array.isArray(index.keyPath) ? index.keyPath : [index.keyPath ?? 'key'];
+
+    return paths.map((path) => (index.isPrimaryKey ? spec.hashKey : spec.hashed.includes(path)));
+  };
+
+  const translateKey = (keys: Keys, index: DBCoreIndex, key: unknown): unknown => {
+    const parts = hashedParts(index);
+
+    if (Array.isArray(index.keyPath)) {
+      return (key as unknown[]).map((part, i) => (parts[i] ? hash(keys, part) : part));
+    }
+
+    return parts[0] ? hash(keys, key) : key;
+  };
+
+  const translateRange = (keys: Keys, index: DBCoreIndex, range: DBCoreKeyRange): DBCoreKeyRange => {
+    const parts = hashedParts(index);
+
+    if (!parts.includes(true) || range.type === RANGE_ANY || range.type === RANGE_NEVER) {
+      return range;
+    }
+
+    const compound = Array.isArray(index.keyPath);
+    const lower = compound ? (range.lower as unknown[]) : [range.lower];
+    const upper = compound ? (range.upper as unknown[]) : [range.upper];
+    const exact = parts.every((hashed, i) => !hashed || (typeof lower[i] === 'string' && lower[i] === upper[i]));
+
+    if (!exact || (!compound && range.type !== RANGE_EQUAL && (range.lowerOpen || range.upperOpen))) {
+      throw new Error(`Only exact values can be looked up in ${name}.${String(index.name)}: they are stored as hashes.`);
+    }
+
+    return { ...range, lower: translateKey(keys, index, range.lower), upper: translateKey(keys, index, range.upper) };
+  };
+
+  const indexKey = (index: DBCoreIndex, cursor: DBCoreCursor, value: () => Record<string, unknown>, primaryKey: () => unknown): unknown => {
+    const parts = hashedParts(index);
+
+    if (!parts.includes(true)) {
+      return cursor.key;
+    }
+
+    if (index.isPrimaryKey) {
+      return primaryKey();
+    }
+
+    if (Array.isArray(index.keyPath)) {
+      return index.keyPath.map((path, i) => (parts[i] ? value()[path] : (cursor.key as unknown[])[i]));
+    }
+
+    return value()[index.keyPath as string];
+  };
+
+  return {
+    ...table,
+
+    mutate: async (req: DBCoreMutateRequest) => {
+      const k = keys();
+
+      if (k === null) {
+        return table.mutate(req);
+      }
+
+      switch (req.type) {
+        case 'add':
+        case 'put': {
+          const realKeys = req.values.map((value) => (value as { key: unknown }).key);
+          const { criteria: _criteria, changeSpec: _changeSpec, updates: _updates, ...rest } = req as typeof req & { criteria?: unknown; changeSpec?: unknown; updates?: unknown };
+          const sealedReq = { ...rest, values: req.values.map((value) => seal(k, value as Record<string, unknown>)) };
+
+          if (Array.isArray(rest.keys)) {
+            sealedReq.keys = rest.keys.map((key) => stored(k, key));
+          }
+
+          const result = await table.mutate(sealedReq);
+
+          // Dexie expects the keys the app wrote, not their hashes.
+          const response: DBCoreMutateResponse = {
+            numFailures: result.numFailures,
+            failures: result.failures,
+            lastResult: result.lastResult === undefined ? undefined : realKeys[realKeys.length - 1],
+          };
+
+          if (result.results !== undefined) {
+            response.results = result.results.map((_, i) => realKeys[i]);
+          }
+
+          return response;
+        }
+        case 'delete':
+          return table.mutate({ ...req, keys: req.keys.map((key) => stored(k, key)) });
+        case 'deleteRange':
+          return table.mutate({ ...req, range: translateRange(k, table.schema.primaryKey, req.range) });
+      }
+    },
+
+    get: async (req) => {
+      if (clearKey(req.key)) {
+        return table.get(req);
+      }
+
+      const k = keys();
+
+      return k === null ? refuseSealed(await table.get(req)) : open(await table.get({ ...req, key: stored(k, req.key) }));
+    },
+
+    getMany: async (req) => {
+      const k = keys();
+
+      if (k === null) {
+        return (await table.getMany(req)).map(refuseSealed);
+      }
+
+      return (await table.getMany({ ...req, keys: req.keys.map((key) => stored(k, key)) })).map(open);
+    },
+
+    count: async (req) => {
+      const k = keys();
+
+      return table.count(k === null ? req : { ...req, query: { ...req.query, range: translateRange(k, req.query.index, req.query.range) } });
+    },
+
+    query: async (req) => {
+      const k = keys();
+
+      if (k === null) {
+        const result = await table.query(req);
+
+        return req.values ? { ...result, result: result.result.map(refuseSealed) } : result;
+      }
+
+      const query = { ...req.query, range: translateRange(k, req.query.index, req.query.range) };
+      const keysOnly = !req.values;
+
+      if (keysOnly && !spec.hashKey) {
+        return table.query({ ...req, query });
+      }
+
+      const result = await table.query({ ...req, query, values: true });
+
+      return { ...result, result: result.result.map(keysOnly ? realKey : open) };
+    },
+
+    openCursor: async (req) => {
+      const k = keys();
+
+      if (k === null) {
+        return table.openCursor(req);
+      }
+
+      const { index } = req.query;
+      const cursor = await table.openCursor({ ...req, values: true, query: { ...req.query, range: translateRange(k, index, req.query.range) } });
+
+      if (cursor === null) {
+        return null;
+      }
+
+      // Opened once per position, however many times Dexie reads it.
+      let at: unknown;
+      let opened: Record<string, unknown> | undefined;
+      const value = () => {
+        if (opened === undefined || at !== cursor.primaryKey) {
+          at = cursor.primaryKey;
+          opened = open(cursor.value) as Record<string, unknown>;
+        }
+
+        return opened;
+      };
+      const primaryKey = () => (spec.hashKey ? value().key : cursor.primaryKey);
+
+      return Object.create(cursor, {
+        value: { get: value },
+        primaryKey: { get: primaryKey },
+        key: { get: () => indexKey(index, cursor, value, primaryKey) },
+        continue: { value: (key?: unknown) => (key === undefined ? cursor.continue() : cursor.continue(translateKey(k, index, key))) },
+        continuePrimaryKey: { value: (key: unknown, primary: unknown) => cursor.continuePrimaryKey(translateKey(k, index, key), stored(k, primary)) },
+      }) as DBCoreCursor;
+    },
+  };
+}
+
+/** Before any key is set, a sealed row means a locked database read too early. */
+function refuseSealed(row: unknown): unknown {
+  if (isSealedRow(row)) {
+    throw new LockedError();
+  }
+
+  return row;
+}
+
+/** JSON, with binary fields (avatars' bytes, slot ids, thumbnails) kept as base64. */
+function encodeValue(value: unknown): Uint8Array {
+  return new TextEncoder().encode(
+    JSON.stringify(value, function (this: Record<string, unknown>, key, json: unknown) {
+      const raw = this[key];
+
+      if (raw instanceof Uint8Array) {
+        return { $u8: toBase64Url(raw) };
+      }
+
+      if (raw instanceof ArrayBuffer) {
+        return { $ab: toBase64Url(new Uint8Array(raw)) };
+      }
+
+      return json;
+    }),
+  );
+}
+
+function decodeValue(bytes: Uint8Array): unknown {
+  return JSON.parse(new TextDecoder().decode(bytes), (_, json: unknown) => {
+    if (typeof json === 'object' && json !== null && !Array.isArray(json)) {
+      const record = json as Record<string, unknown>;
+
+      if (typeof record.$u8 === 'string' && Object.keys(record).length === 1) {
+        return fromBase64Url(record.$u8);
+      }
+
+      if (typeof record.$ab === 'string' && Object.keys(record).length === 1) {
+        return fromBase64Url(record.$ab).buffer;
+      }
+    }
+
+    return json;
+  });
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (char) => char.charCodeAt(0));
+}

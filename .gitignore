@@ -1,0 +1,36 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+
+# Local configuration and data. The *.example files are committed.
+.env
+.dev.vars
+/apps/server/data/
+/data/
+*.sqlite
+*.sqlite-*
+
+# Wrangler's local state (local D1, caches), and the configuration a deploy writes.
+.wrangler/
+/apps/server/wrangler.deploy.toml
+
+# Screenshots, page snapshots and console logs of the Playwright MCP server.
+.playwright-mcp/
+
+# Personal AI tool settings. Shared instructions for agents are in AGENTS.md.
+CLAUDE.md
+CLAUDE.local.md
+/.claude/
+.mcp.json
+/.cursor/
+/.vscode/mcp.json
+/.amp/settings.json
+
+# Personal editor settings.
+/.idea
+/.zed
+/.fleet
+/.vscode/settings.json
