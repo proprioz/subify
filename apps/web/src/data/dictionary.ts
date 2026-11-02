@@ -5,8 +5,9 @@ import type { OnStep } from './subscriptions';
 
 /**
  * The Wikidata dictionary (docs/FEATURES.md, D16): the YouTube channels Wikidata names, with
- * their @handles and names. The app downloads all of it, never part of it, the first time the
- * user looks a name up, and again only when the server has a newer one; it then searches it on
+ * their @handles and names. The app downloads all of it, never part of it, at a refresh of the
+ * feed (or the first name looked up, if that comes first), and again only when the server has a
+ * newer one; it then searches it on
  * the device, so the server never sees a name the dictionary knows. It is public data, rebuilt
  * from the server at will, and stays out of backups.
  */
@@ -33,12 +34,26 @@ interface Entry extends NamedChannel {
 /** The parsed dictionary of each database, kept while the app runs: parsing takes a moment. */
 const parsed = new WeakMap<SubifyDb, Promise<Entry[]>>();
 
+/** A download under way, by database: a lookup during a refresh's download waits for it rather than starting another. */
+const downloading = new WeakMap<SubifyDb, Promise<boolean>>();
+
 /**
  * Makes sure the device has the server's latest dictionary, downloading every slice if not.
  * False when neither the server nor the device has one.
  */
-export async function ensureDictionary(db: SubifyDb, api: Api, onStep: OnStep = () => {}): Promise<boolean> {
+export function ensureDictionary(db: SubifyDb, api: Api, onStep: OnStep = () => {}): Promise<boolean> {
   onStep({ kind: 'dictionary' });
+  let pending = downloading.get(db);
+
+  if (pending === undefined) {
+    pending = download(db, api, onStep).finally(() => downloading.delete(db));
+    downloading.set(db, pending);
+  }
+
+  return pending;
+}
+
+async function download(db: SubifyDb, api: Api, onStep: OnStep): Promise<boolean> {
   const latest = await api.dictionary();
 
   if (latest === null) {
@@ -66,6 +81,27 @@ export async function ensureDictionary(db: SubifyDb, api: Api, onStep: OnStep = 
   parsed.delete(db);
 
   return true;
+}
+
+/** A refresh checks the dictionary's version at most this often: the server renews it every few days. */
+export const DICTIONARY_CHECK = 24 * 60 * 60_000;
+
+/**
+ * What a refresh of the feed does for the dictionary, once the feed is up to date: downloads it
+ * when the device lacks it or the server has a newer one, checked at most once a day. Never
+ * throws: a failure leaves the copy the device has, and the next refresh tries again.
+ */
+export async function refreshDictionary(db: SubifyDb, api: Api, now = Date.now()): Promise<void> {
+  if (((await getMeta<number>(db, 'dictionaryCheckedAt')) ?? -Infinity) > now - DICTIONARY_CHECK) {
+    return;
+  }
+
+  try {
+    await ensureDictionary(db, api);
+    await setMeta(db, 'dictionaryCheckedAt', now);
+  } catch {
+    // Offline, or the server busy: nothing to tell the user, who asked for the feed.
+  }
 }
 
 /** Whether the device has a dictionary: the search while typing works offline once it does. */

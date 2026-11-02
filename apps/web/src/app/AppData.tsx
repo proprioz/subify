@@ -4,6 +4,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useR
 import { Api, ServerError } from '../data/api';
 import { type AskConnection, CONNECTION_TRUSTS, ConnectionGate, type ConnectionTrust, isCancelled } from '../data/connection-check';
 import { SubifyDb } from '../data/db';
+import { refreshDictionary } from '../data/dictionary';
 import { runImportQueue } from '../data/follow-many';
 import { countryFlag, countryName } from '../data/format';
 import { loadTheme } from '../data/settings';
@@ -169,26 +170,43 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [db, vault]);
 
   const sync = useCallback(() => {
-    running.current ??= (async () => {
-      try {
-        // Inside the approved step, so a sync resumed back on screen does not ask again. The
-        // refresh shows as running only from there: while the connection check waits for the
-        // user, nothing is on its way.
-        await gate.run(api, async () => {
-          setSyncing(true);
-          await syncToTheEnd(() => syncUpdates(db, api), documentVisibility);
-          await dropOldThumbnails(db);
-        });
-        setSyncError(null);
-      } catch (error) {
-        if (!isCancelled(error) && !(error instanceof LockedError)) {
+    running.current ??= new Promise<void>((resolve) => {
+      // The refresh is over once the feed is: the list of channel names that follows doesn't hold it.
+      const settle = (error: unknown) => {
+        if (error === null) {
+          setSyncError(null);
+        } else if (!isCancelled(error) && !(error instanceof LockedError)) {
           setSyncError(error instanceof ServerError ? error.message : 'Couldn’t update the feed.');
         }
-      } finally {
+
         running.current = null;
         setSyncing(false);
-      }
-    })();
+        resolve();
+      };
+
+      // Inside the approved step, so a sync resumed back on screen does not ask again. The
+      // refresh shows as running only from there: while the connection check waits for the
+      // user, nothing is on its way.
+      gate
+        .run(api, async () => {
+          setSyncing(true);
+
+          try {
+            await syncToTheEnd(() => syncUpdates(db, api), documentVisibility);
+            await dropOldThumbnails(db);
+          } catch (error) {
+            settle(error);
+
+            return;
+          }
+
+          settle(null);
+          // Then, in the background but still inside the step the user approved, the list of
+          // channel names: a newer one when the server has it, checked at most once a day.
+          await refreshDictionary(db, api);
+        })
+        .catch(settle);
+    });
 
     return running.current;
   }, [db, api, gate]);

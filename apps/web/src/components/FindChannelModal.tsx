@@ -121,7 +121,9 @@ export function useChannelFinder(onClosed: () => void): ChannelFinder {
         const result = await gate.run(api, async (): Promise<Result> => {
           show({ status: 'searching' });
 
-          if (from === 'dictionary' && isChannelName(query) && (await ensureDictionary(db, api, onStep))) {
+          // The device keeps its list up to date at each refresh: a lookup downloads it only when
+          // the user didn't take it after choosing the password.
+          if (from === 'dictionary' && isChannelName(query) && ((await hasDictionary(db)) || (await ensureDictionary(db, api, onStep)))) {
             onStep({ kind: 'local' });
             const matches = await searchDictionary(db, query);
 

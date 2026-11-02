@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ensureDictionary, hasDictionary, searchDictionary } from '../src/data/dictionary';
+import { DICTIONARY_CHECK, ensureDictionary, hasDictionary, refreshDictionary, searchDictionary } from '../src/data/dictionary';
 import { FakeServer, freshDb } from './fake-server';
 
 const LENA = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -109,6 +109,26 @@ describe('the Wikidata dictionary on the device', () => {
     expect((await searchDictionary(db, 'lena situations'))[0]).toEqual({ id: LENA, handle: 'lenasituations', name: 'Léna Situations' });
     expect(await searchDictionary(db, 'are')).toEqual([]);
     expect(await searchDictionary(db, 'zrte')).toEqual([]);
+  });
+
+  // Refreshing the feed downloads the list without asking: on mobile data, it must not check at every refresh, and a failure must not cost the copy or break the refresh.
+  it('downloads it with a refresh, then checks again only after a day', async () => {
+    const fake = server(1);
+    const db = freshDb();
+    const now = Date.UTC(2026, 10, 2);
+
+    await refreshDictionary(db, fake.api(), now);
+    const first = [...fake.paths];
+    fake.dictionary = { version: 2, slices: [`${ARTE}\tarte\tARTE\n`] };
+    await refreshDictionary(db, fake.api(), now + DICTIONARY_CHECK - 1);
+    const sameDay = fake.paths.length;
+    await expect(refreshDictionary(db, fake.api(async () => { throw new Error('offline'); }), now + DICTIONARY_CHECK + 1)).resolves.toBeUndefined();
+    await refreshDictionary(db, fake.api(), now + DICTIONARY_CHECK + 2);
+
+    expect(first).toEqual(['GET /api/dictionary', 'GET /api/dictionary/0', 'GET /api/dictionary/1', 'GET /api/dictionary/2']);
+    expect(sameDay).toBe(first.length);
+    expect(fake.paths.slice(sameDay)).toEqual(['GET /api/dictionary', 'GET /api/dictionary/0']);
+    expect((await searchDictionary(db, 'arte')).map((channel) => channel.id)).toEqual([ARTE]);
   });
 
   // A server without WIKIDATA_USER_AGENT has no dictionary: the app must say so and fall back, not fail.
