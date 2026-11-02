@@ -178,7 +178,7 @@ Default: empty, off.
 
 ### `MESSAGES_PER_HOUR`, `MESSAGES_PER_DAY`
 
-How many messages the form sends, all senders together. Past them, the form answers “try again later”. Each message also needs a robot check the device solves (a proof of work in [ALTCHA](https://altcha.org)'s format, made by the server itself, with no third party): the server signs a challenge valid 30 minutes (`GET /api/contact`) and accepts each solved one once. A hidden field that robots fill in drops their message silently.
+How many messages the form sends, all senders together. Past them, the form answers “try again later”. Each message also needs a robot check the device solves when the sender ticks “I’m not a robot” (a proof of work in [ALTCHA](https://altcha.org)'s format, solved by ALTCHA's open-source widget bundled with the app and made by the server itself, with no third party): the server signs a challenge valid 30 minutes (`GET /api/contact`) and accepts each solved one once. A hidden field that robots fill in drops their message silently.
 
 Defaults: 5 per hour, 20 per day.
 

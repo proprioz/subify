@@ -969,6 +969,30 @@ ion-progress-bar.refresh-bar {
   overflow: hidden;
 }
 
+/* The contact form's robot check (ALTCHA's widget): a row of the list like the others, in the
+   app's colours. Its own stylesheet resolves its variables on :root, in its own palette, so each
+   one it paints with is set here. */
+altcha-widget {
+  flex: 1;
+  padding: 12px 0;
+  --altcha-max-width: none;
+  --altcha-padding: 0;
+  --altcha-border-width: 0;
+  --altcha-color-base: transparent;
+  --altcha-color-base-content: var(--ion-text-color);
+  --altcha-color-neutral: var(--ion-border-color);
+  --altcha-input-background-color: var(--ion-item-background);
+  --altcha-checkbox-border-color: var(--ion-color-medium);
+  --altcha-checkbox-outline-color: var(--ion-color-primary);
+  --altcha-spinner-color: var(--ion-text-color);
+  --altcha-color-success: var(--ion-color-success);
+  --altcha-color-success-content: var(--ion-color-success-contrast);
+  --altcha-color-error: var(--ion-color-danger);
+  --altcha-color-error-content: var(--ion-color-danger-contrast);
+  --altcha-color-primary: var(--ion-color-primary);
+  --altcha-color-primary-content: var(--ion-color-primary-contrast);
+}
+
 /* The contact link: as quiet as the small print at the bottom of a page. */
 .quiet-link {
   padding: 4px 8px;

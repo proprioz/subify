@@ -1,6 +1,7 @@
-import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonNote, IonSpinner, IonTextarea, IonTitle, IonToolbar } from '@ionic/react';
-import { solveChallenge } from '@subify/shared/proof';
-import { checkmarkCircle } from 'ionicons/icons';
+import { IonButton, IonButtons, IonContent, IonHeader, IonInput, IonItem, IonList, IonModal, IonNote, IonSpinner, IonTextarea, IonTitle, IonToolbar } from '@ionic/react';
+import type { ContactChallengeResponse } from '@subify/shared';
+import type { WidgetMethods } from 'altcha/types';
+import type {} from 'altcha/types/react';
 import { useEffect, useRef, useState } from 'react';
 import { useAppData } from '../app/AppData';
 import { Api, ServerError } from '../data/api';
@@ -9,14 +10,37 @@ import { isCancelled } from '../data/connection-check';
 /** Before the app is unlocked its settings can't be read, the connection check's among them: the form asks the server directly. */
 const directApi = new Api();
 
-type State =
-  | { status: 'asking' }
-  | { status: 'off' }
-  | { status: 'checking' }
-  | { status: 'ready'; proof: string }
-  | { status: 'sending'; proof: string }
-  | { status: 'sent' }
-  | { status: 'failed'; message: string };
+/**
+ * ALTCHA's widget (https://altcha.org) with its styles and its hashing worker, loaded the first
+ * time the form opens. The `external` build, unlike the main one, puts its worker in a file of
+ * its own: the Content-Security-Policy (public/_headers) allows no worker from a blob.
+ */
+let widgetLoaded: Promise<void> | undefined;
+
+function loadWidget(): Promise<void> {
+  widgetLoaded ??= Promise.all([import('altcha/external'), import('altcha/altcha.css'), import('altcha/workers/sha?worker')]).then(
+    ([, , { default: ShaWorker }]) => {
+      $altcha.algorithms.set('SHA-256', () => new ShaWorker());
+      $altcha.i18n.set('en', {
+        ...$altcha.i18n.get('en'),
+        label: 'I’m not a robot',
+        loading: 'Loading…',
+        verifying: 'Checking…',
+        waitAlert: 'Checking… please wait.',
+        error: 'The check failed. Try again.',
+        expired: 'The check expired. Try again.',
+      });
+    },
+    (failure: unknown) => {
+      widgetLoaded = undefined;
+      throw failure;
+    },
+  );
+
+  return widgetLoaded;
+}
+
+type State = { status: 'asking' } | { status: 'off' } | { status: 'form' } | { status: 'sending' } | { status: 'sent' } | { status: 'failed'; message: string };
 
 interface Props {
   isOpen: boolean;
@@ -27,8 +51,8 @@ interface Props {
 
 /**
  * A message to whoever runs this server, which the server sends them by email: their address is
- * never shown. Opening the form asks the server whether it takes messages, and starts the robot
- * check, a second or two of work for the device (packages/shared, proof.ts).
+ * never shown. Opening the form asks the server whether it takes messages; ticking “I’m not a
+ * robot” solves the robot check, a second or two of work for the device (packages/shared, proof.ts).
  */
 export function ContactModal({ isOpen, onClose, unlocked }: Props) {
   const { api, gate } = useAppData();
@@ -37,8 +61,13 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
   const [email, setEmail] = useState('');
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** The solved robot check, once the box is ticked. */
+  const [proof, setProof] = useState<string | null>(null);
   const trap = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
+  const widget = useRef<HTMLElement & WidgetMethods>(null);
+  /** The robot check asked for when the form opened, for the first tick of the box. */
+  const opening = useRef<ContactChallengeResponse | null>(null);
 
   const run = <T,>(step: (server: Api) => Promise<T>): Promise<T> => (unlocked ? gate.run(api, () => step(api)) : step(directApi));
 
@@ -48,19 +77,17 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
     abort.current = controller;
     setState({ status: 'asking' });
     setError(null);
+    setProof(null);
 
     try {
-      const challenge = await run((server) => server.contactChallenge());
+      const [, challenge] = await Promise.all([loadWidget(), run((server) => server.contactChallenge())]);
 
-      if (challenge === null) {
-        setState({ status: 'off' });
-
+      if (controller.signal.aborted) {
         return;
       }
 
-      setState({ status: 'checking' });
-      const proof = await solveChallenge(challenge, controller.signal);
-      setState(proof === null ? { status: 'failed', message: 'The robot check failed. Close the form and try again.' } : { status: 'ready', proof });
+      opening.current = challenge;
+      setState(challenge === null ? { status: 'off' } : { status: 'form' });
     } catch (failure) {
       if (controller.signal.aborted) {
         return;
@@ -85,37 +112,86 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
     // Starts again each time the form opens.
   }, [isOpen]);
 
-  const valid = name.trim() !== '' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && text.trim().length >= 10;
+  const form = state.status === 'form' || state.status === 'sending';
 
-  const send = async () => {
-    if (state.status !== 'ready' || !valid) {
+  useEffect(() => {
+    const element = widget.current;
+
+    if (!form || element === null) {
       return;
     }
 
-    setState({ status: 'sending', proof: state.proof });
+    void element.configure({
+      // The widget asks for a robot check when the box is ticked. The first is the one the form
+      // got when it opened; the next ones, after one expired or the server refused it, go
+      // through the API like every request, the connection check included.
+      challenge: '/api/contact',
+      fetch: async () => {
+        const challenge = opening.current ?? (await run((server) => server.contactChallenge()).catch(stop));
+        opening.current = null;
+
+        if (challenge === null) {
+          setState({ status: 'off' });
+
+          throw new Error('This server doesn’t take messages.');
+        }
+
+        return Response.json(challenge);
+      },
+      // Off: it records the pointer's movements and the scrolling, for ALTCHA's Sentinel server, which this one isn't.
+      humanInteractionSignature: false,
+    });
+
+    const onStateChange = (event: Event) => {
+      const { state: checkState, payload } = (event as CustomEvent<{ state: string; payload?: string }>).detail;
+      setProof(checkState === 'verified' && payload !== undefined ? payload : null);
+    };
+
+    element.addEventListener('statechange', onStateChange);
+
+    return () => element.removeEventListener('statechange', onStateChange);
+    // Set up once each time the form shows.
+  }, [form]);
+
+  /** A connection check the user cancelled closes the form, as when it opens. */
+  const stop = (failure: unknown): never => {
+    if (isCancelled(failure)) {
+      onClose();
+    }
+
+    throw failure;
+  };
+
+  const valid = name.trim() !== '' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && text.trim().length >= 10;
+
+  const send = async () => {
+    if (state.status !== 'form' || proof === null || !valid) {
+      return;
+    }
+
+    setState({ status: 'sending' });
     setError(null);
 
     try {
-      await run((server) =>
-        server.sendMessage({ name: name.trim(), email: email.trim(), text: text.trim(), website: trap.current?.value ?? '', proof: state.proof }),
-      );
+      await run((server) => server.sendMessage({ name: name.trim(), email: email.trim(), text: text.trim(), website: trap.current?.value ?? '', proof }));
       setState({ status: 'sent' });
+      setProof(null);
       setText('');
     } catch (failure) {
+      setState({ status: 'form' });
+
       if (failure instanceof ServerError && failure.status === 400) {
-        // An expired check: a new one, and the message stays as it was.
-        setError(failure.message);
-        void start();
+        // An expired check: the box unticks, ticking it again asks for a new one, and the message stays as it was.
+        setProof(null);
+        widget.current?.reset();
+        setError('The robot check expired. Tick the box again.');
 
         return;
       }
 
-      setState({ status: 'ready', proof: state.proof });
       setError(isCancelled(failure) ? null : failure instanceof ServerError ? failure.message : 'The message couldn’t be sent.');
     }
   };
-
-  const form = state.status === 'checking' || state.status === 'ready' || state.status === 'sending';
 
   return (
     <IonModal isOpen={isOpen} onDidDismiss={onClose}>
@@ -127,7 +203,7 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
           <IonTitle>Contact</IonTitle>
           {form && (
             <IonButtons slot="end">
-              <IonButton strong disabled={state.status !== 'ready' || !valid} onClick={() => void send()}>
+              <IonButton strong disabled={state.status !== 'form' || proof === null || !valid} onClick={() => void send()}>
                 {state.status === 'sending' ? <IonSpinner name="dots" aria-label="Sending…" /> : 'Send'}
               </IonButton>
             </IonButtons>
@@ -188,12 +264,11 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
             </div>
             <IonList inset>
               <IonItem lines="none">
-                {state.status === 'checking' ? <IonSpinner slot="start" name="crescent" /> : <IonIcon slot="start" icon={checkmarkCircle} color="success" aria-hidden="true" />}
-                <IonLabel>{state.status === 'checking' ? 'Checking you’re not a robot…' : 'Not a robot'}</IonLabel>
+                <altcha-widget ref={widget} />
               </IonItem>
             </IonList>
             <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-              The check is a little work for your device, without any service of others.
+              Ticking the box gives your device a second or two of work. ALTCHA is open-source code that comes with the app: no other service takes part.
             </IonNote>
             {error !== null && (
               <IonNote color="danger" role="alert" className="ion-display-block ion-padding">

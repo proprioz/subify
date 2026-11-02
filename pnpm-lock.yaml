@@ -238,6 +238,9 @@ importers:
       '@noble/ciphers':
         specifier: ^2.4.0
         version: 2.4.0
+      altcha:
+        specifier: ^3.5.0
+        version: 3.5.0
       dexie:
         specifier: ^4.4.6
         version: 4.4.6
@@ -1857,6 +1860,9 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  altcha@3.5.0:
+    resolution: {integrity: sha512-wBXNK1bBeWs/XTOZiyE3JQvRNECgFKYEJqcPxFW7tFd7ErG62yQmMlRasygZrza3zyNTTuon3BfMF/PcBcepcw==}
 
   anynum@1.0.1:
     resolution: {integrity: sha512-N6//FLET/tXYNM/F6ABca1oH6fWB+KlTt909Le28WMDBk8oaT4vY17DCrwg2MvmuqUKt3Ni4N5dGJ/EoBgcO6A==}
@@ -4568,6 +4574,10 @@ snapshots:
       fast-uri: 3.1.9
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  altcha@3.5.0:
+    dependencies:
+      hash-wasm: 4.12.0
 
   anynum@1.0.1: {}
 

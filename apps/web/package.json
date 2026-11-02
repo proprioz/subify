@@ -15,6 +15,7 @@
     "@ionic/react": "^9.0.0",
     "@ionic/react-router": "^9.0.0",
     "@noble/ciphers": "^2.4.0",
+    "altcha": "^3.5.0",
     "dexie": "^4.4.6",
     "dexie-react-hooks": "^4.4.0",
     "hash-wasm": "^4.12.0",

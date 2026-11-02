@@ -1,9 +1,9 @@
 /**
- * The contact form's robot check: a proof of work in ALTCHA's format (https://altcha.org), so
- * that its libraries could take over without changing the protocol. The server signs a challenge:
- * the SHA-256 of a salt and a secret number up to `maxnumber`. The device finds the number by
- * trying them all, which takes a second or two, and sends it back. No third party, no cookie, no
- * image to read: what it costs a robot is time.
+ * The contact form's robot check: a proof of work in ALTCHA's format (https://altcha.org). The
+ * server signs a challenge: the SHA-256 of a salt and a secret number up to `maxnumber`. The
+ * device finds the number by trying them all, which takes a second or two, and sends it back. No
+ * third party, no cookie, no image to read: what it costs a robot is time. In the app, ALTCHA's
+ * own widget solves it (apps/web, ContactModal.tsx); `solveChallenge` does the same for tests.
  */
 
 export interface ProofChallenge {
