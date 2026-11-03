@@ -13,7 +13,7 @@ const BENEFITS = [
 
 const TOUR = [
   { shot: <AddShot />, heading: 'Add your channels', text: 'In the Channels tab, paste a channel’s link or @handle, or type its name.' },
-  { shot: <RefreshShot />, heading: 'Refresh when you want', text: 'Subify goes online only when you ask: pull the feed down or tap refresh.' },
+  { shot: <RefreshShot />, heading: 'Refresh when you want', text: 'Subify never goes online on its own: pull the feed down or tap refresh to get your new videos.' },
   { shot: <ChooseShot />, heading: 'Make it yours', text: 'For each channel, choose its videos, Shorts or lives. Keep some channels secret: they stay hidden until you unlock them.' },
   { shot: <BackupShot />, heading: 'Keep a backup', text: 'Your channels live only on this device. Save a backup in Settings now and then.' },
 ];

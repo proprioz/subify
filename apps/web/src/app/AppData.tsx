@@ -69,10 +69,10 @@ const LOCK_TICK = 15_000;
 
 /**
  * Holds the local database and the API client, and keeps things moving while the app is open: the
- * sync the user asks for, the import queue, the theme. The app never syncs on its own, at launch or
- * back in the foreground: it goes online only when the user taps Refresh or pulls to refresh, adds
- * a channel, or has restored a backup. A sync the user started goes on off screen, or resumes once
- * the app is back.
+ * sync the user asks for, the import queue, the theme. The app never goes online on its own, at
+ * launch, back in the foreground or on a timer: only for what the user is doing in it (a refresh,
+ * adding or looking up a channel, a restored backup), with nothing that identifies the device
+ * (D12). A sync the user started goes on off screen, or resumes once the app is back.
  */
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const [db] = useState(() => new SubifyDb());

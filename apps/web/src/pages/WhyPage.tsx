@@ -21,7 +21,7 @@ export function WhyPage() {
           <li>Never a mandatory sign-in: no account, no email, no profile.</li>
           <li>The platform never learns which channels you follow.</li>
           <li>No ads, and nothing that studies your habits.</li>
-          <li>The app goes online only when you ask it to.</li>
+          <li>The app never goes online on its own: only for what you are doing in it, and without sending anything that identifies you.</li>
           <li>
             <Link to="/settings/privacy">Privacy</Link> says exactly who sees what.
           </li>

@@ -33,8 +33,9 @@ export function PrivacyPage() {
 
         <h2>What the server sees</h2>
         <p>
-          The app goes online only when you ask: to add a channel, refresh your feed or restore a backup. The server then sees a few things. It is built not to keep them, nor
-          any log that would give clues about what you follow.
+          The app never goes online on its own, never when it opens or on a timer: only for what you are doing in it, such as adding a channel, refreshing your feed or
+          restoring a backup. Its requests carry nothing that identifies your device or ties one request to another. The server then sees a few things. It is built not to
+          keep them, nor any log that would give clues about what you follow.
         </p>
         <ul>
           <li>When you refresh, your device downloads the news of many channels at once and keeps only yours. The server doesn’t learn which ones are yours.</li>
