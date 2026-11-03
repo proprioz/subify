@@ -12,6 +12,13 @@ import { DAY, MINUTE } from '../catalog/schedule';
  * download all of it and search it themselves, so the server never sees a name the dictionary
  * knows.
  *
+ * An organisation's item often lists several channels (Apple Inc.: Apple, Apple Support): its
+ * labels and @handle belong to one of them at most. Each channel takes the name and handle its own
+ * statement gives (qualifiers P1810 and P11245), and the item's only when the item has no other
+ * channel or its handle statement names this one (qualifier P2397). A channel of such an item
+ * left with nothing of its own is left out: listed under its organisation's name, it would show as
+ * a twin of the channel that name belongs to.
+ *
  * A refresh reads one slice a minute (the channels whose id has the same third character), each
  * well under the query service's 60-second limit and the Free plan's CPU per run, and starts again
  * every WIKIDATA_REFRESH_DAYS. Nothing is read without WIKIDATA_USER_AGENT: Wikimedia asks every
@@ -32,10 +39,16 @@ const HANDLE = /^[\p{L}\p{N}._-]{3,30}$/u;
 const MAX_LABEL = 200;
 
 export function sliceQuery(slice: number): string {
-  return `SELECT ?id ?handle ?label WHERE {
+  return `SELECT DISTINCT ?id ?shared ?named ?channelHandle ?handle ?handleFor ?label WHERE {
   ?item wdt:P2397 ?id .
   FILTER(STRSTARTS(?id, "${dictionarySlicePrefix(slice)}"))
-  OPTIONAL { ?item wdt:P11245 ?handle }
+  ?item p:P2397 ?statement .
+  ?statement ps:P2397 ?id .
+  OPTIONAL { ?item wdt:P2397 ?other . FILTER(?other != ?id) }
+  BIND(BOUND(?other) AS ?shared)
+  OPTIONAL { ?statement pq:P1810 ?named }
+  OPTIONAL { ?statement pq:P11245 ?channelHandle }
+  OPTIONAL { ?item p:P11245 ?handleStatement . ?handleStatement ps:P11245 ?handle . OPTIONAL { ?handleStatement pq:P2397 ?handleFor } }
   OPTIONAL { ?item rdfs:label ?label . FILTER(LANG(?label) IN (${LANGUAGES.map((language) => `"${language}"`).join(', ')})) }
 }`;
 }
@@ -98,42 +111,80 @@ async function saveState(db: Db, state: State): Promise<void> {
   await db.run(stateStatement(state));
 }
 
+/** What the rows of one channel say, before it is decided which of its item's names are its own. */
+interface SliceChannel {
+  /** The item lists other channels too. */
+  shared: boolean;
+  /** The item's handle statement names this channel. */
+  owner: boolean;
+  /** From the channel's statement, from the item's for this channel, from the item's for none. */
+  handles: { own?: string | undefined; item?: string | undefined; other?: string | undefined };
+  /** From the channel's statement (P1810). */
+  names: Set<string>;
+  /** The item's labels. */
+  labels: Set<string>;
+}
+
 /**
  * The query's answer as the dictionary's lines, sorted by channel id: `id`, tab, `handle` (or
  * nothing), tab, the names separated by U+001F. Values that aren't what Wikidata should hold are
  * left out.
  */
 export function parseSlice(tsv: string): string {
-  const channels = new Map<string, { handle: string; labels: Set<string> }>();
+  const channels = new Map<string, SliceChannel>();
 
   for (const line of tsv.split('\n').slice(1)) {
-    const [id, handle, label] = line.split('\t').map(literal);
+    const cells = line.split('\t');
+    const [id, , named, channelHandle, handle, handleFor, label] = cells.map(literal);
 
     if (id === null || id === undefined || !CHANNEL_ID.test(id)) {
       continue;
     }
 
-    const channel = channels.get(id) ?? { handle: '', labels: new Set<string>() };
+    const channel = channels.get(id) ?? { shared: false, handles: {}, names: new Set<string>(), labels: new Set<string>(), owner: false };
     channels.set(id, channel);
-    const cleanHandle = handle?.replace(/^@/, '');
-
-    if (channel.handle === '' && cleanHandle !== undefined && cleanHandle !== null && HANDLE.test(cleanHandle)) {
-      channel.handle = cleanHandle;
+    channel.shared ||= (cells[1] ?? '').includes('true');
+    channel.owner ||= handleFor === id;
+    channel.handles.own ??= cleanHandle(channelHandle);
+    // The item's handle: this channel's when its statement says so, nobody's in particular when it
+    // names no channel, and another channel's otherwise.
+    if (handleFor === id) {
+      channel.handles.item ??= cleanHandle(handle);
+    } else if (handleFor === null || handleFor === undefined) {
+      channel.handles.other ??= cleanHandle(handle);
     }
-
-    // eslint-disable-next-line no-control-regex
-    const name = label?.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
-
-    if (name !== undefined && name !== '' && name.length <= MAX_LABEL) {
-      channel.labels.add(name);
-    }
+    addName(channel.names, named);
+    addName(channel.labels, label);
   }
 
   return [...channels]
-    .filter(([, channel]) => channel.labels.size > 0 || channel.handle !== '')
+    .map(([id, channel]) => {
+      const own = !channel.shared || channel.owner;
+      const handle = channel.handles.own ?? channel.handles.item ?? (own ? channel.handles.other : undefined) ?? '';
+      const names = new Set([...channel.names, ...(own ? channel.labels : [])]);
+
+      return [id, handle, names] as const;
+    })
+    .filter(([, handle, names]) => names.size > 0 || handle !== '')
     .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([id, channel]) => `${id}\t${channel.handle}\t${[...channel.labels].join('\u001f')}\n`)
+    .map(([id, handle, names]) => `${id}\t${handle}\t${[...names].join('\u001f')}\n`)
     .join('');
+}
+
+/** A handle as Wikidata gives it, without its @, or undefined when it isn't one. */
+function cleanHandle(handle: string | null | undefined): string | undefined {
+  const clean = handle?.replace(/^@/, '');
+
+  return clean !== undefined && HANDLE.test(clean) ? clean : undefined;
+}
+
+function addName(names: Set<string>, label: string | null | undefined): void {
+  // eslint-disable-next-line no-control-regex
+  const name = label?.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+
+  if (name !== undefined && name !== '' && name.length <= MAX_LABEL) {
+    names.add(name);
+  }
 }
 
 /** One TSV cell of SPARQL results as text: `"…"`, `"…"@en`, or null for a cell left empty or not a string. */

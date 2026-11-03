@@ -12,6 +12,14 @@ import { FakeFetch, withRecordedChannels, youtubeUrls } from '../support/fake-fe
 const AGENT = 'SubifyBot/1.0 (https://subify.test) feed-reader';
 const A = 'UCAaaaaaaaaaaaaaaaaaaaaa';
 const B = 'UCAbbbbbbbbbbbbbbbbbbbbb';
+const HEADER = '?id\t?shared\t?named\t?channelHandle\t?handle\t?handleFor\t?label';
+
+type Cells = Partial<Record<'named' | 'channelHandle' | 'handle' | 'handleFor' | 'label', string>> & { shared?: boolean };
+
+/** One row of the query's answer: a channel `id`, whether its item lists others, and its other cells as Wikidata writes them. */
+function row(id: string, { shared = false, named = '', channelHandle = '', handle = '', handleFor = '', label = '' }: Cells = {}): string {
+  return [id, `"${shared}"^^<http://www.w3.org/2001/XMLSchema#boolean>`, named, channelHandle, handle, handleFor, label].join('\t');
+}
 
 function sliceUrl(slice: number): string {
   return `https://${WIKIDATA_HOST}/sparql?query=${encodeURIComponent(sliceQuery(slice))}`;
@@ -20,7 +28,7 @@ function sliceUrl(slice: number): string {
 /** Wikidata answering every slice: `first` for slice 0 (ids starting with `UCA`), only the header for the others. */
 function wikidata(first: string, fake = new FakeFetch()): FakeFetch {
   for (let slice = 0; slice < DICTIONARY_SLICES; slice++) {
-    fake.on(sliceUrl(slice), { body: `?id\t?handle\t?label\n${slice === 0 ? first : ''}` });
+    fake.on(sliceUrl(slice), { body: `${HEADER}\n${slice === 0 ? first : ''}` });
   }
 
   return fake;
@@ -52,7 +60,10 @@ describe('the Wikidata dictionary', () => {
 
   // Devices download it whole and compare versions: it must appear only once every slice is in, then be served as stored.
   it('reads one slice a minute and publishes the dictionary once all are in', async () => {
-    const harness = await createHarness({ fake: wikidata(`"${A}"\t"@nasa"\t"NASA"@en\n"${A}"\t"@nasa"\t"Nasa"@fr\n`), config: { wikidataUserAgent: AGENT } });
+    const harness = await createHarness({
+      fake: wikidata(`${row(`"${A}"`, { handle: '"@nasa"', label: '"NASA"@en' })}\n${row(`"${A}"`, { handle: '"@nasa"', label: '"Nasa"@fr' })}\n`),
+      config: { wikidataUserAgent: AGENT },
+    });
 
     await everyMinute(harness, DICTIONARY_SLICES - 1);
     const early = await harness.request('/api/dictionary');
@@ -89,7 +100,7 @@ describe('the Wikidata dictionary', () => {
     const fake = wikidata('').on(sliceUrl(0), { status: 429, body: 'Too Many Requests' });
     const harness = await createHarness({ fake, config: { wikidataUserAgent: AGENT } });
     await everyMinute(harness, 10);
-    fake.on(sliceUrl(0), { body: '?id\t?handle\t?label\n' });
+    fake.on(sliceUrl(0), { body: `${HEADER}\n` });
     harness.setNow(START + 10 * MINUTE);
     await refreshDictionary(harness.platform);
     await everyMinute(harness, 1, START + 11 * MINUTE);
@@ -114,17 +125,35 @@ describe('a slice of Wikidata’s answer', () => {
   // Wikidata is edited by anyone: what isn't a channel id, a handle or a reasonable name must not reach devices.
   it('keeps channel ids, handles and names, and drops the rest', () => {
     const tsv = [
-      '?id\t?handle\t?label',
-      `"${B}"\t\t"Zeta \\"Z\\""@de`,
-      `"${A}"\t"@nasa"\t"NASA"@en`,
-      `"${A}"\t"other"\t"NASA"@mul`,
-      `"${A}"\t"@nasa"\t"Tab\\there"@fr`,
-      `"not-a-channel"\t"@x"\t"X"@en`,
-      `"UCAccccccccccccccccccccc"\t"a b"\t"${'x'.repeat(201)}"@en`,
-      `<http://www.wikidata.org/entity/Q1>\t\t"Q"@en`,
+      HEADER,
+      row(`"${B}"`, { label: '"Zeta \\"Z\\""@de' }),
+      row(`"${A}"`, { handle: '"@nasa"', label: '"NASA"@en' }),
+      row(`"${A}"`, { handle: '"other"', label: '"NASA"@mul' }),
+      row(`"${A}"`, { handle: '"@nasa"', label: '"Tab\\there"@fr' }),
+      row('"not-a-channel"', { handle: '"@x"', label: '"X"@en' }),
+      row('"UCAccccccccccccccccccccc"', { handle: '"a b"', label: `"${'x'.repeat(201)}"@en` }),
+      row('<http://www.wikidata.org/entity/Q1>', { label: '"Q"@en' }),
       '',
     ].join('\n');
 
     expect(parseSlice(tsv)).toBe(`${A}\tnasa\tNASA\u001fTab here\n${B}\t\tZeta "Z"\n`);
+  });
+
+  // An organisation's item lists several channels (Apple Inc.: Apple, Apple Support): giving each
+  // the item's labels and handle showed twins, “Apple Inc. @Apple” twice, on every device.
+  it('gives each channel of an item its own name and handle, and the item’s to the one they belong to', () => {
+    const C = 'UCAccccccccccccccccccccc';
+    const item = { shared: true, handle: '"Apple"', handleFor: `"${A}"` };
+    const tsv = [
+      HEADER,
+      row(`"${A}"`, { ...item, named: '"Apple"', label: '"Apple Inc."@en' }),
+      row(`"${A}"`, { ...item, named: '"Apple"', label: '"Apple"@fr' }),
+      row(`"${B}"`, { ...item, named: '"Apple Support"', channelHandle: '"applesupport"', label: '"Apple Inc."@en' }),
+      // Nothing of its own: under the item's name, it would be the twin of the first.
+      row(`"${C}"`, { ...item, label: '"Apple Inc."@en' }),
+      '',
+    ].join('\n');
+
+    expect(parseSlice(tsv)).toBe(`${A}\tApple\tApple\u001fApple Inc.\n${B}\tapplesupport\tApple Support\n`);
   });
 });
