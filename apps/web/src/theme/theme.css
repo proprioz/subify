@@ -172,6 +172,24 @@ ion-menu ion-item {
   margin: 2px 8px;
 }
 
+/* Swiping between tabs (TabSwipe): the neighbouring tab's page shows beside the current one,
+   although Ionic keeps it hidden, and both slide into place once the finger lets go. The swipe
+   sets their positions and durations as it goes. */
+ion-router-outlet > .ion-page.tab-swipe-peek {
+  display: flex !important;
+}
+
+.ion-page.tab-swipe-settle {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ion-page.tab-swipe-settle {
+    transition: none;
+  }
+}
+
 /* A page's subtitle under iOS's large title (Page): a toolbar only so that it slides under the
    title on scroll, without a toolbar's height. */
 ion-toolbar.page-subtitle {
