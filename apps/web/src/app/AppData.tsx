@@ -1,5 +1,6 @@
-import { useIonAlert } from '@ionic/react';
+import { useIonAlert, useIonToast } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { close } from 'ionicons/icons';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Api, ServerError } from '../data/api';
 import { type AskConnection, CONNECTION_TRUSTS, ConnectionGate, type ConnectionTrust, isCancelled } from '../data/connection-check';
@@ -12,8 +13,9 @@ import { syncToTheEnd, syncUpdates, type Visibility } from '../data/sync';
 import { dropOldThumbnails } from '../data/thumbnails';
 import { forgetKeptKey, LockedError, lockVault, readKeyring, startVault } from '../data/vault';
 import { applyTheme } from '../theme/palette';
-import { updateApp } from '../ui/app-update';
+import { appReplaced, onAppReplaced, updateApp } from '../ui/app-update';
 import { type InstallState, installState } from '../ui/install';
+import { toastPlacement } from '../ui/toast';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -106,6 +108,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const running = useRef<Promise<void> | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [presentToast] = useIonToast();
+  // Asks to load the newer version of the app, which `updateApp` does.
+  const offerUpdate = useCallback(
+    (message: string, button: string) =>
+      void presentToast({
+        message,
+        ...toastPlacement(),
+        buttons: [
+          { text: button, handler: () => void updateApp() },
+          { icon: close, role: 'cancel', htmlAttributes: { 'aria-label': 'Close' } },
+        ],
+      }),
+    [presentToast],
+  );
   const [secretsShown, setSecretsShown] = useState(false);
   const [secretOpened, setSecretOpened] = useState<string | null>(null);
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -175,7 +191,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const settle = (error: unknown) => {
         if (error === null) {
           setSyncError(null);
-        } else if (!isCancelled(error) && !(error instanceof LockedError)) {
+        } else if (isCancelled(error) || error instanceof LockedError) {
+          // Nothing to show: the user stopped it, or the app locked.
+        } else if ((error instanceof ServerError && error.code === 'outdated') || appReplaced()) {
+          // The old version failing against a newer server: loading the new one is the fix.
+          setSyncError(null);
+          offerUpdate('This version of the app is out of date.', 'Update');
+        } else {
           setSyncError(error instanceof ServerError ? error.message : 'Couldn’t update the feed.');
         }
 
@@ -209,7 +231,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     });
 
     return running.current;
-  }, [db, api, gate]);
+  }, [db, api, gate, offerUpdate]);
+
+  // A newer version installed at launch still runs the old code until the page reloads: the user
+  // chooses when, rather than losing what they were doing.
+  useEffect(() => onAppReplaced(() => offerUpdate('A new version of the app is ready.', 'Reload')), [offerUpdate]);
 
   useEffect(() => {
     const onVisibilityChange = () => {

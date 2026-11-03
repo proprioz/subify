@@ -4,12 +4,54 @@ const INSTALL_TIMEOUT = 30_000;
 let updating: Promise<void> | null = null;
 
 /**
+ * Whether a newer version of the app took over from the one this page runs. At launch the browser
+ * checks `sw.js` (D12): a new service worker installs and takes over at once (it skips waiting),
+ * but the page keeps running the old code, whose lazy chunks the new deploy no longer serves.
+ */
+let replaced = false;
+const replacedListeners = new Set<() => void>();
+
+// A page the service worker did not load gets it on first install: that is no new version.
+if (navigator.serviceWorker?.controller) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    replaced = true;
+    replacedListeners.forEach((listener) => listener());
+  });
+}
+
+// A lazy chunk that fails to load is likely one the new deploy removed (the error still reaches the caller).
+window.addEventListener('vite:preloadError', () => void updateApp());
+
+/** Whether a newer version of the app has taken over from the code this page runs. */
+export function appReplaced(): boolean {
+  return replaced;
+}
+
+/** Calls `listener` once a newer version of the app has taken over; returns the unsubscribe. */
+export function onAppReplaced(listener: () => void): () => void {
+  if (replaced) {
+    listener();
+  }
+
+  replacedListeners.add(listener);
+
+  return () => replacedListeners.delete(listener);
+}
+
+/**
  * Loads the server's version of the app, when the server answered in a format this one does not
- * know. The page and the server come from the same deploy, so a newer server always has a newer
- * app: the service worker fetches it, takes over (it skips waiting) and the page reloads. Without a
- * service worker, or with nothing new to install, the app keeps running and shows the error.
+ * know, a lazy chunk failed to load, or the user asked. The page and the server come from the same
+ * deploy, so a newer server always has a newer app: when it already took over the page reloads;
+ * otherwise the service worker fetches it, takes over (it skips waiting) and the page reloads.
+ * Without a service worker, or with nothing new to install, the app keeps running and shows the error.
  */
 export function updateApp(): Promise<void> {
+  if (replaced) {
+    window.location.reload();
+
+    return Promise.resolve();
+  }
+
   updating ??= (async () => {
     try {
       const registration = await navigator.serviceWorker?.getRegistration();
