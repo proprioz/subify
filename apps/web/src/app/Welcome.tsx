@@ -102,9 +102,6 @@ export function Tour({ onDone, finish }: { onDone: () => void; finish: string })
               <IonButton onClick={() => go(step - 1)}>Back</IonButton>
             </IonButtons>
           )}
-          <IonButtons slot="end">
-            <IonButton onClick={() => onDone()}>Skip</IonButton>
-          </IonButtons>
         </IonToolbar>
       </IonHeader>
       <IonContent>
@@ -129,6 +126,11 @@ export function Tour({ onDone, finish }: { onDone: () => void; finish: string })
             <IonButton expand="block" onClick={() => (last ? onDone() : go(step + 1))}>
               {last ? finish : 'Next'}
             </IonButton>
+            {!last && (
+              <IonButton expand="block" fill="clear" color="medium" onClick={() => onDone()}>
+                Skip
+              </IonButton>
+            )}
           </div>
         </Column>
       </IonContent>
