@@ -8,6 +8,8 @@ import {
   IonLabel,
   IonSearchbar,
   useIonAlert,
+  useIonViewDidLeave,
+  useIonViewWillLeave,
 } from '@ionic/react';
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -80,6 +82,12 @@ export function ChannelsPage() {
       setTimeout(() => void searchbar.current?.setFocus(), 300);
     }
   }, [searchParams, setSearchParams]);
+
+  // A search is the business of one visit: coming back, by the tab bar or the side menu, shows the
+  // whole list again. Cleared once the screen is gone, so the list doesn't change under the eyes;
+  // the field lets go of the focus as soon as the screen goes, so the keyboard closes with it.
+  useIonViewWillLeave(() => void searchbar.current?.getInputElement().then((input) => input.blur()));
+  useIonViewDidLeave(() => setSearch(''));
 
   const term = search.trim();
   const visible = (subscriptions ?? []).filter((channel) => secretsShown || !channel.secret);
