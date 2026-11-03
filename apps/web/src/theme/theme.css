@@ -773,6 +773,22 @@ ion-thumbnail.video-thumbnail {
   color: var(--app-placeholder-color);
 }
 
+/* The shade iOS lays over a tapped item, over its thumbnail too: Ionic draws it behind the item's
+   content, where the picture hides it. Material's ripple already covers the picture. */
+.video-card ion-item.ios .video-thumbnail::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--transition);
+}
+
+.video-card ion-item.ios.ion-activated .video-thumbnail::after {
+  background: var(--background-activated);
+  opacity: var(--background-activated-opacity);
+}
+
 /* The placeholder's “why no thumbnail” icon: large enough to read as something to tap, white
    over the blurred picture (VideoCard) whatever its colours. */
 .video-thumbnail ion-button ion-icon {
