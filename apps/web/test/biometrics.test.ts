@@ -89,8 +89,10 @@ describe('a passkey that wasn’t made', () => {
     const user = new Uint8Array(16).fill(9);
     await createPasskey(user, clock(4000));
 
-    const options = (create.mock.calls[0] as unknown as [{ publicKey: { user: { id: Uint8Array; displayName: string } } }])[0].publicKey.user;
+    const options = (create.mock.calls[0] as unknown as [{ publicKey: { user: { id: Uint8Array; name: string; displayName: string } } }])[0].publicKey.user;
     expect(options.id).toEqual(user);
+    // Bitwarden shows `name` under the site: “iPhone” alone said nothing about Subify.
+    expect(options.name).toBe('Subify on iPhone');
     expect(options.displayName).toBe('Subify on iPhone');
   });
 
@@ -103,5 +105,14 @@ describe('a passkey that wasn’t made', () => {
     const result = await createPasskey(new Uint8Array(16), clock(4000));
 
     expect(result).toMatchObject({ credential: toBase64Url(new Uint8Array([7, 7, 7])), unconfirmed: true });
+  });
+
+  it('isn’t asked for again when it didn’t say it gives keys, as Bitwarden on iOS: it then only shows secret channels', async () => {
+    const create = vi.fn(() => Promise.resolve({ rawId: new Uint8Array([5]).buffer, getClientExtensionResults: () => ({}) }));
+    const get = vi.fn();
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_1 like Mac OS X)', maxTouchPoints: 5, credentials: { create, get } });
+
+    expect(await createPasskey(new Uint8Array(16), clock(4000))).toMatchObject({ credential: toBase64Url(new Uint8Array([5])), output: null });
+    expect(get).not.toHaveBeenCalled();
   });
 });

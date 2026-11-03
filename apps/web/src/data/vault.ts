@@ -42,8 +42,11 @@ export interface Keyring {
    * (WebAuthn PRF), or null when the passkey gives nothing (it then only shows secret channels).
    */
   biometrics: { credential: string; salt: Uint8Array; sealed: Uint8Array | null } | null;
-  /** The device's passkey, kept once Face ID is off, so that turning it on again makes no new one. */
-  passkey?: { credential: string; salt: Uint8Array };
+  /**
+   * The device's passkey, kept once Face ID is off, so that turning it on again makes no new one.
+   * `noKey`: it gives no key (no PRF, as Bitwarden on iOS), so it can't lock the app.
+   */
+  passkey?: { credential: string; salt: Uint8Array; noKey?: true };
   /** The key itself, only when the user chose never to be asked. */
   key: Uint8Array | null;
   lockAfter: LockAfter;
@@ -244,7 +247,7 @@ export async function addBiometrics(
 ): Promise<void> {
   const keys = openKeys(db);
   const sealed = output === null ? null : sealBytes(output, keys.master, aad('biometrics'), random);
-  await db.keyring.update('local', { biometrics: { credential, salt, sealed }, passkey: { credential, salt } });
+  await db.keyring.update('local', { biometrics: { credential, salt, sealed }, passkey: { credential, salt, ...(sealed === null ? { noKey: true as const } : {}) } });
 }
 
 /** Remembers the device's passkey, made but not used yet, so that the next try uses it rather than making another. */

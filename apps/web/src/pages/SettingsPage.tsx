@@ -28,6 +28,7 @@ import {
   keyOutline,
   mapOutline,
   lockClosedOutline,
+  lockOpenOutline,
   globeOutline,
   moonOutline,
   phonePortraitOutline,
@@ -50,6 +51,7 @@ import { type Backup, exportBackup, isBackupFile, readBackup, restoreBackup } fr
 import { BackupError, MINIMUM_PASSWORD_LENGTH } from '../data/backup-cipher';
 import { connectionCheckOn, setConnectionCheck } from '../data/connection-check';
 import { getMeta, setMeta } from '../data/db';
+import { forgetSecretChannels } from '../data/secret';
 import { ageLabel } from '../data/format';
 import { loadTheme, type Theme } from '../data/settings';
 import { canUnlock, changePassword, isAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter, setPassword as setAppPassword } from '../data/vault';
@@ -87,6 +89,23 @@ export function SettingsPage() {
   const hasPassword = (keyring?.password ?? null) !== null;
   const biometricsOn = (keyring?.biometrics ?? null) !== null;
   const locks = canUnlock(keyring);
+  // Locked for real only when the key isn't kept on the device (“never”).
+  const protectedByLock = locks && keyring?.lockAfter !== 'never';
+  const passkeyLocks = (keyring?.biometrics?.sealed ?? null) !== null;
+  const lockedWith = passkeyLocks && hasPassword ? 'passkey or password' : passkeyLocks ? 'passkey' : 'password';
+  // What locking adds to the encryption every device has, said plainly: it is the question people ask.
+  const lockExplained = protectedByLock
+    ? `Someone using your unlocked ${platformDevice()}, or holding a copy of its data, can’t read your channels. If you lose your ${lockedWith}, nothing can open them again: only a backup brings them back.`
+    : [
+        `Subify’s data is encrypted, and safe on a lost or stolen ${platformDevice()} that is locked. But its key stays on this device: anyone using your unlocked ${platformDevice()} can open Subify, and a copy of the device’s data can be read.`,
+        locks
+          ? 'To close both, choose when Subify asks to unlock.'
+          : biometricsOn
+            ? 'Your passkey’s password manager can’t lock Subify: the passkey only shows secret channels. To close both, set a password.'
+            : 'To close both, lock Subify with a passkey or a password.',
+      ].join(' ');
+  // Whether the passkey is the secret channels' lock, with secret channels to guard.
+  const passkeyGuardsSecrets = useLiveQuery(async () => (await getMeta(db, 'secretUnlock')) === 'app' && (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]) ?? false;
 
   const toast = (message: string) => showToast(message, 2500);
 
@@ -230,6 +249,34 @@ export function SettingsPage() {
       return;
     }
 
+    // Without a password, the passkey alone keeps secret channels out of sight: turned off, it
+    // would leave them with no lock, and anyone holding the open app could choose a PIN for them.
+    if (passkeyGuardsSecrets && !hasPassword) {
+      setLockChoiceDrawn((drawn) => drawn + 1);
+      void presentAlert({
+        header: 'Your secret channels need another lock',
+        message:
+          'The passkey is all that keeps them out of sight. Choose a PIN for them first (Channels, ⋯, Change secret code) or set a password, then turn the passkey off. If you no longer have the passkey, turning it off removes your secret channels, with their videos. Your other channels stay.',
+        buttons: [
+          { text: 'OK', role: 'cancel' },
+          {
+            text: 'Remove secret channels',
+            role: 'destructive',
+            handler: () =>
+              void forgetSecretChannels(db)
+                .then(() => turnOff())
+                .catch(() => toast('Something went wrong. Try again.')),
+          },
+        ],
+      });
+
+      return;
+    }
+
+    await turnOff();
+  };
+
+  const turnOff = async () => {
     const opensWithoutAsking = !hasPassword && keyring?.lockAfter !== 'never';
     await removeBiometrics(db);
     await db.meta.delete('secretCredential');
@@ -364,14 +411,15 @@ export function SettingsPage() {
 
       <Section
         heading="Lock"
-        footer={
-          !locks
-            ? `Everything Subify keeps on this device is encrypted, and opens without asking: your ${platformLock()} guards it. To lock Subify itself, turn on a passkey, or set a password.`
-            : hasPassword
-              ? 'Everything Subify keeps on this device is encrypted. If you lose your password, the app’s data can’t be opened again: only a backup lets you start over.'
-              : 'Everything Subify keeps on this device is encrypted. If the passkey is ever deleted from your password manager, only a backup brings your channels back.'
-        }
+        footer={lockExplained}
       >
+        <IonItem>
+          <IonIcon slot="start" icon={protectedByLock ? lockClosedOutline : lockOpenOutline} aria-hidden="true" />
+          <IonLabel className="ion-text-wrap">
+            <h2>{protectedByLock ? `Locked with your ${lockedWith}` : 'Encrypted, opens without asking'}</h2>
+            <p>{protectedByLock ? `Only your ${lockedWith} opens Subify’s data` : `Its key stays on this device, behind your ${platformLock()}`}</p>
+          </IonLabel>
+        </IonItem>
         {(biometrics.available || biometricsOn) && (
           <IonItem>
             <IonIcon slot="start" icon={fingerPrintOutline} aria-hidden="true" />
@@ -513,5 +561,9 @@ async function saveFile(contents: string, name: string): Promise<void> {
 
 /** What already guards the app's data when Subify doesn't lock itself. */
 function platformLock(): string {
-  return /iPhone|iPad|Android/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 'phone’s lock' : 'computer’s lock';
+  return `${platformDevice()}’s lock`;
+}
+
+function platformDevice(): 'phone' | 'computer' {
+  return /iPhone|iPad|Android/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? 'phone' : 'computer';
 }

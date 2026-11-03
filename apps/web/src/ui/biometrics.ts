@@ -127,7 +127,8 @@ export async function createPasskey(userId: Uint8Array, now: () => number = () =
     created = (await navigator.credentials.create({
       publicKey: {
         rp: { name: 'Subify' },
-        user: { id: userId as Uint8Array<ArrayBuffer>, name, displayName: `Subify on ${name}` },
+        // Password managers show `name` under the site (Bitwarden), others `displayName`.
+        user: { id: userId as Uint8Array<ArrayBuffer>, name: `Subify on ${name}`, displayName: `Subify on ${name}` },
         challenge: randomBytes(32),
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 },
@@ -157,7 +158,9 @@ export async function createPasskey(userId: Uint8Array, now: () => number = () =
     return { credential, salt, output: toBytes(first) };
   }
 
-  if (prf?.enabled === false) {
+  // A passkey that didn't say it gives keys gives none: asking for it again would only add a
+  // sheet, and one that iOS can't fill yet for a passkey another password manager just saved.
+  if (prf?.enabled !== true) {
     return { credential, salt, output: null };
   }
 

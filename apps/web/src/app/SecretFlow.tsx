@@ -115,7 +115,19 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
 
     if (unlockWith === null || unlockWith === undefined) {
-      open('choose', { show: true });
+      // A passkey already on is the way: no choice to make, the device asks for it.
+      if (credential !== null) {
+        void verifyBiometrics(credential).then(async (verified) => {
+          if (verified) {
+            await setMeta(db, 'secretUnlock', 'app');
+            setSecretsShown(true);
+          } else {
+            await toast('The passkey didn’t confirm it’s you.');
+          }
+        });
+      } else {
+        open('choose', { show: true });
+      }
 
       return;
     }
@@ -130,7 +142,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
 
     fallBack();
-  }, [credential, unlockWith, hasPassword, secretsShown, setSecretsShown, toast]);
+  }, [db, credential, unlockWith, hasPassword, secretsShown, setSecretsShown, toast]);
 
   const setChannelSecret = useCallback(
     (key: string, secret: boolean) => {
@@ -139,12 +151,16 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
           await db.subscriptions.update(key, { secret: false });
         } else if (unlockWith !== null && unlockWith !== undefined) {
           await finish({ secret: key });
+        } else if (credential !== null) {
+          // Hiding a channel shows nothing: the passkey already on guards it, without asking.
+          await setMeta(db, 'secretUnlock', 'app');
+          await finish({ secret: key });
         } else {
           open('choose', { secret: key });
         }
       })();
     },
-    [db, finish, unlockWith],
+    [db, finish, unlockWith, credential],
   );
 
   const submit = async (event: FormEvent) => {

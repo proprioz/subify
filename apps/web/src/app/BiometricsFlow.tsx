@@ -139,7 +139,7 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
 
         await toast(
           result.output === null
-            ? 'Passkey on, for secret channels. Your password manager can’t lock Subify with it.'
+            ? 'Passkey on, for secret channels. Its password manager can’t lock Subify: to lock it, set a password.'
             : keyring?.password === null
               ? 'Passkey on. Subify asks for it each time it opens.'
               : 'Passkey on. Your password still works.',
@@ -155,15 +155,21 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
     () =>
       new Promise<boolean>((done) => {
         const reused = keyring?.passkey !== undefined;
+        // Known only for a passkey used before: a new one may lock the app, or not.
+        const noKey = keyring?.passkey?.noKey === true;
         const noPassword = keyring?.password === null;
 
         void presentAlert({
           header: 'Use a passkey?',
           message: [
-            `A passkey lets you open Subify and its secret channels with ${verifiedBy}.`,
+            noKey ? `A passkey lets you show secret channels with ${verifiedBy}.` : `A passkey lets you open Subify and its secret channels with ${verifiedBy}.`,
             reused ? `Subify uses the one this ${device} already has: nothing new is saved.` : keeps(platform, device),
             'Subify’s server never sees it.',
-            noPassword ? 'Subify will ask for it each time it opens. If the passkey is ever deleted, only a backup brings your channels back.' : 'Your password keeps working.',
+            noKey
+              ? 'Its password manager can’t lock Subify with it: to lock Subify, set a password.'
+              : noPassword
+                ? 'Subify will ask for it each time it opens. If the passkey is ever deleted, only a backup brings your channels back.'
+                : 'Your password keeps working.',
           ].join(' '),
           buttons: [
             { text: 'Not now', role: 'cancel', handler: () => done(false) },
