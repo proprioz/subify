@@ -26,6 +26,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
+import { useBiometricsFlow } from '../app/BiometricsFlow';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelAvatar } from '../components/ChannelAvatar';
 import { ChannelSearchResults, useChannelSearch } from '../components/ChannelSearch';
@@ -46,6 +47,7 @@ import { MORE_ICON } from '../ui/icons';
 export function ChannelsPage() {
   const { db, api, gate, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
   const { toggleSecrets, setChannelSecret, changeCode, biometrics, turnOnBiometrics } = useSecretFlow();
+  const { label: biometricsLabel } = useBiometricsFlow();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -97,11 +99,8 @@ export function ChannelsPage() {
     ? [
         { text: 'Hide secret channels', icon: eyeOffOutline, handler: toggleSecrets },
         { text: 'Change secret code', icon: keyOutline, handler: changeCode },
-        ...(biometrics === 'on'
-          ? [{ text: 'Turn off Face ID or fingerprint', icon: fingerPrintOutline, handler: () => void db.meta.delete('secretCredential').then(() => setSecretsShown(false)) }]
-          : biometrics === 'off'
-            ? [{ text: 'Turn on Face ID or fingerprint', icon: fingerPrintOutline, handler: turnOnBiometrics }]
-            : []),
+        // One setting for the whole app: it is turned off in Settings, Lock.
+        ...(biometrics === 'off' ? [{ text: `Turn on ${biometricsLabel}`, icon: fingerPrintOutline, handler: turnOnBiometrics }] : []),
       ]
     : [{ text: 'Show secret channels', icon: eyeOutline, handler: toggleSecrets }];
 

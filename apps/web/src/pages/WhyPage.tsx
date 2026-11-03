@@ -13,7 +13,7 @@ export function WhyPage() {
           <li>No trending page, no recommendations: nothing you didn’t ask for.</li>
           <li>For each channel, choose what you want to see: its videos, its Shorts, its lives.</li>
           <li>Keep some channels secret: they stay hidden until you unlock them.</li>
-          <li>What’s on your device is encrypted with your password.</li>
+          <li>What’s on your device is encrypted, and can be locked with Face ID, a fingerprint or a password.</li>
         </ul>
 
         <h2>No account, no tracking</h2>

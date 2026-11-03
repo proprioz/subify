@@ -20,6 +20,7 @@ import { people, peopleOutline, play, playOutline, settings, settingsOutline } f
 import { useEffect } from 'react';
 import { Navigate, Route, useLocation } from 'react-router-dom';
 import { AppDataProvider, useAppData } from './app/AppData';
+import { BiometricsFlowProvider } from './app/BiometricsFlow';
 import { SecretFlowProvider } from './app/SecretFlow';
 import { VaultGate } from './app/VaultGate';
 import { TourPage } from './pages/TourPage';
@@ -36,15 +37,17 @@ export function App() {
     <IonApp>
       <AppDataProvider>
         <VaultGate>
-          <SecretFlowProvider>
-            <IonReactRouter>
-              <IonSplitPane contentId="main" when="lg">
-                <SideMenu />
-                <Tabs />
-              </IonSplitPane>
-              <StorageWarning />
-            </IonReactRouter>
-          </SecretFlowProvider>
+          <BiometricsFlowProvider>
+            <SecretFlowProvider>
+              <IonReactRouter>
+                <IonSplitPane contentId="main" when="lg">
+                  <SideMenu />
+                  <Tabs />
+                </IonSplitPane>
+                <StorageWarning />
+              </IonReactRouter>
+            </SecretFlowProvider>
+          </BiometricsFlowProvider>
         </VaultGate>
       </AppDataProvider>
     </IonApp>

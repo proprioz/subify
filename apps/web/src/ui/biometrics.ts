@@ -1,12 +1,79 @@
 import { isIos } from './install';
 
 /**
- * Face ID, Touch ID or a fingerprint to show secret channels, through a WebAuthn passkey. The
- * device keeps it in the password manager the user picks (Apple Passwords, Bitwarden…), never
- * Subify's server, and the app only checks that the device verified the user for the challenge it
- * just made. For secret channels it guards the screen; to unlock the app, the passkey also gives
- * the key that opens the database (WebAuthn PRF).
+ * Face ID, Touch ID, a fingerprint or Windows Hello, through one WebAuthn passkey per device. The
+ * device keeps it in its password manager (Passwords on Apple devices, Google Password Manager on
+ * Android, Windows Hello on Windows, or the one the user set up instead), never Subify's server,
+ * and the app checks itself that the device verified the user for the challenge it just made. The
+ * same passkey shows secret channels and, when it gives a key (WebAuthn PRF), unlocks the app.
+ *
+ * The passkey is made with the same user id each time on a device (`passkeyUser`, in the sealed
+ * `meta`): a password manager that meets it again replaces the passkey instead of adding one. The
+ * id never leaves the device and isn't in backups.
  */
+
+export type Platform = 'ios' | 'mac' | 'android' | 'windows' | 'other';
+
+export function platformOf(userAgent: string, maxTouchPoints: number): Platform {
+  if (isIos(userAgent, maxTouchPoints)) {
+    return 'ios';
+  }
+
+  if (/Android/.test(userAgent)) {
+    return 'android';
+  }
+
+  if (/Macintosh/.test(userAgent)) {
+    return 'mac';
+  }
+
+  return /Windows/.test(userAgent) ? 'windows' : 'other';
+}
+
+export function thisPlatform(): Platform {
+  return platformOf(navigator.userAgent, navigator.maxTouchPoints);
+}
+
+/** What the setting is called on each kind of device. */
+export function biometricsLabel(platform: Platform): string {
+  switch (platform) {
+    case 'ios':
+      return 'Face ID or Touch ID';
+    case 'mac':
+      return 'Touch ID';
+    case 'android':
+      return 'Fingerprint or face';
+    case 'windows':
+      return 'Windows Hello';
+    case 'other':
+      return 'Face ID or fingerprint';
+  }
+}
+
+/** The name the passkey carries in the password manager, so that each device's is told apart. */
+export function deviceName(userAgent: string, maxTouchPoints: number): string {
+  if (/iPad/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) {
+    return 'iPad';
+  }
+
+  if (/iPhone|iPod/.test(userAgent)) {
+    return 'iPhone';
+  }
+
+  if (/Android/.test(userAgent)) {
+    return /Mobile/.test(userAgent) ? 'Android phone' : 'Android tablet';
+  }
+
+  if (/Macintosh/.test(userAgent)) {
+    return 'Mac';
+  }
+
+  if (/Windows/.test(userAgent)) {
+    return 'Windows PC';
+  }
+
+  return /CrOS/.test(userAgent) ? 'Chromebook' : 'Computer';
+}
 
 /**
  * Every iPhone and iPad can make the credential (iOS sets up what it lacks), but since iOS 26.2
@@ -23,66 +90,81 @@ export async function biometricsAvailable(): Promise<boolean> {
   }
 }
 
-/** Creates the credential, after the user verified with the device. Returns its id, to store. */
-export async function enrollBiometrics(): Promise<string> {
-  const credential = await createCredential('Secret channels');
-
-  if (credential === null) {
-    throw new Error('No credential was created.');
-  }
-
-  return toBase64Url(new Uint8Array(credential.rawId));
-}
-
 type PrfResults = { prf?: { enabled?: boolean; results?: { first?: BufferSource } } };
 
 /**
- * Whether the browser can turn a passkey into a key (WebAuthn PRF: iOS 18.4+ with iCloud
- * Keychain, Android with Google Password Manager). A browser that can't tell yet counts as able:
- * enrolling checks it for real.
+ * Why no passkey came: the user closed the device's sheet, or the device showed none, most often
+ * because no password manager keeps passkeys there (Passwords turned off on an iPhone).
  */
-export async function biometricsKeyAvailable(): Promise<boolean> {
-  if (!(await biometricsAvailable())) {
-    return false;
-  }
+export type PasskeyFailure = 'cancelled' | 'unavailable';
 
-  try {
-    const capabilities = await (PublicKeyCredential as unknown as { getClientCapabilities?: () => Promise<Record<string, boolean>> }).getClientCapabilities?.();
-
-    return capabilities?.['extension:prf'] !== false;
-  } catch {
-    return true;
-  }
-}
+export type Enrolled = { credential: string; salt: Uint8Array; output: Uint8Array | null };
 
 /**
- * Creates a passkey that unlocks the app: what it gives for `salt` is the key that opens the
- * database's key. null when the device made no passkey, or one that gives no key.
+ * A refusal this fast came before the user could see a sheet: the device had nowhere to keep the
+ * passkey. A heuristic, since WebAuthn answers NotAllowedError in both cases.
  */
-export async function enrollBiometricsKey(): Promise<{ credential: string; salt: Uint8Array; output: Uint8Array } | null> {
+const NO_SHEET_MS = 1000;
+
+/**
+ * Makes the device's passkey, after the user verified with it. `output` is the key it gives for
+ * `salt` (WebAuthn PRF), null when it gives none: it then only guards secret channels.
+ */
+export async function createPasskey(userId: Uint8Array, now: () => number = () => performance.now()): Promise<Enrolled | PasskeyFailure> {
   const salt = randomBytes(32);
-  const created = await createCredential('Unlock Subify', salt);
+  const name = deviceName(navigator.userAgent, navigator.maxTouchPoints);
+  const started = now();
+  let created: PublicKeyCredential | null;
+
+  try {
+    created = (await navigator.credentials.create({
+      publicKey: {
+        rp: { name: 'Subify' },
+        user: { id: userId as Uint8Array<ArrayBuffer>, name, displayName: `Subify on ${name}` },
+        challenge: randomBytes(32),
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+        attestation: 'none',
+        timeout: 60_000,
+        extensions: { prf: { eval: { first: salt } } },
+      } as PublicKeyCredentialCreationOptions,
+    })) as PublicKeyCredential | null;
+  } catch (error) {
+    const cancelled = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError') && now() - started >= NO_SHEET_MS;
+
+    return cancelled ? 'cancelled' : 'unavailable';
+  }
 
   if (created === null) {
-    return null;
+    return 'cancelled';
   }
 
   const credential = toBase64Url(new Uint8Array(created.rawId));
   const prf = (created.getClientExtensionResults() as PrfResults).prf;
+  const first = prf?.results?.first;
+
+  if (first !== undefined) {
+    return { credential, salt, output: toBytes(first) };
+  }
 
   if (prf?.enabled === false) {
-    return null;
+    return { credential, salt, output: null };
   }
 
   // Most devices only give the key when the passkey is used, not when it is made.
-  const first = prf?.results?.first;
-  const output = first === undefined ? await biometricsKey(credential, salt) : toBytes(first);
+  const used = await askPasskey(credential, salt);
 
-  return output === null ? null : { credential, salt, output };
+  return used === null ? 'cancelled' : { credential, salt, output: used.output };
 }
 
-/** Asks the device to verify the user, and returns what the passkey gives for `salt`. */
-export async function biometricsKey(credentialId: string, salt: Uint8Array): Promise<Uint8Array | null> {
+/**
+ * Asks the device to verify the user with the passkey. Null when it didn't, for this challenge and
+ * this app; otherwise what the passkey gives for `salt`, null when it gives nothing.
+ */
+export async function askPasskey(credentialId: string, salt?: Uint8Array): Promise<{ output: Uint8Array | null } | null> {
   const challenge = randomBytes(32);
 
   try {
@@ -92,7 +174,7 @@ export async function biometricsKey(credentialId: string, salt: Uint8Array): Pro
         allowCredentials: [{ type: 'public-key', id: fromBase64Url(credentialId) }],
         userVerification: 'required',
         timeout: 60_000,
-        extensions: { prf: { eval: { first: salt } } },
+        ...(salt === undefined ? {} : { extensions: { prf: { eval: { first: salt } } } }),
       } as PublicKeyCredentialRequestOptions,
     })) as PublicKeyCredential | null;
     const response = credential?.response as AuthenticatorAssertionResponse | undefined;
@@ -103,53 +185,19 @@ export async function biometricsKey(credentialId: string, salt: Uint8Array): Pro
 
     const first = (credential.getClientExtensionResults() as PrfResults).prf?.results?.first;
 
-    return first === undefined ? null : toBytes(first);
+    return { output: first === undefined ? null : toBytes(first) };
   } catch {
     return null;
   }
 }
 
-function toBytes(source: BufferSource): Uint8Array {
-  return source instanceof ArrayBuffer ? new Uint8Array(source) : new Uint8Array(source.buffer, source.byteOffset, source.byteLength).slice();
-}
-
-async function createCredential(name: string, prfSalt?: Uint8Array): Promise<PublicKeyCredential | null> {
-  return (await navigator.credentials.create({
-    publicKey: {
-      rp: { name: 'Subify' },
-      user: { id: randomBytes(16), name, displayName: name },
-      challenge: randomBytes(32),
-      pubKeyCredParams: [
-        { type: 'public-key', alg: -7 },
-        { type: 'public-key', alg: -257 },
-      ],
-      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
-      attestation: 'none',
-      timeout: 60_000,
-      ...(prfSalt === undefined ? {} : { extensions: { prf: { eval: { first: prfSalt } } } }),
-    } as PublicKeyCredentialCreationOptions,
-  })) as PublicKeyCredential | null;
-}
-
 /** Asks the device to verify the user. True only when it did, for this challenge and this app. */
 export async function verifyBiometrics(credentialId: string): Promise<boolean> {
-  const challenge = randomBytes(32);
+  return (await askPasskey(credentialId)) !== null;
+}
 
-  try {
-    const credential = (await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        allowCredentials: [{ type: 'public-key', id: fromBase64Url(credentialId) }],
-        userVerification: 'required',
-        timeout: 60_000,
-      },
-    })) as PublicKeyCredential | null;
-    const response = credential?.response as AuthenticatorAssertionResponse | undefined;
-
-    return response !== undefined && assertionVerifiesUser(response.clientDataJSON, response.authenticatorData, challenge, location.origin);
-  } catch {
-    return false;
-  }
+function toBytes(source: BufferSource): Uint8Array {
+  return source instanceof ArrayBuffer ? new Uint8Array(source) : new Uint8Array(source.buffer, source.byteOffset, source.byteLength).slice();
 }
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertionVerifiesUser, biometricsAvailable, toBase64Url } from '../src/ui/biometrics';
+import { assertionVerifiesUser, biometricsAvailable, createPasskey, toBase64Url } from '../src/ui/biometrics';
 
 const ORIGIN = 'https://subify.example';
 const challenge = new Uint8Array([1, 2, 3, 4, 250, 251, 252]);
@@ -49,5 +49,48 @@ describe('biometrics', () => {
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_1 like Mac OS X)', maxTouchPoints: 5 });
 
     expect(await biometricsAvailable()).toBe(false);
+  });
+});
+
+// A guide when the user simply closed the sheet nags; a toast when the device showed none leaves them stuck.
+describe('a passkey that wasn’t made', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function refusing(name: string) {
+    const create = vi.fn(() => Promise.reject(new DOMException('No.', name)));
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_1 like Mac OS X)', maxTouchPoints: 5, credentials: { create } });
+
+    return create;
+  }
+
+  /** A clock that moves `ms` between the start and the answer. */
+  const clock = (ms: number) => {
+    let t = 0;
+
+    return () => (t += ms) - ms;
+  };
+
+  it('was cancelled when the device answered after its sheet could show', async () => {
+    refusing('NotAllowedError');
+
+    expect(await createPasskey(new Uint8Array(16), clock(4000))).toBe('cancelled');
+  });
+
+  it('had nowhere to go when the device refused at once, or for another reason', async () => {
+    refusing('NotAllowedError');
+    expect(await createPasskey(new Uint8Array(16), clock(50))).toBe('unavailable');
+
+    refusing('NotSupportedError');
+    expect(await createPasskey(new Uint8Array(16), clock(4000))).toBe('unavailable');
+  });
+
+  it('is asked for with the device’s user id, so a password manager replaces it instead of adding one', async () => {
+    const create = refusing('NotAllowedError');
+    const user = new Uint8Array(16).fill(9);
+    await createPasskey(user, clock(4000));
+
+    const options = (create.mock.calls[0] as unknown as [{ publicKey: { user: { id: Uint8Array; displayName: string } } }])[0].publicKey.user;
+    expect(options.id).toEqual(user);
+    expect(options.displayName).toBe('Subify on iPhone');
   });
 });

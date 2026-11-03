@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SubifyDb } from '../src/data/db';
 import { loadFeed } from '../src/data/feed';
 import { forgetSecretChannels } from '../src/data/secret';
-import { createVault, forgetKeptKey, isAppPassword, LockedError, setLockAfter, startVault, unlockWithPassword } from '../src/data/vault';
+import { addBiometrics, createVault, forgetKeptKey, isAppPassword, LockedError, readKeyring, removeBiometrics, setLockAfter, setPassword, startVault, unlockWithBiometrics, unlockWithPassword } from '../src/data/vault';
 import { channel, FakeServer, item, NOW, subscribe } from './fake-server';
 
 const A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -13,15 +13,24 @@ const query = { types: { video: true, short: true, live: true }, showUpcoming: t
 
 let count = 0;
 
-async function sealedDb() {
+/** Sealed at the first launch, without a password: the key stays on the device. */
+async function firstLaunch() {
   const name = `vault-${++count}`;
   const server = new FakeServer().publish(channel(A), item(A, 'a1', 1)).publish(channel(B), item(B, 'b1', 2));
   const db = new SubifyDb(name);
   await subscribe(db, server.api(), A, NOW);
-  await createVault(db, PASSWORD);
-  // Written after the password was chosen: sealed too.
+  await createVault(db);
+  // Written after the sealing: sealed too.
   await subscribe(db, server.api(), B, NOW);
   await db.subscriptions.update(`youtube:${B}`, { secret: true });
+
+  return { name, db };
+}
+
+async function sealedDb() {
+  const { name, db } = await firstLaunch();
+  await setPassword(db, PASSWORD);
+  await setLockAfter(db, 'open');
 
   return { name, db };
 }
@@ -87,5 +96,61 @@ describe('local database encryption', () => {
     expect(await unlockWithPassword(relaunched, PASSWORD)).toBe(true);
 
     expect(await startVault(new SubifyDb(name))).toBe('open');
+  });
+});
+
+// Without a password the app must still seal, and must never lock itself out of its own data.
+describe('a device without a password', () => {
+  const salt = new Uint8Array(32).fill(7);
+  const output = new Uint8Array(32).fill(1);
+
+  it('is sealed from the first launch, opens without asking, and refuses to lock with nothing to unlock it', async () => {
+    const { name } = await firstLaunch();
+    const dump = await rawDump(name);
+
+    for (const secret of [A, B, 'Video a1', channel(B).title]) {
+      expect(dump).not.toContain(secret);
+    }
+
+    const db = new SubifyDb(name);
+    expect(await startVault(db)).toBe('open');
+    expect(await db.subscriptions.count()).toBe(2);
+    await expect(setLockAfter(db, 15)).rejects.toThrow();
+    await expect(forgetKeptKey(db)).rejects.toThrow();
+    expect(await startVault(new SubifyDb(name))).toBe('open');
+  });
+
+  it('locks with a passkey that gives the key, opens only with what it gives, and opens without asking once it is off', async () => {
+    const { name, db } = await firstLaunch();
+    await addBiometrics(db, 'credential-1', salt, output);
+    await setLockAfter(db, 'open');
+
+    const relaunched = new SubifyDb(name);
+    expect(await startVault(relaunched)).toBe('locked');
+    expect(await unlockWithBiometrics(relaunched, new Uint8Array(32).fill(2))).toBe(false);
+    expect(await unlockWithBiometrics(relaunched, output)).toBe(true);
+    expect(await relaunched.subscriptions.count()).toBe(2);
+
+    await removeBiometrics(relaunched);
+    expect(await startVault(new SubifyDb(name))).toBe('open');
+    // Kept, so that turning it on again uses the same passkey instead of adding one.
+    expect((await readKeyring(relaunched))?.passkey).toEqual({ credential: 'credential-1', salt });
+  });
+
+  it('can’t lock with a passkey that gives no key: it only shows secret channels', async () => {
+    const { db } = await firstLaunch();
+    await addBiometrics(db, 'credential-1', salt, null);
+
+    await expect(setLockAfter(db, 'open')).rejects.toThrow();
+  });
+
+  it('keeps the password working after Face ID is turned off', async () => {
+    const { name, db } = await sealedDb();
+    await addBiometrics(db, 'credential-1', salt, output);
+    await removeBiometrics(db);
+
+    const relaunched = new SubifyDb(name);
+    expect(await startVault(relaunched)).toBe('locked');
+    expect(await unlockWithPassword(relaunched, PASSWORD)).toBe(true);
   });
 });

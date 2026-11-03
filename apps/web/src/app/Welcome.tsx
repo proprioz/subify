@@ -19,7 +19,7 @@ const TOUR = [
 ];
 
 /**
- * What a first visit shows before the password: what Subify is, then a short tour the user can
+ * What a first visit shows: what Subify is, then a short tour the user can
  * skip. `onDone` gets whether they came to restore a backup.
  */
 export function Welcome({ onDone }: { onDone: (restore: boolean) => void }) {
@@ -67,7 +67,7 @@ export function Welcome({ onDone }: { onDone: (restore: boolean) => void }) {
     );
   }
 
-  return <Tour onDone={() => onDone(false)} finish="Choose a password" />;
+  return <Tour onDone={() => onDone(false)} finish="Start" />;
 }
 
 /**

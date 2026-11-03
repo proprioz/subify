@@ -188,7 +188,7 @@ export function BackupShot() {
       <div className="shot-list">
         <div className="shot-row">
           <span className="shot-row-text">
-            <b>Ask for the password</b>
+            <b>Ask to unlock</b>
             <small>Each time the app opens</small>
           </span>
         </div>

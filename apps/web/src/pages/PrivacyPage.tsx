@@ -21,13 +21,13 @@ export function PrivacyPage() {
           Your password, Face ID or fingerprint never leave this device.
         </p>
         <ul>
-          <li>The app’s data on this device is always encrypted, with a password you choose.</li>
+          <li>The app’s data on this device is always encrypted, from the first launch.</li>
           <li>
-            You choose when the app asks for it again: each time it opens, when you come back to it, after a few minutes unused, or never. On devices that support them, Face
-            ID or a fingerprint can replace it.
+            Until you lock Subify, the app keeps the key on this device and opens without asking: your phone’s or computer’s own lock guards it. To lock Subify itself, turn
+            on Face ID, a fingerprint or Windows Hello, or set a password, then choose when it asks.
           </li>
-          <li>With “never”, the app keeps the key on this device, so the data can be read there.</li>
-          <li>If you lose your password, the app’s data can’t be opened again. A backup lets you start over.</li>
+          <li>Face ID or a fingerprint uses one key per device, kept by your device’s password manager. It never reaches the server.</li>
+          <li>If you lose your password, or delete that key without a password, the app’s data can’t be opened again. A backup lets you start over.</li>
           <li>Hidden channels stay hidden until you unlock them.</li>
         </ul>
 
