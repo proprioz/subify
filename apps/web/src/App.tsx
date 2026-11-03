@@ -17,7 +17,7 @@ import {
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { people, peopleOutline, play, playOutline, settings, settingsOutline } from 'ionicons/icons';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Navigate, Route, useLocation } from 'react-router-dom';
 import { AppDataProvider, useAppData } from './app/AppData';
 import { BiometricsFlowProvider } from './app/BiometricsFlow';
@@ -25,7 +25,6 @@ import { SecretFlowProvider } from './app/SecretFlow';
 import { VaultGate } from './app/VaultGate';
 import { TourPage } from './pages/TourPage';
 import { StorageWarning } from './components/StorageWarning';
-import { TabSwipe } from './components/TabSwipe';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { FeedPage } from './pages/FeedPage';
 import { PrivacyPage } from './pages/PrivacyPage';
@@ -60,7 +59,6 @@ const TABS = [
   { tab: 'channels', label: 'Channels', icon: peopleOutline, selectedIcon: people },
   { tab: 'settings', label: 'Settings', icon: settingsOutline, selectedIcon: settings },
 ];
-const TAB_NAMES = TABS.map(({ tab }) => tab);
 
 /**
  * The tabs as a side menu that stays open on wide screens, where the tab bar hides (the split
@@ -102,10 +100,9 @@ function SideMenu() {
   );
 }
 
-/** The three tabs, side by side: a swipe moves to the next one. The current one shows its filled icon. */
+/** The three tabs. The current one shows its filled icon. */
 function Tabs() {
   const { pathname } = useLocation();
-  const main = useRef<HTMLDivElement>(null);
   const { setSecretsShown, setSecretOpened } = useAppData();
 
   // Secret channels show on one screen only: going to another one hides them again. A secret
@@ -120,9 +117,8 @@ function Tabs() {
 
   return (
     // The split pane's main content needs an id, which IonTabs does not take.
-    <div id="main" className="ion-page" ref={main}>
+    <div id="main" className="ion-page">
       <IonTabs>
-        <TabSwipe container={main} tabs={TAB_NAMES} />
         <IonRouterOutlet>
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
