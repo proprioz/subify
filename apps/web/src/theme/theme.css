@@ -779,6 +779,19 @@ ion-thumbnail.video-thumbnail {
   font-size: 28px;
 }
 
+/* A Short's thumbnail (VideoCard, src/ui/short-fill.ts): its vertical frame alone, in the middle,
+   over the blurred picture in the frame's main colour, rather than the platform's enlargement. */
+.short-thumbnail img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: auto;
+  height: 100%;
+  /* The frame inside the platform's 320×180 picture, short of the shadow around it (short-fill.ts). */
+  aspect-ratio: 98 / 180;
+  object-fit: cover;
+}
+
 .video-thumbnail.blurred ion-button {
   --color: rgba(255, 255, 255, 0.92);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));

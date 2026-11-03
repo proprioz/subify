@@ -1,10 +1,18 @@
+/** A colour as CSS `hsl()` takes it: degrees, then percentages. */
+export interface Hsl {
+  hue: number;
+  saturation: number;
+  lightness: number;
+}
+
 /**
  * In place of a missing image (a video's thumbnail, a channel's avatar), a picture seen through
  * frosted glass: soft patches of near hues and tones over a lighter top and a darker bottom,
  * only gently uneven. It is drawn from a key (the video's, the channel's), so the same key always gets the
- * same one, followed or not, and nothing is stored or loaded. A CSS `background` value.
+ * same one, followed or not, and nothing is stored or loaded. A CSS `background` value. With a
+ * `base`, its colour is that one rather than one drawn from the key: a Short's fill (short-fill.ts).
  */
-export function blurredPicture(key: string): string {
+export function blurredPicture(key: string, base?: Hsl): string {
   // FNV-1a, then mulberry32: the same key always draws the same numbers.
   let seed = 2166136261;
   for (const char of key) {
@@ -17,9 +25,9 @@ export function blurredPicture(key: string): string {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   const between = (low: number, high: number) => Math.round(low + random() * (high - low));
-  const hue = between(0, 359);
-  const saturation = between(30, 55);
-  const lightness = between(40, 60);
+  // Drawn even with a base, so that the patches a key gets stay the same either way.
+  const drawn = { hue: between(0, 359), saturation: between(30, 55), lightness: between(40, 60) };
+  const { hue, saturation, lightness } = base ?? drawn;
   const tone = (spread: number, shift: number, contrast: number) =>
     `hsl(${(hue + between(-spread, spread) + 360) % 360} ${saturation}% ${lightness + shift + between(-contrast, contrast)}%)`;
   // One smaller patch, like a subject in the frame, over larger, softer ones of near hues and tones.

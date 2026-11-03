@@ -5,9 +5,10 @@ import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
 import { keepsThumbnail, THUMBNAIL_DAYS } from '../data/thumbnails';
 import { videoLink } from '../data/video-link';
-import { blurredPicture } from '../ui/blurred-picture';
+import { blurredPicture, type Hsl } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
 import { MORE_ICON, SHARE_ICON } from '../ui/icons';
+import { shortFill } from '../ui/short-fill';
 import { useToast } from '../ui/toast';
 import { Menu, type MenuAction } from './Menu';
 
@@ -37,6 +38,8 @@ interface Props {
 export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
   const toast = useToast();
   const image = useImage(thumbnail);
+  const fill = useShortFill(item, image);
+  const short = item.type === 'short' && image !== null;
   const [menuFrom, setMenuFrom] = useState<Event | null>(null);
   const [helpFrom, setHelpFrom] = useState<Event | null>(null);
   const unavailable = item.deleted === true;
@@ -75,8 +78,8 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
         >
           <IonThumbnail
             slot="start"
-            className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : ''}`}
-            style={image === null ? { background: blurredPicture(item.key) } : undefined}
+            className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : short ? ' short-thumbnail' : ''}`}
+            style={image === null ? { background: blurredPicture(item.key) } : short ? { background: blurredPicture(item.key, fill ?? GREY) } : undefined}
           >
             {/* Said by the channel's mark below; this one is for the eye, while scrolling. */}
             {channel.secret && (
@@ -168,6 +171,32 @@ function missingThumbnailReason(item: StoredItem, thumbnail: StoredThumbnail | u
   }
 
   return 'No thumbnail: the app gets them only for a channel’s last 7 days, when you add it.';
+}
+
+/** A Short's fill until its main colour is known: no colour of its own, rather than a wrong one. */
+const GREY: Hsl = { hue: 0, saturation: 0, lightness: 50 };
+
+/** A Short's main colour, once its thumbnail is read; null for any other item, or until then. */
+function useShortFill(item: StoredItem, image: string | null): Hsl | null {
+  const [fill, setFill] = useState<Hsl | null>(null);
+  const short = item.type === 'short';
+
+  useEffect(() => {
+    setFill(null);
+
+    if (!short || image === null) {
+      return;
+    }
+
+    let current = true;
+    void shortFill(item.key, image).then((color) => current && setFill(color));
+
+    return () => {
+      current = false;
+    };
+  }, [short, item.key, image]);
+
+  return fill;
 }
 
 /** The kept thumbnail as an object URL, released when the card no longer shows it. */
