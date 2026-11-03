@@ -129,6 +129,12 @@ ion-avatar {
   color: var(--app-avatar-color);
 }
 
+/* Initials over the blurred picture (ChannelAvatar): white, whatever its colours. */
+ion-avatar.blurred {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
 ion-segment {
   --background: rgba(var(--ion-text-color-rgb), 0.05);
 }

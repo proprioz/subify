@@ -230,7 +230,7 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
 
         return (
           <IonItem key={item.key} detail={false} {...(following === undefined ? {} : { button: true, onClick: () => onOpen(following) })}>
-            <ChannelAvatar title={item.title} avatar={item.avatar} slot="start" />
+            <ChannelAvatar channel={item.key} title={item.title} avatar={item.avatar} slot="start" />
             <IonLabel className="ion-text-nowrap">
               <h2>{item.title}</h2>
               {/* The name the words matched, when the row's own name doesn't hold them. */}

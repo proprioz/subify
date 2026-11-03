@@ -1,7 +1,8 @@
 /**
- * In place of a missing image (a video's thumbnail), a picture seen through
+ * In place of a missing image (a video's thumbnail, a channel's avatar), a picture seen through
  * frosted glass: soft patches of near hues and tones over a lighter top and a darker bottom,
- * only gently uneven. It is drawn from a key (the video's), so the same key always gets the same one, and nothing is stored or loaded. A CSS `background` value.
+ * only gently uneven. It is drawn from a key (the video's, the channel's), so the same key always gets the
+ * same one, followed or not, and nothing is stored or loaded. A CSS `background` value.
  */
 export function blurredPicture(key: string): string {
   // FNV-1a, then mulberry32: the same key always draws the same numbers.

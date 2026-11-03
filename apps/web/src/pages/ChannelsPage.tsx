@@ -195,7 +195,7 @@ export function ChannelsPage() {
           {attention.map((channel, index) => (
             <IonItemSliding key={channel.key}>
               <IonItem {...(index === attention.length - 1 ? { lines: 'none' as const } : {})}>
-                <ChannelAvatar title={channel.title} avatar={channel.avatar} slot="start" />
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" />
                 <IonLabel>
                   <h2>
                     {channel.secret && <IonIcon icon={eyeOffOutline} className="secret-mark" aria-label="Secret" />}
@@ -239,7 +239,7 @@ export function ChannelsPage() {
             // offers it too, for mice and for those who don't know the gesture.
             <IonItemSliding key={channel.key}>
               <IonItem button detail={false} {...(index === working.length - 1 ? { lines: 'none' as const } : {})} onClick={() => showVideos(channel)}>
-                <ChannelAvatar title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
                 <IonLabel>
                   <h2>
                     {channel.secret && <IonIcon icon={eyeOffOutline} className="secret-mark" aria-label="Secret" />}

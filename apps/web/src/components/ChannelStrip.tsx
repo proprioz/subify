@@ -100,7 +100,7 @@ export function ChannelStrip(props: Props) {
               onClick={() => onSelect(selected === channel.key ? null : channel.key)}
               label={channel.title}
               hideLabel={selected !== channel.key}
-              start={<ChannelAvatar title={channel.title} avatar={channel.avatar} secret={channel.secret} />}
+              start={<ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} secret={channel.secret} />}
               secret={channel.secret}
             />
           ))}
