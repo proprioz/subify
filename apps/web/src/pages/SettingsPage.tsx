@@ -234,14 +234,14 @@ export function SettingsPage() {
     await removeBiometrics(db);
     await db.meta.delete('secretCredential');
     // The passkey stays in the password manager, to be used again: nothing to delete there.
-    await toast(`${biometrics.label} is off.${opensWithoutAsking ? ' Subify now opens without asking.' : ''} Turning it on again saves nothing new.`);
+    await toast(`Passkey off.${opensWithoutAsking ? ' Subify now opens without asking.' : ''} Turning it on again saves nothing new.`);
   };
 
   const confirmReset = () => {
     void presentAlert({
       header: 'Reset the app?',
       message: `Your channels, videos, settings and secret code will be deleted from this device. This can’t be undone.${
-        keyring?.passkey !== undefined || biometricsOn ? ` The ${biometrics.label} key stays in your password manager, under subify.tv: you can delete it there.` : ''
+        keyring?.passkey !== undefined || biometricsOn ? ' Subify’s passkey stays in your password manager, under subify.tv: you can delete it there.' : ''
       }`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
@@ -366,17 +366,20 @@ export function SettingsPage() {
         heading="Lock"
         footer={
           !locks
-            ? `Everything Subify keeps on this device is encrypted, and opens without asking: your ${platformLock()} guards it. To lock Subify itself, turn on ${biometrics.label}, or set a password.`
+            ? `Everything Subify keeps on this device is encrypted, and opens without asking: your ${platformLock()} guards it. To lock Subify itself, turn on a passkey, or set a password.`
             : hasPassword
               ? 'Everything Subify keeps on this device is encrypted. If you lose your password, the app’s data can’t be opened again: only a backup lets you start over.'
-              : `Everything Subify keeps on this device is encrypted. If the ${biometrics.label} key is ever deleted from your password manager, only a backup brings your channels back.`
+              : 'Everything Subify keeps on this device is encrypted. If the passkey is ever deleted from your password manager, only a backup brings your channels back.'
         }
       >
         {(biometrics.available || biometricsOn) && (
           <IonItem>
             <IonIcon slot="start" icon={fingerPrintOutline} aria-hidden="true" />
             <IonToggle key={lockChoiceDrawn} checked={biometricsOn} onIonChange={(event) => void toggleBiometrics(event.detail.checked)}>
-              {biometrics.label}
+              <IonLabel>
+                <h2>Passkey</h2>
+                <p>With {biometrics.verifiedBy}</p>
+              </IonLabel>
             </IonToggle>
           </IonItem>
         )}

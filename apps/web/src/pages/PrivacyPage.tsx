@@ -18,15 +18,15 @@ export function PrivacyPage() {
         <h2>On this device</h2>
         <p>
           What is yours stays with you: the channels you follow, their videos, your choices and your settings live on this device. Nothing sends them anywhere to be analysed.
-          Your password, Face ID or fingerprint never leave this device.
+          Your password and your passkey never leave this device.
         </p>
         <ul>
           <li>The app’s data on this device is always encrypted, from the first launch.</li>
           <li>
             Until you lock Subify, the app keeps the key on this device and opens without asking: your phone’s or computer’s own lock guards it. To lock Subify itself, turn
-            on Face ID, a fingerprint or Windows Hello, or set a password, then choose when it asks.
+            on a passkey, which lets you use Face ID, a fingerprint or Windows Hello, or set a password, then choose when it asks.
           </li>
-          <li>Face ID or a fingerprint uses one key per device, kept by your device’s password manager. It never reaches the server.</li>
+          <li>Subify makes one passkey per device, kept by your device’s password manager. It never reaches the server.</li>
           <li>If you lose your password, or delete that key without a password, the app’s data can’t be opened again. A backup lets you start over.</li>
           <li>Hidden channels stay hidden until you unlock them.</li>
         </ul>

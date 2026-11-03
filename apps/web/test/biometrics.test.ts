@@ -93,4 +93,15 @@ describe('a passkey that wasn’t made', () => {
     expect(options.id).toEqual(user);
     expect(options.displayName).toBe('Subify on iPhone');
   });
+
+  it('is kept when it was made but its sheet was then closed, so the next try uses it instead of adding one', async () => {
+    const rawId = new Uint8Array([7, 7, 7]).buffer;
+    const create = vi.fn(() => Promise.resolve({ rawId, getClientExtensionResults: () => ({ prf: { enabled: true } }) }));
+    const get = vi.fn(() => Promise.reject(new DOMException('Closed.', 'NotAllowedError')));
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_1 like Mac OS X)', maxTouchPoints: 5, credentials: { create, get } });
+
+    const result = await createPasskey(new Uint8Array(16), clock(4000));
+
+    expect(result).toMatchObject({ credential: toBase64Url(new Uint8Array([7, 7, 7])), unconfirmed: true });
+  });
 });

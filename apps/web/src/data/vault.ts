@@ -247,6 +247,11 @@ export async function addBiometrics(
   await db.keyring.update('local', { biometrics: { credential, salt, sealed }, passkey: { credential, salt } });
 }
 
+/** Remembers the device's passkey, made but not used yet, so that the next try uses it rather than making another. */
+export async function rememberPasskey(db: SubifyDb, credential: string, salt: Uint8Array): Promise<void> {
+  await db.keyring.update('local', { passkey: { credential, salt } });
+}
+
 /**
  * Only while unlocked: Face ID off. The passkey is remembered, to be used again. Without a
  * password, nothing else unlocks the app: it then opens without asking.

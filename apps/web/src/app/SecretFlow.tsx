@@ -57,7 +57,6 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const biometricsFlow = useBiometricsFlow();
-  const BIOMETRICS = biometricsFlow.label;
   // Read before any tap: Safari asks for Face ID only while the tap is being handled, and a
   // database read before the request would let that moment pass.
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
@@ -122,7 +121,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
 
     // Face ID first, whichever way they unlock; the password or the PIN if it doesn't confirm.
-    const fallBack = () => (unlockWith === 'app' ? (hasPassword ? open('unlockApp', { show: true }) : void toast(`${BIOMETRICS} didn’t confirm it’s you.`)) : open('unlock', { show: true }));
+    const fallBack = () => (unlockWith === 'app' ? (hasPassword ? open('unlockApp', { show: true }) : void toast('The passkey didn’t confirm it’s you.')) : open('unlock', { show: true }));
 
     if (credential !== null) {
       void verifyBiometrics(credential).then((verified) => (verified ? setSecretsShown(true) : fallBack()));
@@ -131,7 +130,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
 
     fallBack();
-  }, [credential, unlockWith, hasPassword, secretsShown, setSecretsShown, toast, BIOMETRICS]);
+  }, [credential, unlockWith, hasPassword, secretsShown, setSecretsShown, toast]);
 
   const setChannelSecret = useCallback(
     (key: string, secret: boolean) => {
@@ -219,7 +218,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
         close();
         await finish(after);
       } else {
-        setError(`${BIOMETRICS} didn’t confirm it’s you.`);
+        setError('The passkey didn’t confirm it’s you.');
       }
 
       return;
@@ -274,7 +273,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       close();
       await finish(after);
     } else {
-      setError(`${BIOMETRICS} didn’t confirm it’s you.`);
+      setError('The passkey didn’t confirm it’s you.');
     }
   };
 
@@ -330,7 +329,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
               </IonNote>
               {(credential !== null || biometricsFlow.available) && (
                 <IonButton expand="block" onClick={() => void chooseAppLock()}>
-                  Use {BIOMETRICS}
+                  Use your passkey
                 </IonButton>
               )}
               {hasPassword && (
@@ -365,7 +364,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
           {step === 'unlockApp' && credential !== null && (
             <div className="ion-padding">
               <IonButton expand="block" fill="outline" onClick={() => void useBiometrics()}>
-                Use {BIOMETRICS}
+                Use your passkey
               </IonButton>
             </div>
           )}
@@ -373,7 +372,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
             <div className="ion-padding">
               {credential !== null && (
                 <IonButton expand="block" fill="outline" onClick={() => void useBiometrics()}>
-                  Use {BIOMETRICS}
+                  Use your passkey
                 </IonButton>
               )}
               <IonButton expand="block" fill="clear" color="medium" onClick={forget}>

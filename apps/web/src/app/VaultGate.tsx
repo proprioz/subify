@@ -5,7 +5,7 @@ import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { EmptyState } from '../components/EmptyState';
 import { Column } from '../components/Page';
 import { createVault, readKeyring, unlockWithBiometrics, unlockWithPassword } from '../data/vault';
-import { askPasskey, biometricsLabel, thisPlatform } from '../ui/biometrics';
+import { askPasskey } from '../ui/biometrics';
 import { resetEverything } from '../ui/reset';
 import { useAppData } from './AppData';
 import { Tour, Welcome } from './Welcome';
@@ -103,7 +103,6 @@ function Unlock() {
   // Read before any tap: Safari asks for Face ID only while the tap is being handled.
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
   const [touring, setTouring] = useState(false);
-  const label = biometricsLabel(thisPlatform());
 
   if (keyring === undefined) {
     return null;
@@ -141,14 +140,14 @@ function Unlock() {
     if (output !== null && (await unlockWithBiometrics(db, output))) {
       vaultOpened();
     } else {
-      setError(`${label} didn’t unlock the app.`);
+      setError('The passkey didn’t unlock the app.');
     }
   };
 
   const forgot = () => {
     void presentAlert({
-      header: hasPassword ? 'Forgot the password?' : `${label} doesn’t work?`,
-      message: `${hasPassword ? 'The password can’t be recovered' : 'Without its key, nothing can open the app’s data'}, not even whoever runs the server. You can only reset the app, which deletes everything on this device, then restore a backup.`,
+      header: hasPassword ? 'Forgot the password?' : 'Passkey doesn’t work?',
+      message: `${hasPassword ? 'The password can’t be recovered' : 'Without the passkey, nothing can open the app’s data'}, not even whoever runs the server. You can only reset the app, which deletes everything on this device, then restore a backup.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
@@ -168,10 +167,10 @@ function Unlock() {
     <Screen>
       <EmptyState icon={lockClosedOutline} heading="Subify is locked">
         {hasPassword && biometrics !== null
-          ? `Use ${label} or your password to open the app.`
+          ? 'Use your passkey or your password to open the app.'
           : hasPassword
             ? 'Enter your password to open the app.'
-            : `Use ${label} to open the app.`}
+            : 'Use your passkey to open the app.'}
       </EmptyState>
       <form onSubmit={(event) => void submit(event)}>
         {hasPassword && (
@@ -192,7 +191,7 @@ function Unlock() {
         <div className="ion-padding">
           {biometrics !== null && (
             <IonButton expand="block" fill={hasPassword ? 'outline' : 'solid'} onClick={() => void useBiometrics()}>
-              Use {label}
+              Use your passkey
             </IonButton>
           )}
           {hasPassword && (
@@ -201,7 +200,7 @@ function Unlock() {
             </IonButton>
           )}
           <IonButton expand="block" fill="clear" color="medium" onClick={forgot}>
-            {hasPassword ? 'Forgot the password?' : `${label} doesn’t work?`}
+            {hasPassword ? 'Forgot the password?' : 'Passkey doesn’t work?'}
           </IonButton>
           <IonButton expand="block" fill="clear" color="medium" onClick={() => setTouring(true)}>
             Take the tour

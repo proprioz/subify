@@ -34,7 +34,7 @@ export function thisPlatform(): Platform {
   return platformOf(navigator.userAgent, navigator.maxTouchPoints);
 }
 
-/** What the setting is called on each kind of device. */
+/** How the passkey checks it's the user, on each kind of device: what the setting mentions under “Passkey”. */
 export function biometricsLabel(platform: Platform): string {
   switch (platform) {
     case 'ios':
@@ -101,6 +101,13 @@ export type PasskeyFailure = 'cancelled' | 'unavailable';
 export type Enrolled = { credential: string; salt: Uint8Array; output: Uint8Array | null };
 
 /**
+ * Made, but not used yet: the device asks for the passkey again to give its key, and the user
+ * closed that sheet. On an iPhone it lists only Passwords' passkeys: one kept in another password
+ * manager hides behind “More from…”. The passkey exists, so it is kept, to be used next time.
+ */
+export type Unconfirmed = { credential: string; salt: Uint8Array; unconfirmed: true };
+
+/**
  * A refusal this fast came before the user could see a sheet: the device had nowhere to keep the
  * passkey. A heuristic, since WebAuthn answers NotAllowedError in both cases.
  */
@@ -110,7 +117,7 @@ const NO_SHEET_MS = 1000;
  * Makes the device's passkey, after the user verified with it. `output` is the key it gives for
  * `salt` (WebAuthn PRF), null when it gives none: it then only guards secret channels.
  */
-export async function createPasskey(userId: Uint8Array, now: () => number = () => performance.now()): Promise<Enrolled | PasskeyFailure> {
+export async function createPasskey(userId: Uint8Array, now: () => number = () => performance.now()): Promise<Enrolled | Unconfirmed | PasskeyFailure> {
   const salt = randomBytes(32);
   const name = deviceName(navigator.userAgent, navigator.maxTouchPoints);
   const started = now();
@@ -157,7 +164,7 @@ export async function createPasskey(userId: Uint8Array, now: () => number = () =
   // Most devices only give the key when the passkey is used, not when it is made.
   const used = await askPasskey(credential, salt);
 
-  return used === null ? 'cancelled' : { credential, salt, output: used.output };
+  return used === null ? { credential, salt, unconfirmed: true } : { credential, salt, output: used.output };
 }
 
 /**

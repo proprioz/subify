@@ -1,15 +1,15 @@
 import { IonButton, IonContent, IonItem, IonLabel, IonList, IonModal, IonNote, useIonAlert } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getMeta, setMeta } from '../data/db';
-import { addBiometrics, readKeyring, setLockAfter } from '../data/vault';
+import { addBiometrics, readKeyring, rememberPasskey, setLockAfter } from '../data/vault';
 import { askPasskey, biometricsAvailable, biometricsLabel, createPasskey, deviceName, type Enrolled, type Platform, thisPlatform } from '../ui/biometrics';
 import { useToast } from '../ui/toast';
 import { useAppData } from './AppData';
 
 interface BiometricsFlow {
-  /** What the setting is called on this device: “Face ID or Touch ID”, “Windows Hello”… */
-  label: string;
+  /** How the passkey checks it's the user on this device: “Face ID or Touch ID”, “Windows Hello”… */
+  verifiedBy: string;
   /** Whether this device can offer it at all. */
   available: boolean;
   /** Explains, then turns Face ID on with the device's one passkey. True once it is on. */
@@ -40,7 +40,10 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
   // database read before the request would let that moment pass.
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
   const passkeyUser = useLiveQuery(async () => (await getMeta<Uint8Array>(db, 'passkeyUser')) ?? null, [db]);
-  const label = biometricsLabel(platform);
+  // What an alert's buttons read when tapped, not what it was when the alert opened.
+  const latest = useRef({ keyring, passkeyUser });
+  latest.current = { keyring, passkeyUser };
+  const verifiedBy = biometricsLabel(platform);
   const device = deviceName(navigator.userAgent, navigator.maxTouchPoints);
 
   useEffect(() => {
@@ -54,9 +57,13 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
     }
   }, [db, passkeyUser]);
 
-  /** The passkey this device already has, else a new one. Must run first thing in the tap. */
-  const enroll = useCallback(async (): Promise<Enrolled | 'cancelled' | 'unavailable'> => {
-    const kept = keyring?.passkey;
+  /**
+   * The passkey this device already has, else a new one; `fresh` makes a new one anyway. Must run
+   * first thing in the tap. `unconfirmed`: a passkey exists but didn't answer, missing or out of sight.
+   */
+  const enroll = useCallback(async (fresh: boolean): Promise<Enrolled | 'cancelled' | 'unavailable' | 'unconfirmed'> => {
+    const { keyring, passkeyUser } = latest.current;
+    const kept = fresh ? undefined : keyring?.passkey;
 
     if (kept !== undefined) {
       const started = performance.now();
@@ -70,18 +77,42 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
         };
       }
 
+      // The sheet showed: the passkey is out of sight (another password manager) or deleted.
       if (performance.now() - started >= NO_SHEET_MS) {
-        return 'cancelled';
+        return 'unconfirmed';
       }
     }
 
-    return createPasskey(passkeyUser ?? crypto.getRandomValues(new Uint8Array(16)));
-  }, [keyring, passkeyUser]);
+    const created = await createPasskey(passkeyUser ?? crypto.getRandomValues(new Uint8Array(16)));
+
+    if (typeof created === 'object' && 'unconfirmed' in created) {
+      await rememberPasskey(db, created.credential, created.salt);
+
+      return 'unconfirmed';
+    }
+
+    return created;
+  }, [db]);
 
   const attempt = useCallback(
-    (done: (on: boolean) => void) => {
+    (done: (on: boolean) => void, fresh = false) => {
       void (async () => {
-        const result = await enroll();
+        const result = await enroll(fresh);
+
+        // Never a dead end: the same passkey again, through its password manager, or a new one.
+        if (result === 'unconfirmed') {
+          void presentAlert({
+            header: 'The passkey didn’t answer',
+            message: `If the list said no passkey is saved for this website, Subify’s passkey is in another password manager: tap Try again, then “More from…” at the bottom, and pick it. If you deleted it, make a new one.`,
+            buttons: [
+              { text: 'Try again', handler: () => attempt(done) },
+              { text: 'Make a new passkey', handler: () => attempt(done, true) },
+              { text: 'Cancel', role: 'cancel', handler: () => done(false) },
+            ],
+          });
+
+          return;
+        }
 
         if (result === 'unavailable') {
           setGuide({ retry: () => attempt(done), done });
@@ -90,12 +121,13 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
         }
 
         if (result === 'cancelled') {
-          await toast(`${label} wasn’t turned on.`, 2500);
+          await toast('The passkey wasn’t turned on.', 2500);
           done(false);
 
           return;
         }
 
+        const { keyring } = latest.current;
         await addBiometrics(db, result.credential, result.salt, result.output);
         // Secret channels' own passkey, from earlier versions: this one replaces it.
         await db.meta.delete('secretCredential');
@@ -107,16 +139,16 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
 
         await toast(
           result.output === null
-            ? `${label} is on, for secret channels. This device can’t lock Subify with it.`
+            ? 'Passkey on, for secret channels. Your password manager can’t lock Subify with it.'
             : keyring?.password === null
-              ? `${label} is on. Subify asks for it each time it opens.`
-              : `${label} is on. Your password still works.`,
+              ? 'Passkey on. Subify asks for it each time it opens.'
+              : 'Passkey on. Your password still works.',
           3000,
         );
         done(true);
       })();
     },
-    [db, enroll, keyring, label, toast],
+    [db, enroll, presentAlert, toast],
   );
 
   const turnOn = useCallback(
@@ -126,11 +158,12 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
         const noPassword = keyring?.password === null;
 
         void presentAlert({
-          header: `Use ${label}?`,
+          header: 'Use a passkey?',
           message: [
-            reused ? `Subify uses the key this ${device} already keeps: nothing new is saved.` : keeps(platform, device),
+            `A passkey lets you open Subify and its secret channels with ${verifiedBy}.`,
+            reused ? `Subify uses the one this ${device} already has: nothing new is saved.` : keeps(platform, device),
             'Subify’s server never sees it.',
-            noPassword ? `Subify will ask for ${label} each time it opens. If this key is ever deleted, only a backup brings your channels back.` : 'Your password keeps working.',
+            noPassword ? 'Subify will ask for it each time it opens. If the passkey is ever deleted, only a backup brings your channels back.' : 'Your password keeps working.',
           ].join(' '),
           buttons: [
             { text: 'Not now', role: 'cancel', handler: () => done(false) },
@@ -138,13 +171,13 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
           ],
         });
       }),
-    [attempt, device, keyring, label, platform, presentAlert],
+    [attempt, device, keyring, platform, presentAlert, verifiedBy],
   );
 
   const steps = GUIDES[platform](device);
 
   return (
-    <BiometricsFlowContext.Provider value={{ label, available, turnOn }}>
+    <BiometricsFlowContext.Provider value={{ verifiedBy, available, turnOn }}>
       {children}
       <IonModal
         isOpen={guide !== null}
@@ -160,7 +193,7 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
           <div className="ion-text-center">
             <h2>{steps.title}</h2>
             <IonNote color="medium" className="ion-display-block">
-              {label} didn’t turn on. {steps.lead}
+              No passkey was saved. {steps.lead}
             </IonNote>
           </div>
           <IonList inset>
@@ -219,15 +252,15 @@ export function useBiometricsFlow(): BiometricsFlow {
 function keeps(platform: Platform, device: string): string {
   switch (platform) {
     case 'ios':
-      return `Your ${device} keeps a key for Subify in Passwords, the app built into iOS: there’s nothing to install.`;
+      return `Your ${device} keeps it in Passwords, the app built into iOS: there’s nothing to install.`;
     case 'mac':
-      return 'Your Mac keeps a key for Subify in Passwords, built into macOS: there’s nothing to install.';
+      return 'Your Mac keeps it in Passwords, built into macOS: there’s nothing to install.';
     case 'android':
-      return 'Your phone keeps a key for Subify in Google Password Manager, built into Android: there’s nothing to install.';
+      return 'Your phone keeps it in Google Password Manager, built into Android: there’s nothing to install.';
     case 'windows':
-      return 'Windows Hello keeps a key for Subify on this computer: there’s nothing to install.';
+      return 'Windows keeps it on this computer: there’s nothing to install.';
     case 'other':
-      return 'Your device keeps a key for Subify in its password manager.';
+      return 'Your device keeps it in its password manager.';
   }
 }
 
