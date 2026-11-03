@@ -9,10 +9,11 @@ import type { SlotImage, SlotImageType } from './slot';
 export type ThumbnailPayload = { kind: 'empty' } | { kind: 'thumbnail'; itemId: string; image: SlotImage };
 
 /**
- * 8 KB per stored case, the AEAD's 30 bytes included. `default.jpg` (120×90) measured at most
- * 4.2 KB on 76 videos in November 2026; larger thumbnails are not kept.
+ * 24 KB per stored case, the AEAD's 30 bytes included. `mqdefault.jpg` (320×180) measured 9.6 KB
+ * on average, 16.2 KB at the 95th percentile and at most 21.2 KB on 75 videos in November 2026;
+ * larger thumbnails are not kept.
  */
-export const THUMBNAIL_CASE_SIZE = 8 * 1024 - 30;
+export const THUMBNAIL_CASE_SIZE = 24 * 1024 - 30;
 const MAX_ID = 64;
 /** The largest image a case holds: the case, less its flag, item id and image type and length. */
 export const THUMBNAIL_MAX_BYTES = THUMBNAIL_CASE_SIZE - 1 - 1 - (1 + MAX_ID) - 1 - 2;

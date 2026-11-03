@@ -7,5 +7,5 @@ export const youtubeUrls = {
   page: (path: string) => `https://www.youtube.com/${path}`,
   oembed: (videoId: string) =>
     `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
-  smallThumbnail: (videoId: string) => `https://i.ytimg.com/vi/${videoId}/default.jpg`,
+  smallThumbnail: (videoId: string) => `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
 };

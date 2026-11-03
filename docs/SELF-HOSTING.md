@@ -266,7 +266,7 @@ The secret the whole catalog is encrypted with (D16): 32 random bytes in base64 
 
 Keep a copy of the secret offline, apart from the database: without it the catalog can't be read, and with both anyone can read it. Changing it makes the catalog unreadable; devices then add their channels back on their own.
 
-The server rewrites its whole catalog every 10 minutes or more (the pass). Changes wait for the next pass, and the new-channel budgets are counted in memory on Node and in a Durable Object on Workers, which `wrangler.toml` declares (`COORDINATOR`): a restart starts the budgets over. The thumbnails take about 200 MB of database at first (30 days of 8 KB thumbnails), more as the catalog grows.
+The server rewrites its whole catalog every 10 minutes or more (the pass). Changes wait for the next pass, and the new-channel budgets are counted in memory on Node and in a Durable Object on Workers, which `wrangler.toml` declares (`COORDINATOR`): a restart starts the budgets over. The thumbnails take about 600 MB of database at first (30 days of 24 KB thumbnails), more as the catalog grows.
 
 Default: generated on Node, none on Workers.
 

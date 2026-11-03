@@ -51,9 +51,12 @@ export function thumbnailUrl(videoId: string): string {
   return `https://${THUMBNAIL_HOST}/vi/${videoId}/mqdefault.jpg`;
 }
 
-/** 120×90, a few KB: the thumbnail the encrypted catalog keeps in its ring (D16). */
+/**
+ * 320×180, about 10 KB: the thumbnail the encrypted catalog keeps in its ring (D16). Not
+ * `default.jpg`, 120×90 with black bars, which the app had to blow up about five times.
+ */
 export function smallThumbnailUrl(videoId: string): string {
-  return `https://${THUMBNAIL_HOST}/vi/${videoId}/default.jpg`;
+  return `https://${THUMBNAIL_HOST}/vi/${videoId}/mqdefault.jpg`;
 }
 
 /**
