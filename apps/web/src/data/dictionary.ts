@@ -21,11 +21,18 @@ export interface NamedChannel {
   description?: string;
   /** Found despite a typo or two: a suggestion rather than the name typed. */
   similar?: true;
+  /**
+   * Another of its names, the one the words matched (a translation, a programme's title): shown
+   * on its row, which would otherwise hold nothing of what was typed.
+   */
+  matched?: string;
 }
 
 interface Entry extends NamedChannel {
-  /** The names and the handle, as `normalize` makes them. */
+  /** The names and the handle, as `normalize` makes them: the name shown first, then the handle, then the others. */
   keys: string[];
+  /** The other names as written, by their key: what `matched` shows. */
+  others: Map<string, string>;
   /** The same keys' words, and each key with its words run together, for the search of typos. */
   words: string[];
   compacts: string[];
@@ -123,36 +130,62 @@ export async function searchDictionary(db: SubifyDb, text: string, limit = 10): 
 
   const words = query.split(' ');
   const compact = query.replaceAll(' ', '');
-  const scored: { entry: Entry; score: number }[] = [];
+  const scored: { entry: Entry; score: number; similar: boolean; key: string }[] = [];
 
   for (const entry of await entries(db)) {
     let score = 0;
+    let best = '';
 
     for (const key of entry.keys) {
-      score = Math.max(
-        score,
-        key === query || key === compact ? 3 : key.startsWith(query) ? 2 : words.every((word) => key.startsWith(word) || key.includes(` ${word}`)) ? 1 : 0,
-      );
-    }
+      const level = key === query || key === compact ? 3 : key.startsWith(query) || key.startsWith(compact) ? 2 : words.every((word) => key.startsWith(word) || key.includes(` ${word}`)) ? 1 : 0;
 
-    // Only names nothing exact found are compared letter by letter: it costs far more.
-    if (score === 0) {
-      const typos = similarity(words, compact, entry);
-
-      if (typos !== null) {
-        score = 1 - (typos + 1) / 10;
+      // The keys come shown name first: another name wins only by matching better.
+      if (level > score) {
+        score = level;
+        best = key;
       }
     }
 
     if (score > 0) {
-      scored.push({ entry, score });
+      // At the same level, the name the row shows comes before another of a channel's names.
+      scored.push({ entry, score: entry.others.has(best) ? score - 0.5 : score, similar: false, key: best });
+      continue;
+    }
+
+    // Only names nothing exact found are compared letter by letter: it costs far more.
+    const typos = similarity(words, compact, entry);
+
+    if (typos !== null) {
+      scored.push({ entry, score: 1 - (typos + 1) / 10 - 0.5, similar: true, key: closestKey(words, compact, entry) });
     }
   }
 
   return scored
     .sort((a, b) => b.score - a.score || a.entry.name.length - b.entry.name.length)
     .slice(0, limit)
-    .map(({ entry: { id, handle, name }, score }) => ({ id, handle, name, ...(score < 1 ? { similar: true } : {}) }));
+    .map(({ entry: { id, handle, name, others }, similar, key }) => ({
+      id,
+      handle,
+      name,
+      ...(similar ? { similar: true as const } : {}),
+      ...(others.has(key) ? { matched: others.get(key)! } : {}),
+    }));
+}
+
+/** Which of the entry's keys a typo search matched: the shown name or handle when they match as well as another. */
+function closestKey(words: readonly string[], compact: string, entry: Entry): string {
+  let best = { key: entry.keys[0] ?? '', typos: Infinity };
+
+  for (const key of entry.keys) {
+    const keyWords = key.split(' ');
+    const typos = similarity(words, compact, { compacts: [key.replaceAll(' ', '')], words: keyWords });
+
+    if (typos !== null && typos < best.typos) {
+      best = { key, typos };
+    }
+  }
+
+  return best.key;
 }
 
 /**
@@ -161,7 +194,7 @@ export async function searchDictionary(db: SubifyDb, text: string, limit = 10): 
  * when it takes more than the words allow. Each word keeps its first letter, as people rarely
  * mistype that one.
  */
-function similarity(words: readonly string[], compact: string, entry: Entry): number | null {
+function similarity(words: readonly string[], compact: string, entry: Pick<Entry, 'compacts' | 'words'>): number | null {
   let best = Infinity;
 
   for (const key of entry.compacts) {
@@ -272,13 +305,16 @@ function parse(text: string): Entry[] {
     .map((line) => {
       const [id = '', handle = '', names = ''] = line.split('\t');
       const all = names === '' ? [] : names.split('\u001f');
-
-      const keys = [...new Set([...all, ...(handle === '' ? [] : [handle])].map(normalize))];
+      const name = all[0] ?? `@${handle}`;
+      const shown = [name, ...(handle === '' ? [] : [handle])].map(normalize);
+      const others = new Map(all.slice(1).map((other) => [normalize(other), other] as const).filter(([key]) => !shown.includes(key)));
+      const keys = [...new Set([...shown, ...others.keys()])];
 
       return {
         id,
         handle: handle === '' ? null : handle,
-        name: all[0] ?? `@${handle}`,
+        name,
+        others,
         keys,
         words: [...new Set(keys.flatMap((key) => key.split(' ')))],
         compacts: [...new Set(keys.map((key) => key.replaceAll(' ', '')))],

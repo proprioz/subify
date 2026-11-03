@@ -88,10 +88,24 @@ describe('the Wikidata dictionary on the device', () => {
     expect((await searchDictionary(db, 'LÉNA')).map((channel) => channel.id)).toEqual([LENA, LENA_FAN]);
     expect((await searchDictionary(db, 'situations fans')).map((channel) => channel.id)).toEqual([LENA_FAN]);
     expect((await searchDictionary(db, 'national space')).map((channel) => channel.id)).toEqual([NASA]);
+    // A @handle is a name run together: its start matches the words too.
+    expect((await searchDictionary(db, 'lena situ')).map((channel) => channel.id)).toEqual([LENA, LENA_FAN]);
     expect((await searchDictionary(db, 'nasa'))[0]).toEqual({ id: NASA, handle: 'NASA', name: 'NASA' });
     // A name that starts with the words beats a shorter one that only contains them.
     expect((await searchDictionary(db, 'situations')).map((channel) => channel.id)).toEqual([COMEDY, LENA, LENA_FAN]);
     expect(await searchDictionary(db, 'ar')).toEqual([]);
+  });
+
+  // A row must show what was typed: a channel found through another of its names (“Le monde en face” for one shown as “x32b4hd67”) puzzled people.
+  it('tells which other name matched, and ranks it after the shown names', async () => {
+    const db = freshDb();
+    await ensureDictionary(db, server().api());
+
+    expect(await searchDictionary(db, 'national space')).toEqual([{ id: NASA, handle: 'NASA', name: 'NASA', matched: 'National Aeronautics and Space Administration' }]);
+    expect(await searchDictionary(db, 'aeronautcs')).toEqual([{ id: NASA, handle: 'NASA', name: 'NASA', similar: true, matched: 'National Aeronautics and Space Administration' }]);
+    // Matched by its shown name: nothing more to say. “Arte France” is only another name of ARTE.
+    expect(await searchDictionary(db, 'arte')).toEqual([{ id: ARTE, handle: 'arte', name: 'ARTE' }]);
+    expect(await searchDictionary(db, 'arte france')).toEqual([{ id: ARTE, handle: 'arte', name: 'ARTE', matched: 'Arte France' }]);
   });
 
   // People mistype names, as in a search engine: a typo must still find the channel, marked as a suggestion, while a short word must not match everything a letter away.
