@@ -767,9 +767,15 @@ ion-thumbnail.video-thumbnail {
   color: var(--app-placeholder-color);
 }
 
-/* The placeholder's “why no thumbnail” icon: large enough to read as something to tap. */
+/* The placeholder's “why no thumbnail” icon: large enough to read as something to tap, white
+   over the blurred picture (VideoCard) whatever its colours. */
 .video-thumbnail ion-button ion-icon {
   font-size: 28px;
+}
+
+.video-thumbnail.blurred ion-button {
+  --color: rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
 }
 
 /* Two cards side by side on extra-wide screens (FeedPage) share the row's height. */

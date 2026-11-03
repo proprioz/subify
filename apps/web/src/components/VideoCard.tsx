@@ -5,6 +5,7 @@ import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
 import { keepsThumbnail, THUMBNAIL_DAYS } from '../data/thumbnails';
 import { videoLink } from '../data/video-link';
+import { blurredPicture } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
 import { MORE_ICON, SHARE_ICON } from '../ui/icons';
 import { useToast } from '../ui/toast';
@@ -72,7 +73,11 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
           onClick={unavailable ? undefined : () => void copy()}
           aria-label={unavailable ? undefined : `Copy link to ${kind === undefined ? '' : `${kind.text}: `}${item.title}`}
         >
-          <IonThumbnail slot="start" className="video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center">
+          <IonThumbnail
+            slot="start"
+            className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : ''}`}
+            style={image === null ? { background: blurredPicture(item.key) } : undefined}
+          >
             {/* Said by the channel's mark below; this one is for the eye, while scrolling. */}
             {channel.secret && (
               <span className="secret-tag" aria-hidden="true">
@@ -86,7 +91,6 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
               !unavailable && (
                 <IonButton
                   fill="clear"
-                  color="medium"
                   size="large"
                   aria-label="Why there’s no thumbnail"
                   onClick={(event) => {
