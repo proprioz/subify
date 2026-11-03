@@ -5,10 +5,10 @@ import type { OnStep } from './subscriptions';
 
 /**
  * The Wikidata dictionary (docs/FEATURES.md, D16): the YouTube channels Wikidata names, with
- * their @handles and names. The app downloads all of it, never part of it, at a refresh of the
- * feed (or the first name looked up, if that comes first), and again only when the server has a
- * newer one; it then searches it on
- * the device, so the server never sees a name the dictionary knows. It is public data, rebuilt
+ * their @handles and names. The app downloads all of it, never part of it, when the user gets
+ * ready to add a channel (the Channels tab's search field), at a refresh of the feed, or at the
+ * first name looked up, whichever comes first, and again only when the server has a newer one; it
+ * then searches it on the device, so the server never sees a name the dictionary knows. It is public data, rebuilt
  * from the server at will, and stays out of backups.
  */
 

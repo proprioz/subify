@@ -39,13 +39,14 @@ import { Section } from '../components/Section';
 import { SortMenu } from '../components/SortMenu';
 import { isChannelInput, isChannelName } from '../data/channel-link';
 import { getMeta, setMeta, type Subscription } from '../data/db';
+import { refreshDictionary } from '../data/dictionary';
 import { type ChannelSort, sortChannels } from '../data/feed';
 import { ageLabel } from '../data/format';
 import { unsubscribe } from '../data/subscriptions';
 import { MORE_ICON } from '../ui/icons';
 
 export function ChannelsPage() {
-  const { db, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
+  const { db, api, gate, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
   const { toggleSecrets, setChannelSecret, changeCode, biometrics, turnOnBiometrics } = useSecretFlow();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,6 +178,10 @@ export function ChannelsPage() {
         enterkeyhint="search"
         value={search}
         onIonInput={(event) => setSearch(String(event.detail.value ?? ''))}
+        // Getting ready to add a channel (D12): the list of channel names comes now, so a name finds
+        // channels while it is typed, offline. Never asks: with the connection check on and nothing
+        // approved yet, the first name looked up brings it.
+        onIonFocus={() => void gate.whenApproved(() => refreshDictionary(db, api))}
         onKeyDown={(event) => {
           // A name searches the list too: only its button sends it online.
           if (event.key === 'Enter' && explicit) {
