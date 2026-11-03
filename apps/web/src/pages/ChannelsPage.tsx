@@ -6,7 +6,6 @@ import {
   IonItemOptions,
   IonItemSliding,
   IonLabel,
-  IonNote,
   IonSearchbar,
   useIonAlert,
 } from '@ionic/react';
@@ -24,20 +23,19 @@ import {
   swapVerticalOutline,
   trashOutline,
 } from 'ionicons/icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelAvatar } from '../components/ChannelAvatar';
+import { ChannelSearchResults, useChannelSearch } from '../components/ChannelSearch';
 import { ChannelTypesModal } from '../components/ChannelTypesModal';
 import { EmptyState } from '../components/EmptyState';
-import { channelLink, FindChannelModal, LookUpButton, NameMatches, useChannelFinder } from '../components/FindChannelModal';
 import { Menu, type MenuAction } from '../components/Menu';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
 import { Section } from '../components/Section';
 import { SortMenu } from '../components/SortMenu';
-import { isChannelInput, isChannelName } from '../data/channel-link';
 import { getMeta, setMeta, type Subscription } from '../data/db';
 import { refreshDictionary } from '../data/dictionary';
 import { type ChannelSort, sortChannels } from '../data/feed';
@@ -53,8 +51,7 @@ export function ChannelsPage() {
   const [presentAlert] = useIonAlert();
   const searchbar = useRef<HTMLIonSearchbarElement>(null);
   const [search, setSearch] = useState('');
-  // Closing the results clears the field: what was typed there has been dealt with.
-  const finder = useChannelFinder(useCallback(() => setSearch(''), []));
+  const finder = useChannelSearch(search);
   const [editingTypesOf, setEditingTypesOf] = useState<string | null>(null);
   const [sortFrom, setSortFrom] = useState<Event | null>(null);
   const [optionsFrom, setOptionsFrom] = useState<Event | null>(null);
@@ -85,8 +82,6 @@ export function ChannelsPage() {
   }, [searchParams, setSearchParams]);
 
   const term = search.trim();
-  const explicit = isChannelInput(term);
-  const addable = explicit || isChannelName(term);
   const visible = (subscriptions ?? []).filter((channel) => secretsShown || !channel.secret);
   const waiting = visible.filter((channel) => channel.status === 'pending_submit').length;
   const lowered = term.toLocaleLowerCase();
@@ -162,7 +157,6 @@ export function ChannelsPage() {
           <Menu from={channelMenu?.from ?? null} onClose={() => setChannelMenu(null)} actions={channelMenu === null ? [] : channelActions(channelMenu.channel)} />
           <SortMenu from={sortFrom} onClose={() => setSortFrom(null)} sort={sort} onSort={(next) => void setMeta(db, 'channelSort', next)} />
           <ChannelTypesModal channel={editingTypes} onClose={() => setEditingTypesOf(null)} />
-          <FindChannelModal finder={finder} />
         </>
       }
     >
@@ -183,9 +177,9 @@ export function ChannelsPage() {
         // approved yet, the first name looked up brings it.
         onIonFocus={() => void gate.whenApproved(() => refreshDictionary(db, api))}
         onKeyDown={(event) => {
-          // A name searches the list too: only its button sends it online.
-          if (event.key === 'Enter' && explicit) {
-            void finder.lookUp(term);
+          // Enter does what the list's last row does: search more widely.
+          if (event.key === 'Enter') {
+            void finder.widen();
           }
         }}
       />
@@ -196,13 +190,7 @@ export function ChannelsPage() {
         </EmptyState>
       )}
 
-      {count > 0 && shown.length === 0 && !explicit && (
-        <IonNote color="medium" className="ion-display-block ion-padding ion-text-center">
-          {addable ? 'No channels match that search.' : 'No channels match that search. To add one, type its name or paste its link.'}
-        </IonNote>
-      )}
-
-      {attention.length > 0 && (
+      {term === '' && attention.length > 0 && (
         <Section heading="Need your attention">
           {attention.map((channel, index) => (
             <IonItemSliding key={channel.key}>
@@ -244,7 +232,7 @@ export function ChannelsPage() {
         </Section>
       )}
 
-      {working.length > 0 && (
+      {term === '' && working.length > 0 && (
         <Section {...(attention.length > 0 ? { heading: 'Following' } : {})} {...(waiting > 0 ? { footer: `${waiting === 1 ? '1 channel is' : `${waiting} channels are`} being added, one at a time, while the app is open.` } : {})}>
           {working.map((channel, index) => (
             // Swiping a row offers its removal, as in the platforms' own lists; the ⋯ button
@@ -289,15 +277,9 @@ export function ChannelsPage() {
         </Section>
       )}
 
-      {/* Below the channels the text matched: a handle may name one already followed. */}
-      {addable && (
-        <div className="ion-padding-horizontal">
-          <LookUpButton text={term} disabled={finder.finding !== null} onClick={() => void finder.lookUp(term)} />
-        </div>
-      )}
-
-      {/* Once the device has the dictionary, a name finds channels while it is typed, offline. */}
-      {addable && <NameMatches text={term} onPick={(channel) => void finder.lookUp(channelLink(channel))} />}
+      {/* As soon as something is typed, one list replaces the page's: the followed channels it
+          matches, the channels to follow, and “Search more widely”. */}
+      {term !== '' && <ChannelSearchResults finder={finder} own={shown} onOpen={showVideos} />}
     </Page>
   );
 }
