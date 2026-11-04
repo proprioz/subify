@@ -1,6 +1,6 @@
 import { IonCheckbox, IonChip, IonIcon, IonItem, IonLabel } from '@ionic/react';
 import { close, funnelOutline, optionsOutline, people, searchOutline, swapVerticalOutline } from 'ionicons/icons';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ALL_TYPES, type ShownType, type Subscription } from '../data/db';
 import type { ChannelSort, TypeFilter } from '../data/feed';
 import { ChannelAvatar } from './ChannelAvatar';
@@ -34,7 +34,8 @@ interface Props {
  * The strip above the feed: the feed's tools folded into “Options” (search, the
  * kinds shown, the channel order), then “All” and every channel, to show only one. Filled chips
  * are the ones in use. Channels show as their avatar alone, so more of them fit; the one shown
- * also gives its name.
+ * also gives its name, and the strip scrolls to bring it to the middle of the screen: the user can
+ * still scroll it away.
  */
 export function ChannelStrip(props: Props) {
   const {
@@ -57,7 +58,22 @@ export function ChannelStrip(props: Props) {
   const [kindsFrom, setKindsFrom] = useState<Event | null>(null);
   const [sortFrom, setSortFrom] = useState<Event | null>(null);
   const lastAllTap = useRef(0);
+  const strip = useRef<HTMLDivElement>(null);
   const kindsOn = ALL_TYPES.filter((type) => typeFilter[type]).length;
+
+  useEffect(() => {
+    const element = strip.current;
+    // Channels' chips are the only ones with an avatar, in the order of `channels`.
+    const index = channels.findIndex((channel) => channel.key === selected);
+    const chip = element?.querySelectorAll(':scope > ion-chip:has(> ion-avatar)')[index];
+
+    if (element && chip) {
+      const box = element.getBoundingClientRect();
+      const { left, width } = chip.getBoundingClientRect();
+      element.scrollTo({ left: element.scrollLeft + left - box.left + width / 2 - box.width / 2 });
+    }
+    // Only a new selection scrolls: the user's own scrolling is left alone.
+  }, [selected]);
 
   const tapAll = () => {
     const now = Date.now();
@@ -73,7 +89,7 @@ export function ChannelStrip(props: Props) {
 
   return (
     <>
-      <div className="channel-strip ion-padding-horizontal" role="group" aria-label="Filter by channel">
+      <div ref={strip} className="channel-strip ion-padding-horizontal" role="group" aria-label="Filter by channel">
         {optionsOpen ? (
           <>
             <StripChip on={false} onClick={() => onOptionsOpen(false)} label="Close" ariaLabel="Close options" start={<IonIcon icon={close} />} />
@@ -149,7 +165,8 @@ function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, se
       outline={!on}
       color={on ? 'primary' : 'medium'}
       role="button"
-      aria-pressed={on}
+      // As a string: React gives `true` to a custom element as an empty attribute, which isn't “pressed”.
+      aria-pressed={on ? 'true' : 'false'}
       {...(name === undefined ? {} : { 'aria-label': name })}
       onClick={(event) => onClick(event.nativeEvent)}
     >

@@ -258,22 +258,31 @@ ion-fab-button.ion-color-red ion-icon {
   display: none;
 }
 
+/* The strip glides to the channel shown (ChannelStrip), unless motion is reduced. */
+@media (prefers-reduced-motion: no-preference) {
+  .channel-strip {
+    scroll-behavior: smooth;
+  }
+}
+
 /* Larger than Ionic's chips, which are made for tags rather than the main way to pick a channel:
-   40px high with 32px avatars instead of 32px and 24px. Sizes are in em of the chip's text
-   (14px by default), as Ionic's own, so they follow the system's text size. */
+   44px high with 36px avatars instead of 32px and 24px, and 16px at their ends instead of 12px.
+   Sizes are in em of the chip's text (14px by default), as Ionic's own, so they follow the
+   system's text size. */
 .channel-strip ion-chip {
   flex-shrink: 0;
-  min-height: calc(40em / 14);
-  border-radius: calc(20em / 14);
+  min-height: calc(44em / 14);
+  border-radius: calc(22em / 14);
+  padding-inline: calc(16em / 14);
 }
 
 .channel-strip ion-chip > ion-avatar {
-  width: calc(32em / 14);
-  height: calc(32em / 14);
+  width: calc(36em / 14);
+  height: calc(36em / 14);
 }
 
 .channel-strip ion-chip > ion-icon {
-  font-size: calc(22em / 14);
+  font-size: calc(24em / 14);
 }
 
 /* A channel shown by its avatar alone: a round chip around it, always outlined (the channel shown
