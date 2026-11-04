@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 interface Props {
   icon: string;
-  heading: string;
+  heading: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
 }

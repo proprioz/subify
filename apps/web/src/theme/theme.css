@@ -1084,3 +1084,31 @@ altcha-widget {
   width: 22px;
   height: 22px;
 }
+
+/* An ⓘ beside a short line (InfoButton): as small as the text it follows, without the button's
+   own height. */
+.info-button {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  height: auto;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.info-button ion-icon {
+  font-size: 20px;
+}
+
+/* The tooltips it and the thumbnails' ? open: in the page's inverse colours, as the tour's, with a
+   deeper shadow, so that they stand apart from the cards and the page under them. */
+ion-popover.info-popover {
+  --background: var(--ion-text-color);
+  --box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+ion-popover.info-popover ion-content {
+  --background: var(--ion-text-color);
+  --color: var(--ion-background-color);
+  font-size: 14px;
+  line-height: 1.4;
+}

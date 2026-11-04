@@ -33,6 +33,7 @@ import { ChannelAvatar } from '../components/ChannelAvatar';
 import { ChannelSearchResults, useChannelSearch } from '../components/ChannelSearch';
 import { ChannelTypesModal } from '../components/ChannelTypesModal';
 import { EmptyState } from '../components/EmptyState';
+import { NotFetchedInfo } from '../components/InfoButton';
 import { Menu, type MenuAction } from '../components/Menu';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
@@ -250,7 +251,10 @@ export function ChannelsPage() {
                     {channel.secret && <IonIcon icon={eyeOffOutline} className="secret-mark" aria-label="Secret" />}
                     {channel.title}
                   </h2>
-                  <p>{channelStatus(channel, lastUploads?.get(channel.key))}</p>
+                  <p className="ion-display-flex ion-align-items-center">
+                    {channelStatus(channel, lastUploads?.get(channel.key))}
+                    {channel.status !== 'pending_submit' && lastUploads?.get(channel.key) === undefined && <NotFetchedInfo title={channel.title} />}
+                  </p>
                 </IonLabel>
                 <IonButton
                   slot="end"
@@ -298,6 +302,6 @@ function channelStatus(channel: Subscription, latest: number | undefined): strin
     case 'pending_submit':
       return 'Waiting to be added…';
     default:
-      return latest === undefined ? 'No uploads yet' : `Last upload ${ageLabel(latest)}`;
+      return latest === undefined ? 'No videos fetched' : `Last upload ${ageLabel(latest)}`;
   }
 }

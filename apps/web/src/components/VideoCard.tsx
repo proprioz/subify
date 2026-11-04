@@ -146,7 +146,7 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
         </IonItem>
       </IonCard>
       <Menu from={menuFrom} onClose={() => setMenuFrom(null)} actions={actions} />
-      <IonPopover isOpen={helpFrom !== null} event={helpFrom ?? undefined} onDidDismiss={() => setHelpFrom(null)}>
+      <IonPopover className="info-popover" isOpen={helpFrom !== null} event={helpFrom ?? undefined} onDidDismiss={() => setHelpFrom(null)}>
         <IonContent className="ion-padding">
           <IonText>
             <p className="ion-no-margin">{missingThumbnailReason(item, thumbnail)}</p>

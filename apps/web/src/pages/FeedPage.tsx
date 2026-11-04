@@ -23,6 +23,7 @@ import { useAppData } from '../app/AppData';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelStrip } from '../components/ChannelStrip';
 import { EmptyState } from '../components/EmptyState';
+import { NotFetchedInfo } from '../components/InfoButton';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
@@ -229,7 +230,16 @@ export function FeedPage() {
       )}
 
       {hasChannels && feed?.entries.length === 0 && term === '' && (
-        <EmptyState icon={refreshOutline} heading={selectedChannel === undefined ? 'Nothing here yet' : `No videos from ${selectedChannel.title}`}>
+        <EmptyState icon={refreshOutline} heading={
+            selectedChannel === undefined ? (
+              'Nothing here yet'
+            ) : (
+              <>
+                No videos fetched from {selectedChannel.title}
+                <NotFetchedInfo title={selectedChannel.title} />
+              </>
+            )
+          }>
           Refresh, or show more kinds of videos under Options.
         </EmptyState>
       )}
