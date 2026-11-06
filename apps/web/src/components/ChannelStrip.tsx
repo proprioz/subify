@@ -63,16 +63,34 @@ export function ChannelStrip(props: Props) {
 
   useEffect(() => {
     const element = strip.current;
+
+    if (!element) {
+      return;
+    }
+
     // Channels' chips are the only ones with an avatar, in the order of `channels`.
     const index = channels.findIndex((channel) => channel.key === selected);
-    const chip = element?.querySelectorAll(':scope > ion-chip:has(> ion-avatar)')[index];
+    const chip = element.querySelectorAll(':scope > ion-chip:has(> ion-avatar)')[index];
 
-    if (element && chip) {
+    if (!chip) {
+      return;
+    }
+
+    // The last channels go as far as the strip scrolls: the browser stops it at its end.
+    const center = () => {
       const box = element.getBoundingClientRect();
       const { left, width } = chip.getBoundingClientRect();
       element.scrollTo({ left: element.scrollLeft + left - box.left + width / 2 - box.width / 2 });
-    }
-    // Only a new selection scrolls: the user's own scrolling is left alone.
+    };
+
+    center();
+
+    // The chip's name takes its final size once Ionic has drawn its label, a frame later: centred
+    // again then. Only the chip's own changes scroll: the user's own scrolling is left alone.
+    const observer = new ResizeObserver(center);
+    observer.observe(chip);
+
+    return () => observer.disconnect();
   }, [selected]);
 
   const tapAll = () => {
