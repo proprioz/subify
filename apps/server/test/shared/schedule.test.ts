@@ -25,6 +25,10 @@ describe('when to poll next', () => {
   });
 
   it('backs off after failures, up to a day', () => {
-    expect([1, 2, 3, 4, 10].map(failureDelay)).toEqual([30 * MINUTE, HOUR, 2 * HOUR, 4 * HOUR, DAY]);
+    expect([1, 2, 3, 4, 10].map((failures) => failureDelay(failures, true))).toEqual([30 * MINUTE, HOUR, 2 * HOUR, 4 * HOUR, DAY]);
+  });
+
+  it('retries a channel without items at the next passes first, then backs off the same way', () => {
+    expect([1, 2, 3, 4, 5, 13].map((failures) => failureDelay(failures, false))).toEqual([0, 0, 0, 30 * MINUTE, HOUR, DAY]);
   });
 });

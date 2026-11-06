@@ -49,7 +49,7 @@ describe('the channel limit', () => {
     const db = freshDb();
     await following(db, MAX_SYNC_CHANNELS);
 
-    await expect(follow(db, { channel: channel(id(MAX_SYNC_CHANNELS)), items: [], start: { pass: 1 }, thumbnails: [] }, NOW)).rejects.toThrow(TooManyChannels);
+    await expect(follow(db, { channel: channel(id(MAX_SYNC_CHANNELS)), items: [], retryAt: null, start: { pass: 1 }, thumbnails: [] }, NOW)).rejects.toThrow(TooManyChannels);
   });
 
   it('refuses a backup with more channels, before the restore replaces anything', async () => {

@@ -13,7 +13,7 @@ import { channelInput, channelSecrets, evaluate } from '@subify/shared/oprf';
 import type { ServerKeys } from '../crypto/keys';
 import type { Platform } from '../platform';
 import { BudgetError } from './budgets';
-import { MINUTE } from './schedule';
+import { MINUTE, retryAtOf } from './schedule';
 import { THUMBNAILS_ON_ADD } from './tend';
 import { readCases, readSlotsInGroup, readState } from './vault';
 
@@ -59,6 +59,7 @@ export function snapshotChannel(slot: SlotChannel): SnapshotChannel {
     handle: slot.handle,
     avatar: slot.avatar,
     items: items.map((item) => ({ id: item.id, title: item.title, published: item.published, type: item.type, upcoming: item.upcoming })),
+    retryAt: retryAtOf(slot),
   };
 }
 
@@ -101,7 +102,7 @@ export async function readSnapshot(platform: Platform, keys: ServerKeys, group: 
     }
   }
 
-  const answer = { v: 3 as const, pass: state.passes, groups, entries: toBase64Url(concat(entries)), thumbnails: '' };
+  const answer = { v: 4 as const, pass: state.passes, groups, entries: toBase64Url(concat(entries)), thumbnails: '' };
 
   if (!withThumbnails) {
     return answer;

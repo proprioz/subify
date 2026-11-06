@@ -86,7 +86,7 @@ export async function runImportQueue(db: SubifyDb, api: Api, now = Date.now()): 
 
     await db.transaction('rw', db.subscriptions, db.items, db.thumbnails, async () => {
       // A backup's icon stays: the encrypted catalog doesn't keep it.
-      await fillSubscription(db, { ...added.channel, icon: next.icon }, added.items);
+      await fillSubscription(db, { ...added.channel, icon: next.icon }, added.items, added.retryAt);
       await db.subscriptions.update(next.key, { submittedAt: now });
       await db.thumbnails.bulkPut(added.thumbnails.map((thumbnail) => ({ ...thumbnail, channel: next.key })));
     });

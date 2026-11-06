@@ -20,6 +20,11 @@ export interface SnapshotChannel {
   avatar: SlotImage | null;
   /** Newest first. */
   items: SnapshotItem[];
+  /**
+   * When the server reads the channel again, for a channel it has no items for because its last
+   * read failed; null otherwise. Version 1 entries have none.
+   */
+  retryAt: number | null;
 }
 
 export interface SnapshotItem {
@@ -50,7 +55,8 @@ const UPCOMING = 1;
 
 export const snapshotChannelCodec: Codec<SnapshotChannel> = {
   kind: 10,
-  version: 1,
+  // 2: the retry time, after the items.
+  version: 2,
   size: PAYLOAD,
 
   encode(value) {
@@ -64,7 +70,7 @@ export const snapshotChannelCodec: Codec<SnapshotChannel> = {
 
     const items = value.items.filter((item) => item.id.length <= MAX_ID).map((item) => ({ ...item, title: fitUtf8(item.title, MAX_TEXT) }));
     // The rule when everything doesn't fit: the oldest items go first.
-    let room = PAYLOAD - (1 + 1 + utf8Length(value.source) + 1 + utf8Length(value.externalId) + 1 + utf8Length(title) + 1 + utf8Length(handle) + 1 + 2 + (avatar?.bytes.length ?? 0) + 1);
+    let room = PAYLOAD - (1 + 1 + utf8Length(value.source) + 1 + utf8Length(value.externalId) + 1 + utf8Length(title) + 1 + utf8Length(handle) + 1 + 2 + (avatar?.bytes.length ?? 0) + 1 + 4);
     let kept = 0;
 
     for (const item of items) {
@@ -84,12 +90,14 @@ export const snapshotChannelCodec: Codec<SnapshotChannel> = {
     items.slice(0, kept).forEach((item) => {
       out.text(item.id).text(item.title).u32(Math.floor(item.published / 1000)).u8(ITEM_TYPES.indexOf(item.type)).u8(item.upcoming ? UPCOMING : 0);
     });
+    // Rounded up: a retry is never announced earlier than it is due. 0 for none.
+    out.u32(value.retryAt === null ? 0 : Math.max(1, Math.ceil(value.retryAt / 1000)));
 
     return out.finish();
   },
 
   decode(bytes) {
-    const read = reader(snapshotChannelCodec, bytes);
+    const read = reader(snapshotChannelCodec, bytes, 1);
     const source = read.text(MAX_ID);
     const externalId = read.text(MAX_ID);
     const title = read.text(MAX_TEXT);
@@ -112,6 +120,7 @@ export const snapshotChannelCodec: Codec<SnapshotChannel> = {
       items.push({ id, title: itemTitle, published, type, upcoming });
     }
 
+    const retryAt = read.version >= 2 ? read.u32() * 1000 : 0;
     read.end();
 
     return {
@@ -121,6 +130,7 @@ export const snapshotChannelCodec: Codec<SnapshotChannel> = {
       handle: handle === '' ? null : handle,
       avatar: avatarType === 0 ? null : { type: IMAGE_TYPES[avatarType - 1]!, bytes: avatarBytes },
       items,
+      retryAt: retryAt === 0 ? null : retryAt,
     };
   },
 };

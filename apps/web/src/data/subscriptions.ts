@@ -3,7 +3,7 @@ import type { Api } from './api';
 import { localChannelKey, localHandle } from './channel-link';
 import type { NamedChannel } from './dictionary';
 import { addByLink, findInCatalog, type NewChannel } from './encrypted';
-import { ALL_TYPES, putItems, setMeta, type Subscription, type SubifyDb } from './db';
+import { ALL_TYPES, putItems, setMeta, setRetryAt, type Subscription, type SubifyDb } from './db';
 
 export class AlreadyFollowing extends Error {
   override readonly name = 'AlreadyFollowing';
@@ -140,6 +140,7 @@ export async function follow(db: SubifyDb, submitted: NewChannel, now = Date.now
     secret: false,
     ...(submitted.slot === undefined ? {} : { slot: submitted.slot }),
     ...(submitted.start === null ? { submittedAt: now } : {}),
+    ...(submitted.retryAt === null ? {} : { retryAt: submitted.retryAt }),
   };
 
   return db.transaction('rw', db.subscriptions, db.items, db.thumbnails, db.meta, async () => {
@@ -182,9 +183,12 @@ export async function unsubscribe(db: SubifyDb, key: string): Promise<void> {
 }
 
 /** Fills a subscription with a channel's first items and its catalog details, in one transaction. */
-export async function fillSubscription(db: SubifyDb, channel: ApiChannel, items: readonly ApiItem[]): Promise<void> {
+export async function fillSubscription(db: SubifyDb, channel: ApiChannel, items: readonly ApiItem[], retryAt: number | null): Promise<void> {
   await db.transaction('rw', db.subscriptions, db.items, async () => {
-    await db.subscriptions.update(channel.key, { title: channel.title, handle: channel.handle, icon: channel.icon, avatar: channel.avatar, status: 'ready' });
+    await db.subscriptions.update(channel.key, (stored) => {
+      Object.assign(stored, { title: channel.title, handle: channel.handle, icon: channel.icon, avatar: channel.avatar, status: 'ready' });
+      setRetryAt(stored, retryAt);
+    });
     await putItems(db, items);
   });
 }

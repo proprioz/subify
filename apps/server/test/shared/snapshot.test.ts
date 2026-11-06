@@ -66,7 +66,7 @@ describe('group snapshots', () => {
     await s.pass();
 
     const { answer, channel } = await read(s, 'a', false);
-    expect(answer).toMatchObject({ v: 3, groups: 1, thumbnails: '' });
+    expect(answer).toMatchObject({ v: 4, groups: 1, thumbnails: '' });
     expect(channel).toMatchObject({ source: 'fake', externalId: 'a', title: 'Channel a', avatar: image(9) });
     expect(channel?.items.map((item) => item.id)).toEqual(['soon', ...videos.slice(0, 15).map((item) => item.id), 's1']);
     expect((await read(s, 'nobody', false)).channel).toBeNull();

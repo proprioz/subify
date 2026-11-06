@@ -1,6 +1,7 @@
 import { IonButton, IonContent, IonIcon, IonPopover } from '@ionic/react';
 import { informationCircleOutline } from 'ionicons/icons';
 import { type ReactNode, useState } from 'react';
+import { retryLabel } from '../data/format';
 
 /**
  * An ⓘ beside a short line, opening a tooltip that explains it. Taps on either stay theirs: the
@@ -37,6 +38,29 @@ export function NotFetchedInfo({ title }: { title: string }) {
     <InfoButton label={`Why no videos from ${title}`}>
       <p className="ion-no-margin">Only videos from the last six months are fetched. New uploads will show up here.</p>
       <p className="ion-no-margin ion-padding-top">Recent ones may also be of kinds you hide, or not read yet.</p>
+    </InfoButton>
+  );
+}
+
+/** What to do about a channel the server couldn't read yet (Subscription.retryAt): the solution, first. */
+export function refreshHint(retryAt: number, now = Date.now()): string {
+  const after = retryLabel(retryAt, now, 'after');
+
+  return after === null ? 'Refresh in a few minutes' : `Refresh ${after}`;
+}
+
+/** When the server reads it again, as a sentence. */
+export function retrySentence(retryAt: number, now = Date.now()): string {
+  const at = retryLabel(retryAt, now);
+
+  return at === null ? 'Another try is under way.' : `Another try comes ${at}.`;
+}
+
+/** Why a channel shows no videos when its last read failed. */
+export function RetryInfo({ title, retryAt }: { title: string; retryAt: number }) {
+  return (
+    <InfoButton label={`Why no videos from ${title}`}>
+      <p className="ion-no-margin">The last try to fetch this channel’s videos failed. {retrySentence(retryAt)}</p>
     </InfoButton>
   );
 }

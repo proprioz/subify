@@ -317,7 +317,7 @@
                     "v": {
                       "type": "number",
                       "enum": [
-                        3
+                        4
                       ]
                     },
                     "latest": {
@@ -543,7 +543,7 @@
                     "v": {
                       "type": "number",
                       "enum": [
-                        3
+                        4
                       ]
                     },
                     "pass": {
@@ -1134,7 +1134,7 @@
                     "v": {
                       "type": "number",
                       "enum": [
-                        3
+                        4
                       ]
                     },
                     "channel": {

@@ -41,7 +41,7 @@ export async function addByLink(platform: Platform, keys: ServerKeys, sources: r
   const padded = [...thumbnails.slice(0, ADD_THUMBNAILS), ...Array.from({ length: Math.max(0, ADD_THUMBNAILS - thumbnails.length) }, () => ({ kind: 'empty' as const }))];
 
   return {
-    v: 3,
+    v: 4,
     channel: toBase64Url(snapshotChannelCodec.encode(channel)),
     thumbnails: toBase64Url(concat(padded.map((payload) => thumbnailCodec.encode(payload)))),
   };

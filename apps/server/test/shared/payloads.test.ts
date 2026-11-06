@@ -10,7 +10,9 @@ import thumbnailV1 from '../fixtures/payloads/thumbnail-v1.hex?raw';
 import poolV1 from '../fixtures/payloads/pool-v1.hex?raw';
 import hoursV1 from '../fixtures/payloads/hours-v1.hex?raw';
 import deltaV1 from '../fixtures/payloads/delta-v1.hex?raw';
+import deltaV2 from '../fixtures/payloads/delta-v2.hex?raw';
 import snapshotV1 from '../fixtures/payloads/snapshot-v1.hex?raw';
+import snapshotV2 from '../fixtures/payloads/snapshot-v2.hex?raw';
 import handleV1 from '../fixtures/payloads/handle-v1.hex?raw';
 
 function hex(bytes: Uint8Array): string {
@@ -104,19 +106,24 @@ describe('the slot codec', () => {
     expect(hex(addingHoursCodec.encode(hours))).toBe(hoursV1.trim() + '00'.repeat(addingHoursCodec.size - hoursV1.trim().length / 2));
   });
 
-  // Devices decode stream entries with this codec: a format change would show in this diff, and an app must keep reading version 1.
-  it('keeps decoding the version 1 stream delta fixture, and refuses an unknown kind', () => {
+  // Devices decode stream entries with this codec: a format change would show in this diff, and an app must keep reading every version.
+  it('keeps decoding the stream delta fixtures of every version, and refuses an unknown kind', () => {
     const golden = { kind: 'item' as const, id: 'videoidabcd', title: 'Titre', published: 1_793_000_000_000, type: 'short' as const, deleted: false, upcoming: true };
     const fixture = fromHex(deltaV1, streamDeltaCodec.size);
+    const retry = { kind: 'retry' as const, retryAt: 1_793_000_600_000 };
 
     expect(streamDeltaCodec.decode(fixture)).toEqual(golden);
-    expect(hex(streamDeltaCodec.encode(golden)).replace(/(00)+$/, '')).toBe(deltaV1.trim());
+    expect(streamDeltaCodec.decode(fromHex(deltaV2, streamDeltaCodec.size))).toEqual(retry);
+    expect(hex(streamDeltaCodec.encode(retry)).replace(/(00)+$/, '')).toBe(deltaV2.trim());
     expect(streamDeltaCodec.decode(streamDeltaCodec.encode({ kind: 'gone' }))).toEqual({ kind: 'gone' });
+    expect(streamDeltaCodec.decode(streamDeltaCodec.encode({ kind: 'retry', retryAt: null }))).toEqual({ kind: 'retry', retryAt: null });
+    // Version 1 had no 'retry' kind; 5 is no kind at all.
     expect(() => streamDeltaCodec.decode(fixture.map((byte, i) => (i === 1 ? 4 : byte)))).toThrow(CodecError);
+    expect(() => streamDeltaCodec.decode(fromHex(deltaV2, streamDeltaCodec.size).map((byte, i) => (i === 1 ? 5 : byte)))).toThrow(CodecError);
   });
 
-  // Devices decode snapshot entries with this codec when they add a channel: a format change would show in this diff, and an app must keep reading version 1.
-  it('keeps decoding the version 1 snapshot entry fixture, and encodes it the same way', () => {
+  // Devices decode snapshot entries with this codec when they add a channel: a format change would show in this diff, and an app must keep reading every version.
+  it('keeps decoding the snapshot entry fixtures of every version', () => {
     const golden = {
       source: 'youtube',
       externalId: 'UCxxxxxxxxxxxxxxxxxxxxxx',
@@ -129,8 +136,11 @@ describe('the slot codec', () => {
       ],
     };
 
-    expect(snapshotChannelCodec.decode(fromHex(snapshotV1, snapshotChannelCodec.size))).toEqual(golden);
-    expect(hex(snapshotChannelCodec.encode(golden)).replace(/(00)+$/, '')).toBe(snapshotV1.trim());
+    // Version 1 has no retry time.
+    expect(snapshotChannelCodec.decode(fromHex(snapshotV1, snapshotChannelCodec.size))).toEqual({ ...golden, retryAt: null });
+    expect(snapshotChannelCodec.decode(fromHex(snapshotV2, snapshotChannelCodec.size))).toEqual({ ...golden, retryAt: 1_793_000_600_000 });
+    expect(hex(snapshotChannelCodec.encode({ ...golden, retryAt: 1_793_000_600_000 })).replace(/(00)+$/, '')).toBe(snapshotV2.trim());
+    expect(snapshotChannelCodec.decode(snapshotChannelCodec.encode({ ...golden, retryAt: null })).retryAt).toBeNull();
   });
 
   // Devices open handle entries with this layout and key: a change to the sealed value or its associated data would leave every device unable to find a channel by its @handle.

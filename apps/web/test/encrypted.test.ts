@@ -19,6 +19,7 @@ function snapshotChannel(id: string, itemCount: number, handle: string | null = 
     handle,
     avatar: null,
     items: Array.from({ length: itemCount }, (_, i) => ({ id: `${id.slice(2, 6)}${i}`, title: `Video ${i}`, published: NOW - i * HOUR, type: 'video' as const, upcoming: false })),
+    retryAt: null,
   };
 }
 
@@ -212,6 +213,26 @@ describe('the encrypted catalog', () => {
     expect(await db.subscriptions.get(`youtube:${A}`)).toMatchObject({ title: 'Renamed', handle: 'renamed', status: 'gone' });
     expect(await getMeta(db, 'streamPass')).toBe(catalog.pass);
     expect(named(server, A)).toBe(false);
+  });
+
+  // A channel the server couldn't read yet shows when it is read again instead of an empty list, until its videos come.
+  it('keeps the retry time of a channel without videos until the stream brings them', async () => {
+    const { server, catalog } = encryptedServer();
+    catalog.publish({ ...snapshotChannel(A, 0), retryAt: NOW + HOUR });
+    const db = freshDb();
+    const api = server.api();
+    await subscribe(db, api, `https://www.youtube.com/channel/${A}`, NOW);
+
+    expect(await db.subscriptions.get(`youtube:${A}`)).toMatchObject({ retryAt: NOW + HOUR });
+
+    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: NOW + 2 * HOUR }] });
+    await syncUpdates(db, api, NOW);
+    expect(await db.subscriptions.get(`youtube:${A}`)).toMatchObject({ retryAt: NOW + 2 * HOUR });
+
+    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: null }, { kind: 'item', id: 'first', title: 'First video', published: NOW, type: 'video', deleted: false, upcoming: false }] });
+    await syncUpdates(db, api, NOW);
+    expect((await db.subscriptions.get(`youtube:${A}`))?.retryAt).toBeUndefined();
+    expect(await itemsOf(db, A)).toEqual(['First video']);
   });
 
   // After an absence longer than the stream keeps, the passes missed are gone: the snapshots must fill the gap.

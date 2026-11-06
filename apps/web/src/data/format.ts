@@ -87,6 +87,22 @@ function ageOf(published: number, now: number): { count: number; unit: AgeUnit }
   return { count: Math.max(1, Math.floor(months / 12)), unit: 'year' };
 }
 
+/**
+ * When the server reads a channel again after a failed read: “at 14:30”, “tomorrow after 08:00”
+ * (with `after`), in the device's time format, or null once that time has come.
+ */
+export function retryLabel(at: number, now = Date.now(), preposition: 'at' | 'after' = 'at'): string | null {
+  if (at <= now) {
+    return null;
+  }
+
+  const date = new Date(at);
+  const time = `${preposition} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const days = daysBetween(now, at);
+
+  return days <= 0 ? time : days === 1 ? `tomorrow ${time}` : `on ${date.toLocaleDateString('en', { weekday: 'long' })} ${time}`;
+}
+
 /** "Updated just now", "Updated 5 min ago"… for the last successful sync. */
 export function updatedLabel(at: number | undefined, now = Date.now()): string | null {
   if (at === undefined) {

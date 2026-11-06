@@ -13,6 +13,9 @@ const version = z.literal(2);
 /** The encrypted catalog's routes (docs/FEATURES.md, D16) answer in version 3, next to version 2's. */
 const version3 = z.literal(3);
 
+/** Answers that carry snapshot entries or stream deltas: version 4 since they may hold a channel's retry time. */
+const version4 = z.literal(4);
+
 /** `bytes` bytes in base64url, without padding. */
 function bytes(count: number) {
   return z.string().regex(new RegExp(`^[A-Za-z0-9_-]{${Math.ceil((count * 4) / 3)}}$`));
@@ -106,7 +109,7 @@ export const StreamQuery = z.strictObject({
 });
 
 export const StreamResponse = z.object({
-  v: version3,
+  v: version4,
   /** The latest pass: the next `since` once `more` is false. */
   latest: z.number(),
   groups: z.number(),
@@ -213,7 +216,7 @@ export const SnapshotQuery = z.strictObject({
 });
 
 export const SnapshotResponse = z.object({
-  v: version3,
+  v: version4,
   /** The pass the thumbnails' tags are for. */
   pass: z.number(),
   /** Snapshot groups: about 40 channels each. */
@@ -225,7 +228,7 @@ export const SnapshotResponse = z.object({
 });
 
 export const AddResponse = z.object({
-  v: version3,
+  v: version4,
   /** The channel, as a snapshot gives it (packages/shared, codec/snapshot.ts), in clear: the device asked for it by name. */
   channel: z.string(),
   /** Its thumbnails of the last 7 days, a fixed number of thumbnail cases, empty ones last. */

@@ -3,6 +3,7 @@ import { decoyEntry, type SlotChannel, toBase64Url, sealEntry, STREAM_ENTRY_SIZE
 import { channelInput, channelSecrets, evaluate, groupOf } from '@subify/shared/oprf';
 import type { ServerKeys } from '../crypto/keys';
 import type { Platform } from '../platform';
+import { retryAtOf } from './schedule';
 import { STREAM_ROWS, type StreamPlan } from './sizing';
 import { readBatches, readState } from './vault';
 
@@ -26,6 +27,11 @@ export function deltasOf(before: SlotChannel, after: SlotChannel | null): Stream
   }
 
   const deltas: StreamDelta[] = after.title !== before.title || after.handle !== before.handle ? [{ kind: 'channel', title: after.title, handle: after.handle }] : [];
+  const retryAt = retryAtOf(after);
+
+  if (retryAt !== retryAtOf(before)) {
+    deltas.push({ kind: 'retry', retryAt });
+  }
   const known = new Map(before.items.map((item) => [item.id, item]));
 
   for (const item of [...after.items].reverse()) {
@@ -123,7 +129,7 @@ export async function readStream(platform: Platform, keys: ServerKeys, since: nu
     return null;
   }
 
-  const answer = { v: 3 as const, latest, groups: last.groups, k: Math.floor((state.tableSize / 2) / last.groups) };
+  const answer = { v: 4 as const, latest, groups: last.groups, k: Math.floor((state.tableSize / 2) / last.groups) };
 
   if (since + 1 <= latest - STREAM_ROWS) {
     return { ...answer, expired: true, more: false, batches: [] };

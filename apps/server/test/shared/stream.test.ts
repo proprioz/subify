@@ -9,7 +9,7 @@ import { deltasOf } from '../../src/catalog/stream';
 import { enqueueUpdate } from '../../src/catalog/updates';
 import { readState, stateWrite } from '../../src/catalog/vault';
 import type { ServerKeys } from '../../src/crypto/keys';
-import { channel as slotChannel } from '../fixtures/payloads/golden';
+import { item as slotItem, channel as slotChannel } from '../fixtures/payloads/golden';
 import { START } from '../harness/types';
 import { FakeSource, item } from '../support/fake-source';
 
@@ -85,7 +85,7 @@ describe('the sync stream', () => {
     await s.pass(START + 20 * MINUTE);
     const { answer, deltas } = await follow(s, ['a', 'b'], since);
 
-    expect(answer).toMatchObject({ v: 3, latest: since + 1, groups: 2, expired: false, more: false });
+    expect(answer).toMatchObject({ v: 4, latest: since + 1, groups: 2, expired: false, more: false });
     expect(deltas.a).toEqual([{ kind: 'item', id: 'a1', title: 'Video a1', published: START + 15 * MINUTE, type: 'video', deleted: false, upcoming: false }]);
     expect(deltas.b).toEqual([]);
   });
@@ -155,5 +155,17 @@ describe('the sync stream', () => {
     expect(deltasOf(before, null)).toEqual([{ kind: 'gone' }]);
     expect(deltasOf(before, { ...before, title: 'New' })).toEqual([{ kind: 'channel', title: 'New', handle: 'old' }]);
     expect(deltasOf(before, before)).toEqual([]);
+  });
+
+  // A device shows when a channel it has no videos of is read again: it must learn each new time, and that it is over.
+  it('turns the retry time of a channel without items into deltas', () => {
+    const failing = { ...slotChannel([]), schedule: { ...slotChannel([]).schedule, consecutiveFailures: 2, nextPollAt: START + HOUR } };
+    const read = { ...failing, items: [slotItem(1, 'Video')], schedule: { ...failing.schedule, consecutiveFailures: 0, nextPollAt: START + 12 * HOUR } };
+
+    expect(deltasOf(slotChannel([]), failing)).toEqual([{ kind: 'retry', retryAt: START + HOUR }]);
+    expect(deltasOf(failing, { ...failing, schedule: { ...failing.schedule, consecutiveFailures: 3, nextPollAt: START + 2 * HOUR } })).toEqual([{ kind: 'retry', retryAt: START + 2 * HOUR }]);
+    expect(deltasOf(failing, read)).toEqual([{ kind: 'retry', retryAt: null }, expect.objectContaining({ kind: 'item', id: slotItem(1, 'Video').id })]);
+    // A channel with items keeps showing them: its failures say nothing to devices.
+    expect(deltasOf(read, { ...read, schedule: { ...read.schedule, consecutiveFailures: 1, nextPollAt: START + HOUR } })).toEqual([]);
   });
 });

@@ -15,7 +15,9 @@ export type StreamDelta =
   /** The channel's title or handle changed. */
   | { kind: 'channel'; title: string; handle: string | null }
   /** The channel is gone from the platform: the app says so and keeps its history. */
-  | { kind: 'gone' };
+  | { kind: 'gone' }
+  /** When the server reads again a channel it has no items for, after a failed read (snapshot.ts, `retryAt`); null once that is over. */
+  | { kind: 'retry'; retryAt: number | null };
 
 /** Bytes of one entry: its tag, a nonce, the sealed delta and the AES-GCM tag. */
 export const STREAM_ENTRY_SIZE = 512;
@@ -33,13 +35,14 @@ const MAX_ID = 64;
 const MAX_TEXT = 255;
 const MAX_HANDLE = 100;
 const ITEM_TYPES: readonly ItemType[] = ['video', 'short', 'live', 'unknown'];
-const KINDS = ['item', 'channel', 'gone'] as const;
+const KINDS = ['item', 'channel', 'gone', 'retry'] as const;
 const DELETED = 1;
 const UPCOMING = 2;
 
 export const streamDeltaCodec: Codec<StreamDelta> = {
   kind: 7,
-  version: 1,
+  // 2: the 'retry' kind. Version 1 payloads read the same.
+  version: 2,
   size: STREAM_DELTA_SIZE,
 
   encode(value) {
@@ -65,11 +68,13 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
           .finish();
       case 'gone':
         return out.finish();
+      case 'retry':
+        return out.u32(value.retryAt === null ? 0 : Math.max(1, Math.ceil(value.retryAt / 1000))).finish();
     }
   },
 
   decode(bytes) {
-    const read = reader(streamDeltaCodec, bytes);
+    const read = reader(streamDeltaCodec, bytes, 1);
     const kind = KINDS[read.upTo(read.u8(), KINDS.length) - 1];
     let delta: StreamDelta;
 
@@ -92,6 +97,15 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
       case 'gone':
         delta = { kind };
         break;
+      case 'retry': {
+        if (read.version < 2) {
+          throw new CodecError('Unknown kind');
+        }
+
+        const retryAt = read.u32() * 1000;
+        delta = { kind, retryAt: retryAt === 0 ? null : retryAt };
+        break;
+      }
       default:
         throw new CodecError('Unknown kind');
     }

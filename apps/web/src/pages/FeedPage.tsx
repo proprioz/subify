@@ -16,14 +16,14 @@ import {
   IonText,
 } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { add, play, refreshOutline, searchOutline, syncOutline } from 'ionicons/icons';
+import { add, cloudOfflineOutline, play, refreshOutline, searchOutline, syncOutline } from 'ionicons/icons';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelStrip } from '../components/ChannelStrip';
 import { EmptyState } from '../components/EmptyState';
-import { NotFetchedInfo } from '../components/InfoButton';
+import { NotFetchedInfo, refreshHint, retrySentence } from '../components/InfoButton';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
@@ -73,6 +73,9 @@ export function FeedPage() {
     sort,
   );
   const selectedChannel = visibleChannels.find((channel) => channel.key === requestedChannel);
+  // The channels shown whose videos YouTube didn't give yet: an empty feed says so rather than "Nothing here".
+  const retrying = (selectedChannel === undefined ? visibleChannels : [selectedChannel]).filter((channel) => channel.retryAt !== undefined);
+  const nextRetry = Math.min(...retrying.map((channel) => channel.retryAt!));
   // A secret channel hidden again leaves the whole feed in its place, rather than an empty one.
   const channelKey = subscriptions === undefined || selectedChannel !== undefined ? requestedChannel : null;
   const feed = useLiveQuery(
@@ -229,7 +232,13 @@ export function FeedPage() {
         </EmptyState>
       )}
 
-      {hasChannels && feed?.entries.length === 0 && term === '' && (
+      {hasChannels && feed?.entries.length === 0 && term === '' && retrying.length > 0 && (
+        <EmptyState icon={cloudOfflineOutline} heading={refreshHint(nextRetry)}>
+          The last try to fetch the videos of {retrying.length === 1 ? retrying[0]!.title : `${retrying.length} channels`} failed. {retrySentence(nextRetry)}
+        </EmptyState>
+      )}
+
+      {hasChannels && feed?.entries.length === 0 && term === '' && retrying.length === 0 && (
         <EmptyState icon={refreshOutline} heading={
             selectedChannel === undefined ? (
               'Nothing here yet'

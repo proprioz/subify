@@ -6,7 +6,7 @@ import type { Platform } from '../platform';
 import type { SourceAdapter } from '../sources/source';
 import type { PassRing } from './ring';
 import type { Mention } from './seed-pool';
-import { DAY, failureDelay, HOUR, nextPollDelay, withJitter } from './schedule';
+import { DAY, EMPTY_READS, failureDelay, HOUR, nextPollDelay, withJitter } from './schedule';
 import { mergeItems } from './slot-items';
 import type { Update } from './updates';
 
@@ -222,6 +222,14 @@ async function poll(slot: SlotChannel, source: SourceAdapter, context: TendConte
     context.budget.succeeded++;
 
     const snapshot = result.snapshot;
+    const hasItems = slot.items.some((item) => !item.deleted);
+
+    // A channel still without items whose read answered an empty list, in a streak of failures:
+    // one more failure (EMPTY_READS).
+    if (snapshot !== null && snapshot.items.length === 0 && !hasItems && slot.schedule.consecutiveFailures > 0 && slot.schedule.consecutiveFailures + 1 < EMPTY_READS) {
+      return { ...slot, schedule: failedSchedule(slot, false, context) };
+    }
+
     context.mentions.push(...(snapshot?.mentions ?? []).map((input) => ({ source: slot.source, input })));
     const items = snapshot === null ? slot.items : mergeItems(slot.items, { incoming: snapshot.items, dropped: result.droppedUpcoming ?? [] }, context.cutoff, now);
     const websubActive = slot.schedule.websubExpiresAt !== null && slot.schedule.websubExpiresAt > now;
@@ -238,8 +246,7 @@ async function poll(slot: SlotChannel, source: SourceAdapter, context: TendConte
       logError('Polling a channel failed', error);
     }
 
-    const failures = slot.schedule.consecutiveFailures + 1;
-    const schedule = { ...slot.schedule, consecutiveFailures: failures, nextPollAt: now + withJitter(failureDelay(failures), platform.random()) };
+    const schedule = failedSchedule(slot, slot.items.some((item) => !item.deleted), context);
     const today = Math.floor(now / DAY);
 
     // Days with a "not found" since the feed last answered, each counted once, and only when
@@ -255,6 +262,12 @@ async function poll(slot: SlotChannel, source: SourceAdapter, context: TendConte
 
     return { ...slot, schedule };
   }
+}
+
+function failedSchedule(slot: SlotChannel, hasItems: boolean, context: TendContext): SlotChannel['schedule'] {
+  const failures = slot.schedule.consecutiveFailures + 1;
+
+  return { ...slot.schedule, consecutiveFailures: failures, nextPollAt: context.now + withJitter(failureDelay(failures, hasItems), context.platform.random()) };
 }
 
 /**

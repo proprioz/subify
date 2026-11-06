@@ -33,7 +33,7 @@ import { ChannelAvatar } from '../components/ChannelAvatar';
 import { ChannelSearchResults, useChannelSearch } from '../components/ChannelSearch';
 import { ChannelTypesModal } from '../components/ChannelTypesModal';
 import { EmptyState } from '../components/EmptyState';
-import { NotFetchedInfo } from '../components/InfoButton';
+import { NotFetchedInfo, refreshHint, RetryInfo } from '../components/InfoButton';
 import { Menu, type MenuAction } from '../components/Menu';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
@@ -253,7 +253,9 @@ export function ChannelsPage() {
                   </h2>
                   <p className="ion-display-flex ion-align-items-center">
                     {channelStatus(channel, lastUploads?.get(channel.key))}
-                    {channel.status !== 'pending_submit' && lastUploads?.get(channel.key) === undefined && <NotFetchedInfo title={channel.title} />}
+                    {channel.status !== 'pending_submit' &&
+                      lastUploads?.get(channel.key) === undefined &&
+                      (channel.retryAt === undefined ? <NotFetchedInfo title={channel.title} /> : <RetryInfo title={channel.title} retryAt={channel.retryAt} />)}
                   </p>
                 </IonLabel>
                 <IonButton
@@ -302,6 +304,14 @@ function channelStatus(channel: Subscription, latest: number | undefined): strin
     case 'pending_submit':
       return 'Waiting to be added…';
     default:
-      return latest === undefined ? 'No videos fetched' : `Last upload ${ageLabel(latest)}`;
+      if (latest !== undefined) {
+        return `Last upload ${ageLabel(latest)}`;
+      }
+
+      if (channel.retryAt !== undefined) {
+        return refreshHint(channel.retryAt);
+      }
+
+      return 'No videos fetched';
   }
 }

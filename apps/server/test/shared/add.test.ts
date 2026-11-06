@@ -361,7 +361,10 @@ describe('adding a channel new to the catalog', () => {
     const { harness, pass } = await youtube(fake);
     const channel = await channelOf(await harness.add('@NASA'));
 
-    expect(channel).toMatchObject({ externalId: NASA, title: 'NASA', items: [] });
+    // Read twice, the second time through its channel feed alone, then added with the time of its next read, which the app shows.
+    expect(fake.calls.filter((call) => call.url === youtubeUrls.channel(NASA))).toHaveLength(2);
+    expect(fake.calls.filter((call) => call.url === youtubeUrls.videos(NASA))).toHaveLength(1);
+    expect(channel).toMatchObject({ externalId: NASA, title: 'NASA', items: [], retryAt: START });
     // The channel and the hour a user added one.
     expect(await harness.platform.coordinator.pending(10)).toHaveLength(2);
 
@@ -373,6 +376,88 @@ describe('adding a channel new to the catalog', () => {
     const slot = await readSlot(harness.db, keys, await slotIdOf(keys, 'youtube', NASA));
 
     expect(slot?.payload.kind === 'channel' ? slot.payload.items.length : 0).toBeGreaterThan(0);
+  });
+
+  // A feed that fails for one request must not leave a channel empty for the next passes.
+  it('reads a failing feed again at once, and adds the channel with its items when it answers', async () => {
+    const fake = withRecordedChannels(new FakeFetch());
+    registerRecorded(fake, fixtures);
+    fake.on(youtubeUrls.channel(NASA), () => {
+      registerRecorded(fake, fixtures);
+
+      return { status: 500 };
+    });
+    const { harness } = await youtube(fake);
+    const channel = await channelOf(await harness.add('@NASA'));
+
+    expect(fake.calls.filter((call) => call.url === youtubeUrls.channel(NASA))).toHaveLength(2);
+    expect(channel.items.length).toBeGreaterThan(0);
+    expect(channel.retryAt).toBeNull();
+  });
+
+  // A channel added while its feeds are down shows nothing until a read succeeds: it is read again at the next passes, then less and less often.
+  it('reads a channel still without items at the next three passes, then backs off', async () => {
+    const down = { status: 500 };
+    const fake = withRecordedChannels(new FakeFetch())
+      .on(youtubeUrls.channel(NASA), down)
+      .on(youtubeUrls.videos(NASA), down)
+      .on(youtubeUrls.shorts(NASA), down)
+      .on(youtubeUrls.lives(NASA), down);
+    const { harness, pass } = await youtube(fake);
+    await harness.add('@NASA');
+    const reads = () => fake.calls.filter((call) => call.url === youtubeUrls.channel(NASA)).length;
+    const perPass: number[] = [];
+
+    // It enters at the first pass, which doesn't read it again.
+    for (let i = 1; i <= 6; i++) {
+      const before = reads();
+      await pass(START + i * 10 * MINUTE);
+      perPass.push(reads() - before);
+    }
+
+    expect(perPass).toEqual([0, 1, 1, 1, 0, 0]);
+    const keys = await harness.platform.keys;
+    const slot = await readSlot(harness.db, keys, await slotIdOf(keys, 'youtube', NASA));
+    const nextPollAt = slot?.payload.kind === 'channel' ? slot.payload.schedule.nextPollAt : 0;
+
+    // 30 minutes after the fourth failure, give or take the 10 % jitter.
+    expect(nextPollAt).toBeGreaterThanOrEqual(START + 40 * MINUTE + 27 * MINUTE);
+    expect(nextPollAt).toBeLessThanOrEqual(START + 40 * MINUTE + 33 * MINUTE);
+  });
+
+  // YouTube sometimes answers an empty feed for a channel with uploads: that must not leave it empty for 12 hours, nor flag a channel with no uploads forever.
+  it('reads an empty feed again like a failure while the channel has no items, then takes it at its word', async () => {
+    const empty = { status: 200, body: `<?xml version="1.0" encoding="UTF-8"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom"><yt:channelId>${NASA.slice(2)}</yt:channelId><title>NASA</title></feed>` };
+    const none = { status: 404, body: fixtures.channelFeed404 };
+    const fake = withRecordedChannels(new FakeFetch())
+      .on(youtubeUrls.channel(NASA), empty)
+      .on(youtubeUrls.videos(NASA), none)
+      .on(youtubeUrls.shorts(NASA), none)
+      .on(youtubeUrls.lives(NASA), none);
+    const { harness, pass } = await youtube(fake);
+    const channel = await channelOf(await harness.add('@NASA'));
+    const reads = () => fake.calls.filter((call) => call.url === youtubeUrls.channel(NASA)).length;
+
+    expect(reads()).toBe(2);
+    expect(fake.calls.filter((call) => call.url === youtubeUrls.videos(NASA))).toHaveLength(1);
+    expect(channel).toMatchObject({ items: [], retryAt: START });
+
+    const perPass: number[] = [];
+
+    for (const minutes of [10, 20, 30, 40, 80, 150]) {
+      const before = reads();
+      await pass(START + minutes * MINUTE);
+      perPass.push(reads() - before);
+    }
+
+    // The next three passes, then 30 minutes and an hour later: the sixth read is believed.
+    expect(perPass).toEqual([0, 1, 1, 1, 1, 1]);
+    const keys = await harness.platform.keys;
+    const slot = await readSlot(harness.db, keys, await slotIdOf(keys, 'youtube', NASA));
+    const schedule = slot?.payload.kind === 'channel' ? slot.payload.schedule : undefined;
+
+    expect(schedule?.consecutiveFailures).toBe(0);
+    expect(schedule?.nextPollAt).toBeGreaterThanOrEqual(START + 150 * MINUTE + 10 * HOUR);
   });
 
   it('asks to try again when neither the page nor the feeds can be read, and queues nothing', async () => {

@@ -102,6 +102,8 @@ export class Writer {
 
 /** Reads what a {@link Writer} wrote, refusing anything out of shape. */
 export class Reader {
+  /** The payload's format version, from its first byte. */
+  version = 0;
   private readonly view: DataView;
   private offset = 0;
 
@@ -177,15 +179,16 @@ export class Reader {
   }
 }
 
-/** Starts a decode: checks the size and the version byte. */
-export function reader<T>(codec: Codec<T>, bytes: Uint8Array): Reader {
+/** Starts a decode: checks the size and the version byte, from `oldest` to the codec's. */
+export function reader<T>(codec: Codec<T>, bytes: Uint8Array, oldest = codec.version): Reader {
   if (bytes.length !== codec.size) {
     throw new CodecError('Wrong payload size');
   }
 
   const read = new Reader(bytes);
+  read.version = read.u8();
 
-  if (read.u8() !== codec.version) {
+  if (read.version < oldest || read.version > codec.version) {
     throw new CodecError('Unknown format version');
   }
 

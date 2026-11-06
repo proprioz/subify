@@ -38,6 +38,20 @@ export interface Subscription {
    * the next pass, and a refresh an hour later checks that it did.
    */
   submittedAt?: number;
+  /**
+   * When the server reads the channel again, while it has no videos of it because its last read
+   * failed (YouTube didn't answer). Absent otherwise.
+   */
+  retryAt?: number;
+}
+
+/** Sets or removes a subscription's retry time, in a Dexie update callback. */
+export function setRetryAt(stored: Subscription, retryAt: number | null): void {
+  if (retryAt === null) {
+    delete stored.retryAt;
+  } else {
+    stored.retryAt = retryAt;
+  }
 }
 
 export interface Slot {

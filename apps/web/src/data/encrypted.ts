@@ -16,7 +16,7 @@ import {
 import { type Api, ServerError } from './api';
 import { itemUrl } from './channel-link';
 import type { OnStep } from './subscriptions';
-import { getMeta, putItems, type Slot, type StoredThumbnail, type Subscription, type SubifyDb, setMeta } from './db';
+import { getMeta, putItems, setRetryAt, type Slot, type StoredThumbnail, type Subscription, type SubifyDb, setMeta } from './db';
 
 /**
  * The app on a server with the encrypted catalog (docs/FEATURES.md, D16). It finds its channels
@@ -34,6 +34,8 @@ const oprf = () => import('@subify/shared/oprf');
 export interface NewChannel {
   channel: ApiChannel;
   items: ApiItem[];
+  /** See Subscription.retryAt. */
+  retryAt: number | null;
   /** Where following it starts the sync: a pass of the stream, or nothing to start from. */
   start: { pass: number } | null;
   slot?: Slot;
@@ -249,6 +251,7 @@ export async function catchUp(db: SubifyDb, api: Api, catalog: CatalogKey, now =
         await db.subscriptions.update(subscription.key, (stored) => {
           Object.assign(stored, { title: converted.channel.title, handle: converted.channel.handle, avatar: converted.channel.avatar, status: 'ready' });
           delete stored.submittedAt;
+          setRetryAt(stored, converted.retryAt);
         });
         await putItems(db, converted.items);
         found++;
@@ -382,6 +385,9 @@ async function apply(db: SubifyDb, subscription: Subscription, deltas: readonly 
       case 'gone':
         await db.subscriptions.update(subscription.key, { status: 'gone' });
         break;
+      case 'retry':
+        await db.subscriptions.update(subscription.key, (stored) => setRetryAt(stored, delta.retryAt));
+        break;
     }
   }
 
@@ -407,12 +413,13 @@ function toApiItem(channel: string, item: { id: string; title: string; published
 }
 
 /** A channel as a snapshot or an addition gives it, as the app stores channels and items. */
-export function toApi(channel: SnapshotChannel): { channel: ApiChannel; items: ApiItem[] } {
+export function toApi(channel: SnapshotChannel): { channel: ApiChannel; items: ApiItem[]; retryAt: number | null } {
   const key = `${channel.source}:${channel.externalId}`;
 
   return {
     channel: { key, source: channel.source, title: channel.title, handle: channel.handle, icon: null, avatar: channel.avatar === null ? null : dataUrl(channel.avatar) },
     items: channel.items.map((item) => toApiItem(key, item)),
+    retryAt: channel.retryAt,
   };
 }
 

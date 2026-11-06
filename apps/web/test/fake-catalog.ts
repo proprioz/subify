@@ -102,6 +102,8 @@ export class FakeCatalog {
           channel.items = [{ id: delta.id, title: delta.title, published: delta.published, type: delta.type, upcoming: delta.upcoming }, ...channel.items.filter((item) => item.id !== delta.id)];
         } else if (delta.kind === 'channel') {
           channel.title = delta.title;
+        } else if (delta.kind === 'retry') {
+          channel.retryAt = delta.retryAt;
         } else {
           this.channels.delete(key);
         }
@@ -153,14 +155,14 @@ export class FakeCatalog {
 
       const withThumbnails = url.searchParams.get('thumbnails') === '1';
 
-      return { v: 3, pass: this.pass, groups: 1, entries: toBase64Url(concat(entries)), thumbnails: withThumbnails ? toBase64Url(concat(thumbnails)) : '' };
+      return { v: 4, pass: this.pass, groups: 1, entries: toBase64Url(concat(entries)), thumbnails: withThumbnails ? toBase64Url(concat(thumbnails)) : '' };
     }
 
     if (path === '/api/stream' && method === 'GET') {
       const since = Number(url.searchParams.get('since'));
 
       if (since < this.keptFrom) {
-        return { v: 3, latest: this.pass, groups: 1, k: 1, expired: true, more: false, batches: [] };
+        return { v: 4, latest: this.pass, groups: 1, k: 1, expired: true, more: false, batches: [] };
       }
 
       const batches = [];
@@ -184,7 +186,7 @@ export class FakeCatalog {
         batches.push({ pass, entries: toBase64Url(concat(entries)) });
       }
 
-      return { v: 3, latest: this.pass, groups: 1, k: this.channels.size, expired: false, more: last < this.pass, batches };
+      return { v: 4, latest: this.pass, groups: 1, k: this.channels.size, expired: false, more: last < this.pass, batches };
     }
 
     if (path.startsWith('/api/handles') && method === 'GET') {
@@ -222,7 +224,7 @@ export class FakeCatalog {
         cases.push(thumbnailCodec.encode({ kind: 'empty' }));
       }
 
-      return { v: 3, channel: toBase64Url(snapshotChannelCodec.encode(channel)), thumbnails: toBase64Url(concat(cases)) };
+      return { v: 4, channel: toBase64Url(snapshotChannelCodec.encode(channel)), thumbnails: toBase64Url(concat(cases)) };
     }
 
     return undefined;

@@ -1,3 +1,4 @@
+import type { SlotChannel } from '@subify/shared/codec';
 import type { Platform } from '../platform';
 
 /** When to poll a channel next, and how long items are kept. Pure functions: the pass applies them. */
@@ -43,11 +44,38 @@ export function nextPollDelay(published: readonly number[], now: number, websubA
 }
 
 /**
- * After a failure: 30 minutes, then twice as long each time, up to a day. YouTube often answers
- * 404 or 500 for a while; a channel is never given up, only polled less often.
+ * Failed reads of a channel that has no items yet (one added while its feeds failed, D16) that are
+ * retried at the next pass, before the usual backoff: it shows nothing until one succeeds. Few
+ * channels are in that case at once, and each pass's poll budget still bounds the requests.
  */
-export function failureDelay(consecutiveFailures: number): number {
-  return Math.min(30 * MINUTE * 2 ** Math.max(0, consecutiveFailures - 1), DAY);
+export const QUICK_RETRIES = 3;
+
+/**
+ * Reads of a channel without items in a row, failures included, after which an answer that lists
+ * nothing is taken at its word, as a channel that published nothing: until then it counts as a
+ * failure. YouTube's feeds sometimes answer a channel with uploads with an empty list. About four
+ * hours, with QUICK_RETRIES and the backoff. Only a streak a failure started counts: a channel that
+ * answered empty on its own is not read again sooner.
+ */
+export const EMPTY_READS = QUICK_RETRIES + 3;
+
+/**
+ * After a failure: 30 minutes, then twice as long each time, up to a day. YouTube often answers
+ * 404 or 500 for a while; a channel is never given up, only polled less often. A channel without
+ * items is first retried at the next passes (QUICK_RETRIES).
+ */
+export function failureDelay(consecutiveFailures: number, hasItems: boolean): number {
+  const failures = hasItems ? consecutiveFailures : consecutiveFailures - QUICK_RETRIES;
+
+  return failures <= 0 ? 0 : Math.min(30 * MINUTE * 2 ** (failures - 1), DAY);
+}
+
+/**
+ * When the server reads again a channel it has no items for, after its last read failed: what a
+ * device shows in place of its videos. Null for any other channel.
+ */
+export function retryAtOf(slot: SlotChannel): number | null {
+  return slot.schedule.consecutiveFailures > 0 && slot.items.every((item) => item.deleted) ? slot.schedule.nextPollAt : null;
 }
 
 /** ±10 %, so channels added together drift apart instead of being polled in bursts. */

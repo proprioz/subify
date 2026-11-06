@@ -33,8 +33,8 @@ function retryAfter(header: string | null, now = Date.now()): number | undefined
 
 type Client = ReturnType<typeof hc<AppType>>;
 
-/** The answer formats this app reads: 2, and 3 for the encrypted catalog's routes. */
-const KNOWN_VERSIONS: readonly number[] = [2, 3];
+/** The answer formats this app reads: 2, 3 for the encrypted catalog's routes, and 4 for those that carry a channel's retry time. */
+const KNOWN_VERSIONS: readonly number[] = [2, 3, 4];
 
 /** The body a route declares for its 200 answer. */
 type Answer<R> = R extends ClientResponse<infer T, 200, 'json'> ? T : never;

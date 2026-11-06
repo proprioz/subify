@@ -26,6 +26,7 @@ export interface SubmitContext {
   http: (source: SourceAdapter) => Http;
   now: () => number;
   random: () => number;
+  sleep: (ms: number) => Promise<void>;
   /** Items published before this are not kept (retention). */
   cutoff: () => number;
   /** What a channel new to the catalog may cost, shared by every user (see budgets.ts). */
@@ -53,6 +54,7 @@ export async function submitContext(platform: Platform, sources: readonly Source
     http: (source) => new Http(platform.fetch, userAgent(platform.config), source.hosts),
     now: () => platform.clock.now(),
     random: () => platform.random(),
+    sleep: (ms) => platform.sleep(ms),
     cutoff: () => retentionCutoff(platform),
     budgets: budgets(platform, keys),
   };
@@ -150,14 +152,11 @@ export async function submitInput(source: SourceAdapter, parsed: ParsedInput, co
     }
 
     // The avatar is read with the feeds: the app shows it as soon as the channel is followed.
-    const [snapshot, avatar] = await Promise.all([
-      latestOrNothing(source, resolved, context.http(source), context.now()),
-      avatarOrNothing(source, resolved.iconUrl, context.http(source)),
-    ]);
+    const [{ snapshot, failed }, avatar] = await Promise.all([latestOrNothing(source, resolved, context), avatarOrNothing(source, resolved.iconUrl, context.http(source))]);
     const handle = await handleOf(source, resolved, snapshot.items, context.http(source));
     const title = resolved.title ?? (snapshot.title || resolved.externalId);
     const thumbnails = await recentThumbnails(source, snapshot.items, context);
-    const channel = enteringSlot(source.source, resolved.externalId, title, handle, avatar, snapshot.items, context);
+    const channel = enteringSlot(source.source, resolved.externalId, title, handle, avatar, snapshot.items, failed, context);
     // Until the next pass gives it its slot, the coordinator holds it: a second addition meanwhile reads it again.
     await enqueueUpdate(context.coordinator, context.keys, { kind: 'channel', channel, mentions: snapshot.mentions ?? [], thumbnails });
 
@@ -216,6 +215,7 @@ function enteringSlot(
   handle: string | null,
   avatar: Image | null,
   items: readonly IncomingItem[],
+  failed: boolean,
   context: SubmitContext,
 ): SlotChannel {
   const now = context.now();
@@ -230,7 +230,8 @@ function enteringSlot(
     schedule: {
       // Without items (its feeds were down when it was read), it is polled at the first pass that can.
       nextPollAt: items.length === 0 ? now : now + withJitter(nextPollDelay(items.map((item) => item.published), now, false), context.random()),
-      consecutiveFailures: 0,
+      // A failed read counts as the first failure: devices then say when the next one comes (retryAtOf).
+      consecutiveFailures: failed ? 1 : 0,
       websubStatus: 'off',
       websubExpiresAt: null,
       websubRequestedAt: null,
@@ -243,22 +244,61 @@ function enteringSlot(
   };
 }
 
-/**
- * YouTube's feeds have outages where every channel answers 404 or 500 for a while. A channel
- * its page confirmed is added without items then, and polling brings them; only a channel
- * nothing confirmed is reported as not found.
- */
-async function latestOrNothing(source: SourceAdapter, resolved: ResolvedChannel, http: Http, now: number): Promise<ChannelSnapshot> {
-  try {
-    return await source.fetchLatest(resolved.externalId, http, now);
-  } catch (error) {
-    const feedsDown = error instanceof UpstreamError || (error instanceof InputError && error.code === 'channel_not_found');
+/** Reads of a channel's feeds when it enters, the first included: a failure is often over a second later. */
+const RETRY_PAUSE = 1_000;
+/** No second attempt starts this long after the first one did: the user waits for the answer (add.ts, MIN_LATENCY). */
+const RETRY_WITHIN = 4_000;
 
-    if (resolved.confirmed && feedsDown) {
-      return { title: '', items: [] };
+/**
+ * YouTube's feeds have outages where every channel answers 404 or 500 for a while, or for a single
+ * request, and sometimes answer an empty list for a channel with uploads. A channel its page
+ * confirmed is then read a second time, a second later, through its channel feed alone (`poll`
+ * reads the typed playlists only when that feed lists something), and if that fails too it is
+ * added as failed, with what the reads gave: the next passes read it again (EMPTY_READS). Only a
+ * channel nothing confirmed is reported as not found, at once.
+ */
+async function latestOrNothing(source: SourceAdapter, resolved: ResolvedChannel, context: SubmitContext): Promise<{ snapshot: ChannelSnapshot; failed: boolean }> {
+  const started = context.now();
+  const feedsDown = (error: unknown) => error instanceof UpstreamError || (error instanceof InputError && error.code === 'channel_not_found');
+  let last: ChannelSnapshot = { title: '', items: [] };
+
+  try {
+    const snapshot = await source.fetchLatest(resolved.externalId, context.http(source), context.now());
+
+    if (snapshot.items.length > 0 || !resolved.confirmed) {
+      return { snapshot, failed: false };
     }
 
-    throw error;
+    last = snapshot;
+  } catch (error) {
+    // A channel nothing confirmed may not exist: its first "not found" is the answer.
+    if (!feedsDown(error) || !resolved.confirmed) {
+      throw error;
+    }
+  }
+
+  if (context.now() + RETRY_PAUSE - started >= RETRY_WITHIN) {
+    return { snapshot: last, failed: true };
+  }
+
+  await context.sleep(RETRY_PAUSE);
+
+  try {
+    const { snapshot } = await source.poll(resolved.externalId, context.http(source), {
+      validators: new Map(),
+      knownTypes: new Map(),
+      upcoming: new Set(),
+      force: false,
+      now: context.now(),
+    });
+
+    return snapshot !== null && snapshot.items.length > 0 ? { snapshot, failed: false } : { snapshot: snapshot ?? last, failed: true };
+  } catch (error) {
+    if (!feedsDown(error)) {
+      throw error;
+    }
+
+    return { snapshot: last, failed: true };
   }
 }
 
