@@ -1,8 +1,8 @@
 import type { Api } from './api';
 import { ServerError } from './api';
 import { ALL_TYPES, getMeta, setMeta, type ShownType, type SubifyDb } from './db';
-import { addByLink, catchUp } from './encrypted';
-import { checkRoom, fillSubscription } from './subscriptions';
+import { addByLink, catchUp, findInCatalog } from './encrypted';
+import { AlreadyFollowing, checkRoom, fillSubscription, follow } from './subscriptions';
 
 /** A channel to follow from a backup or an import, before the server is asked anything. */
 export interface ChannelToFollow {
@@ -26,18 +26,45 @@ export interface FollowManyResult {
 const QUEUE_RETRY = 5 * 60_000;
 
 /**
+ * Follows one channel the dictionary named, as typing its link would: found blindly in the
+ * catalog, its group's snapshot and thumbnails read (one group, two requests), and followed with
+ * the thumbnails of its last 7 days. One the catalog lacks waits in the import queue.
+ */
+export async function followOne(db: SubifyDb, api: Api, channel: ChannelToFollow, now = Date.now()): Promise<FollowManyResult> {
+  const found = await findInCatalog(api, await api.catalog(), { key: channel.key });
+
+  if (found === null) {
+    // Its group's snapshot just showed that the catalog lacks it: no other group to read.
+    return followMany(db, api, [channel], now, { catchUp: false });
+  }
+
+  try {
+    await follow(db, found, now);
+  } catch (error) {
+    // Followed meanwhile, from another tab or an import: nothing left to do.
+    if (!(error instanceof AlreadyFollowing)) {
+      throw error;
+    }
+
+    return { known: 0, queued: 0, skipped: 1 };
+  }
+
+  return { known: 1, queued: 0, skipped: 0 };
+}
+
+/**
  * Follows many channels at once, from a restored backup. The channels the catalog knows are
  * filled at once from the snapshots of their groups. The others go into a queue persisted with
  * them and are submitted one at a time (see runImportQueue): each costs the server several reads
  * online. A restore asks for the `thumbnails` of the last 7 days too, of every group it reads
- * (see catchUp).
+ * (see catchUp); without `catchUp`, every channel goes to the queue.
  */
 export async function followMany(
   db: SubifyDb,
   api: Api,
   channels: readonly ChannelToFollow[],
   now = Date.now(),
-  { thumbnails = false }: { thumbnails?: boolean } = {},
+  { thumbnails = false, catchUp: lookUp = true }: { thumbnails?: boolean; catchUp?: boolean } = {},
 ): Promise<FollowManyResult> {
   const existing = new Set(await db.subscriptions.toCollection().primaryKeys());
   const fresh = [...new Map(channels.filter((channel) => !existing.has(channel.key)).map((channel) => [channel.key, channel])).values()];
@@ -64,7 +91,10 @@ export async function followMany(
       secret: channel.secret ?? false,
     })),
   );
-  await catchUp(db, api, await api.catalog(), now, thumbnails);
+  if (lookUp) {
+    await catchUp(db, api, await api.catalog(), now, thumbnails);
+  }
+
   const queued = (await db.subscriptions.bulkGet(fresh.map((channel) => channel.key))).filter((subscription) => subscription?.status === 'pending_submit').length;
 
   return { known: fresh.length - queued, queued, skipped: channels.length - fresh.length };

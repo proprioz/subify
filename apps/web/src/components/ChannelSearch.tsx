@@ -9,7 +9,7 @@ import { isChannelInput, isChannelName } from '../data/channel-link';
 import { isCancelled } from '../data/connection-check';
 import type { Subscription } from '../data/db';
 import { ensureDictionary, hasDictionary, type NamedChannel, searchDictionary } from '../data/dictionary';
-import { followMany } from '../data/follow-many';
+import { followOne } from '../data/follow-many';
 import { AlreadyFollowing, type FoundChannel, findChannel, follow, TooManyChannels } from '../data/subscriptions';
 import { useToast } from '../ui/toast';
 import { ChannelAvatar } from './ChannelAvatar';
@@ -197,11 +197,11 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
     }
   };
 
-  // A channel the catalog has is filled at once, blindly; another waits in the import queue,
-  // which adds it in the background.
+  // A channel the catalog has is filled at once, blindly, with its thumbnails; another waits in
+  // the import queue, which adds it in the background.
   const followNamed = (channel: NamedChannel) =>
     withBusy(`youtube:${channel.id}`, async () => {
-      const { queued } = await gate.run(api, () => followMany(db, api, [{ key: `youtube:${channel.id}`, title: channel.name, handle: channel.handle }]));
+      const { queued } = await gate.run(api, () => followOne(db, api, { key: `youtube:${channel.id}`, title: channel.name, handle: channel.handle }));
       await toast(queued > 0 ? `${channel.name} will be added in a few seconds.` : `Now following ${channel.name}.`);
     });
 

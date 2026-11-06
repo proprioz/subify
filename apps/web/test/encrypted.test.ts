@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { type Backup, restoreBackup } from '../src/data/backup';
 import { getMeta } from '../src/data/db';
 import { unfinishedSync } from '../src/data/encrypted';
-import { followMany } from '../src/data/follow-many';
+import { followMany, followOne } from '../src/data/follow-many';
 import { findChannel, follow } from '../src/data/subscriptions';
 import { syncUpdates } from '../src/data/sync';
 import { FakeCatalog } from './fake-catalog';
@@ -328,6 +328,29 @@ describe('the encrypted catalog', () => {
     expect(named(server, A)).toBe(false);
     // The first page of lots only: the hours before the restore are covered.
     expect(server.paths.filter((path) => path.startsWith('GET /api/lots'))).toEqual(['GET /api/lots?group=0']);
+  });
+
+  // A channel followed from the dictionary must come with its thumbnails as one typed would, and read its group alone rather than every group the device follows.
+  it('follows a channel from the dictionary with its thumbnails, through its group alone, and queues one the catalog lacks', async () => {
+    const { server, catalog } = encryptedServer();
+    const b = snapshotChannel(B, 2);
+    b.items[0]!.preview = Uint8Array.of(4, 5);
+    catalog.publish(snapshotChannel(A, 1)).publish(b, { [b.items[0]!.id]: { type: 'image/webp', bytes: new Uint8Array(2_000).fill(8) } });
+    const db = freshDb();
+    const api = server.api();
+    await subscribe(db, api, `https://www.youtube.com/channel/${A}`, NOW);
+    const before = server.paths.length;
+
+    expect(await followOne(db, api, { key: `youtube:${B}`, title: 'B', handle: null }, NOW)).toEqual({ known: 1, queued: 0, skipped: 0 });
+    expect((await db.thumbnails.get(`youtube:${b.items[0]!.id}`))?.data?.byteLength).toBe(2_000);
+    expect((await db.items.get(`youtube:${b.items[0]!.id}`))?.preview).toEqual(Uint8Array.of(4, 5));
+    expect(server.paths.slice(before).filter((path) => path.startsWith('GET /api/snapshot'))).toEqual(['GET /api/snapshot?group=0', 'GET /api/snapshot/thumbnails?group=0']);
+    expect(named(server, B)).toBe(false);
+
+    const missing = 'UCcccccccccccccccccccccc';
+    const asked = server.paths.length;
+    expect(await followOne(db, api, { key: `youtube:${missing}`, title: 'C', handle: null }, NOW)).toEqual({ known: 0, queued: 1, skipped: 0 });
+    expect(server.paths.slice(asked).filter((path) => path.startsWith('GET /api/snapshot'))).toEqual(['GET /api/snapshot?group=0']);
   });
 
   // Following a second channel must not move the cursor the first one relies on, or its changes in between would be lost.
