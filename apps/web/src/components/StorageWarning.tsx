@@ -21,7 +21,7 @@ export function StorageWarning() {
   const { db, install, storageKept } = useAppData();
   const navigate = useNavigate();
   const [present] = useIonToast();
-  const installFlow = useInstallFlow(() => navigate('/settings?backup=1'));
+  const installFlow = useInstallFlow(() => navigate('/settings?backup=install'));
   const latest = useRef({ install, start: installFlow.start });
   latest.current = { install, start: installFlow.start };
   const checked = useRef(false);

@@ -52,7 +52,7 @@ export function FeedPage() {
   const { toggleSecrets } = useSecretFlow();
   const installCard = useLiveQuery(() => loadInstallCard(db), [db]);
   const navigate = useNavigate();
-  const installFlow = useInstallFlow(() => navigate('/settings?backup=1'));
+  const installFlow = useInstallFlow(() => navigate('/settings?backup=install'));
   const twoColumns = useWideScreen('xl');
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedChannel = searchParams.get('channel');
@@ -177,6 +177,7 @@ export function FeedPage() {
         <IonCard>
           <IonCardContent>
             <strong>Install the app.</strong> It opens full screen, and the browser is less likely to clear your channels.
+            {install !== 'prompt' && startsEmptyOnceInstalled(install) && ' A backup brings them along.'}
           </IonCardContent>
           <IonButton fill="clear" onClick={installFlow.start}>
             {install === 'prompt' ? 'Install' : 'Show me how'}

@@ -60,7 +60,8 @@ const GUIDES: Record<InstallGuide, { label: string; steps: ReactNode[] }> = {
 
 /**
  * Starts installing the app: the browser's own dialog where it has one, otherwise a guide to the
- * steps in this browser. `onBackup` opens the backup, for iOS, where the installed app starts empty.
+ * steps in this browser. `onBackup` opens the backup, for iOS, where the installed app starts empty;
+ * once the backup is saved, it should start the flow again, to go on with the install.
  */
 export function useInstallFlow(onBackup: () => void): { start(): void; guide: ReactNode } {
   const { install, promptInstall } = useAppData();
@@ -82,12 +83,28 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
   const hasChannels = (useLiveQuery(() => db.subscriptions.count(), [db]) ?? 0) > 0;
   // The browser may not be the one detected: the guide for another stays one tap away.
   const [browser, setBrowser] = useState<InstallGuide>('ios-safari');
+  // Why a backup, and what it keeps private: one tap away rather than in the way of the steps.
+  const [more, setMore] = useState(false);
   // The backup opens once the guide has gone, rather than over it.
   const afterClose = useRef<(() => void) | null>(null);
+
+  // On iOS the channels followed here reach the installed app only through a backup: the guide
+  // takes the user through saving it here first and restoring it there last.
+  const carriesBackup = startsEmptyOnceInstalled(browser) && hasChannels;
+  const steps = carriesBackup
+    ? [
+        <>
+          <strong>Save a backup</strong> to Files.
+        </>,
+        ...GUIDES[browser].steps,
+        'In the app, tap “I already have a backup”.',
+      ]
+    : GUIDES[browser].steps;
 
   useEffect(() => {
     if (guide !== null) {
       setBrowser(guide);
+      setMore(false);
     }
   }, [guide]);
 
@@ -124,35 +141,45 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
             </IonSelect>
           </IonItem>
         </IonList>
+        {carriesBackup && (
+          <>
+            <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
+              iOS keeps the installed app apart from this browser: a backup brings your channels along.
+              {more &&
+                ' Secret channels and settings come too. The backup is a file sealed with your password, kept on your device: no account, and the server never sees it.'}
+            </IonNote>
+            {!more && (
+              <IonButton fill="clear" size="small" onClick={() => setMore(true)}>
+                Learn more
+              </IonButton>
+            )}
+          </>
+        )}
         <IonList inset>
-          {GUIDES[browser].steps.map((step, index) => (
-            <IonItem key={index} {...(index === GUIDES[browser].steps.length - 1 ? { lines: 'none' as const } : {})}>
+          {steps.map((step, index) => (
+            <IonItem
+              key={index}
+              {...(index === steps.length - 1 ? { lines: 'none' as const } : {})}
+              {...(carriesBackup && index === 0
+                ? {
+                    button: true,
+                    onClick: () => {
+                      afterClose.current = onBackup;
+                      onClose();
+                    },
+                  }
+                : {})}
+            >
               <IonNote slot="start">{index + 1}</IonNote>
               <IonLabel className="ion-text-wrap install-step">{step}</IonLabel>
             </IonItem>
           ))}
         </IonList>
-        {startsEmptyOnceInstalled(browser) &&
-          (hasChannels ? (
-            <>
-              <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-                Your channels stay in this browser: the app on your Home Screen starts empty. To bring them along, save a backup here, then restore it in the app.
-              </IonNote>
-              <IonButton
-                fill="clear"
-                onClick={() => {
-                  afterClose.current = onBackup;
-                  onClose();
-                }}
-              >
-                Save a backup
-              </IonButton>
-            </>
-          ) : (
-            <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-              Add your channels once the app is installed: it doesn’t share them with this browser.
-            </IonNote>
-          ))}
+        {startsEmptyOnceInstalled(browser) && !hasChannels && (
+          <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
+            iOS keeps apps on the Home Screen apart from the browser: add your channels once the app is installed, not here.
+          </IonNote>
+        )}
       </IonContent>
     </IonModal>
   );

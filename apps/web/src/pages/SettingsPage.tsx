@@ -60,7 +60,7 @@ import { canInstall } from '../ui/install';
 import { resetEverything } from '../ui/reset';
 import { useToast } from '../ui/toast';
 
-type PasswordStep = { kind: 'export' } | { kind: 'restore'; file: string } | { kind: 'change' } | { kind: 'set' };
+type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string } | { kind: 'change' } | { kind: 'set' };
 
 export function SettingsPage() {
   const { db, api, gate, install, lock } = useAppData();
@@ -81,6 +81,8 @@ export function SettingsPage() {
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The install guide reopens once the backup it asked for is saved and the password dialog has gone.
+  const reopenGuide = useRef(false);
 
   const theme = useLiveQuery(() => loadTheme(db), [db]) ?? 'system';
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
@@ -118,13 +120,14 @@ export function SettingsPage() {
     setPasswordStep(step);
   };
 
-  const installFlow = useInstallFlow(() => openPassword({ kind: 'export' }));
+  const installFlow = useInstallFlow(() => openPassword({ kind: 'export', thenInstall: true }));
 
-  // The install guide on the feed links here to save a backup before installing on iOS.
+  // The install guide on the feed links here to save a backup before installing on iOS, then
+  // reopens; the storage warning links here to save one.
   useEffect(() => {
     if (searchParams.get('backup') !== null) {
       setSearchParams({}, { replace: true });
-      openPassword({ kind: 'export' });
+      openPassword({ kind: 'export', thenInstall: searchParams.get('backup') === 'install' });
     }
 
     // A first visit that came to restore a backup lands here: the file picker needs a tap to open.
@@ -195,7 +198,8 @@ export function SettingsPage() {
           throw new BackupError(appPassword ? 'That’s not the app’s password.' : 'The two passwords are different.');
         }
 
-        await saveFile(await exportBackup(db, password), `subify-backup-${new Date().toISOString().slice(0, 10)}.json`);
+        const saved = await saveFile(await exportBackup(db, password), `subify-backup-${new Date().toISOString().slice(0, 10)}.json`);
+        reopenGuide.current = saved && passwordStep.thenInstall === true;
         setPasswordStep(null);
       } else {
         const backup = await readBackup(passwordStep.file, password);
@@ -298,7 +302,17 @@ export function SettingsPage() {
   };
 
   const passwordModal = (
-    <IonModal isOpen={passwordStep !== null} onDidDismiss={() => setPasswordStep(null)}>
+    <IonModal
+      isOpen={passwordStep !== null}
+      onDidDismiss={() => {
+        setPasswordStep(null);
+
+        if (reopenGuide.current) {
+          reopenGuide.current = false;
+          installFlow.start();
+        }
+      }}
+    >
       <IonHeader>
         <IonToolbar>
           <IonButtons slot="start">
@@ -536,18 +550,21 @@ async function takeFile(event: ChangeEvent<HTMLInputElement>): Promise<string | 
   return file === undefined ? null : file.text();
 }
 
-/** The share sheet where it can carry a file (iOS, Android), a download elsewhere. */
-async function saveFile(contents: string, name: string): Promise<void> {
+/**
+ * The share sheet where it can carry a file (iOS, Android), a download elsewhere. False when the
+ * user cancelled the sheet.
+ */
+async function saveFile(contents: string, name: string): Promise<boolean> {
   const file = new File([contents], name, { type: 'application/json' });
 
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
 
-      return;
+      return true;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
+        return false;
       }
     }
   }
@@ -557,6 +574,8 @@ async function saveFile(contents: string, name: string): Promise<void> {
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+
+  return true;
 }
 
 /** What already guards the app's data when Subify doesn't lock itself. */
