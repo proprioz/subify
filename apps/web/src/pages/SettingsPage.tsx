@@ -122,7 +122,7 @@ export function SettingsPage() {
 
   const installFlow = useInstallFlow(() => openPassword({ kind: 'export', thenInstall: true }));
 
-  // The install guide on the feed links here to save a backup before installing on iOS, then
+  // The install guide on the feed links here to save a backup before installing on iOS or a Mac, then
   // reopens; the storage warning links here to save one.
   useEffect(() => {
     if (searchParams.get('backup') !== null) {

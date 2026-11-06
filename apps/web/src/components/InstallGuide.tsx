@@ -60,7 +60,7 @@ const GUIDES: Record<InstallGuide, { label: string; steps: ReactNode[] }> = {
 
 /**
  * Starts installing the app: the browser's own dialog where it has one, otherwise a guide to the
- * steps in this browser. `onBackup` opens the backup, for iOS, where the installed app starts empty;
+ * steps in this browser. `onBackup` opens the backup, for Apple's browsers, where the installed app starts empty;
  * once the backup is saved, it should start the flow again, to go on with the install.
  */
 export function useInstallFlow(onBackup: () => void): { start(): void; guide: ReactNode } {
@@ -88,16 +88,24 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
   // The backup opens once the guide has gone, rather than over it.
   const afterClose = useRef<(() => void) | null>(null);
 
-  // On iOS the channels followed here reach the installed app only through a backup: the guide
-  // takes the user through saving it here first and restoring it there last.
+  // On iOS and on a Mac, the channels followed here reach the installed app only through a backup:
+  // the guide takes the user through saving it here first and restoring it there last. A Mac
+  // downloads the file rather than offering Files, and is clicked rather than tapped.
   const carriesBackup = startsEmptyOnceInstalled(browser) && hasChannels;
+  const mac = browser === 'mac-safari';
   const steps = carriesBackup
     ? [
-        <>
-          <strong>Save a backup</strong> to Files.
-        </>,
+        mac ? (
+          <>
+            <strong>Save a backup</strong>.
+          </>
+        ) : (
+          <>
+            <strong>Save a backup</strong> to Files.
+          </>
+        ),
         ...GUIDES[browser].steps,
-        'In the app, tap “I already have a backup”.',
+        `In the app, ${mac ? 'click' : 'tap'} “I already have a backup”.`,
       ]
     : GUIDES[browser].steps;
 
@@ -144,7 +152,7 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
         {carriesBackup && (
           <>
             <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-              iOS keeps the installed app apart from this browser: a backup brings your channels along.
+              Apple keeps the installed app apart from this browser: a backup brings your channels along.
               {more &&
                 ' Secret channels and settings come too. The backup is a file sealed with your password, kept on your device: no account, and the server never sees it.'}
             </IonNote>
@@ -163,6 +171,8 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
               {...(carriesBackup && index === 0
                 ? {
                     button: true,
+                    // Material style, on a Mac, shows no chevron by default: the step must look tappable.
+                    detail: true,
                     onClick: () => {
                       afterClose.current = onBackup;
                       onClose();
@@ -177,7 +187,7 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
         </IonList>
         {startsEmptyOnceInstalled(browser) && !hasChannels && (
           <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-            iOS keeps apps on the Home Screen apart from the browser: add your channels once the app is installed, not here.
+            Apple keeps the installed app apart from this browser: add your channels once it’s installed, not here.
           </IonNote>
         )}
       </IonContent>

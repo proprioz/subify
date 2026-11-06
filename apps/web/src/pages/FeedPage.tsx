@@ -206,7 +206,7 @@ export function FeedPage() {
               <IonButton fill="clear" size="small" onClick={() => navigate('/settings')}>
                 Restore a backup
               </IonButton>
-              {/* On iOS the installed app keeps its own channels: better to install before adding any. */}
+              {/* On iOS and in Safari on a Mac, the installed app keeps its own channels: better to install before adding any. */}
               {canInstall(install) && (
                 <IonButton fill="clear" size="small" onClick={installFlow.start}>
                   {install !== 'prompt' && startsEmptyOnceInstalled(install) ? 'Install the app first' : 'Install the app'}

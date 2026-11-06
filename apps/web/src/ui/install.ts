@@ -61,9 +61,9 @@ export function canInstall(state: InstallState): state is 'prompt' | InstallGuid
 }
 
 /**
- * On iOS the app on the Home Screen keeps its own storage, apart from the browser's: channels
- * followed in the browser do not come along.
+ * On iOS, and on a Mac in Safari, the installed app keeps its own storage, apart from the
+ * browser's: channels followed in the browser do not come along. Only cookies are copied over.
  */
 export function startsEmptyOnceInstalled(guide: InstallGuide): boolean {
-  return guide === 'ios-safari' || guide === 'ios-other';
+  return guide === 'ios-safari' || guide === 'ios-other' || guide === 'mac-safari';
 }

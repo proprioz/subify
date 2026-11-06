@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { installState } from '../src/ui/install';
+import { installState, startsEmptyOnceInstalled } from '../src/ui/install';
 
 const UA = {
   iphoneSafari: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
@@ -42,5 +42,13 @@ describe('how the app offers to install', () => {
     expect(installState(browser(UA.macSafari16))).toBe('unavailable');
     expect(installState(browser(UA.macChrome))).toBe('unavailable');
     expect(installState(browser(UA.macFirefox))).toBe('unavailable');
+  });
+
+  // Otherwise users who already follow channels install an app that starts empty, unwarned: iOS and Safari's “Add to Dock” keep its storage apart.
+  it('walks through a backup wherever the installed app starts empty', () => {
+    expect(startsEmptyOnceInstalled('ios-safari')).toBe(true);
+    expect(startsEmptyOnceInstalled('ios-other')).toBe(true);
+    expect(startsEmptyOnceInstalled('mac-safari')).toBe(true);
+    expect(startsEmptyOnceInstalled('android')).toBe(false);
   });
 });
