@@ -11,16 +11,18 @@ routes = []
 workers_dev = false
 preview_urls = false
 
-# Privacy: no Workers Logs, no traces, no Logpush. The app never logs URLs or IPs either.
+# Workers Logs keep what the app writes through src/log.ts (event names, error names, measures),
+# never a URL or an IP. No invocation logs: they would record each request's URL and where it came
+# from, enough to tie the groups a device reads together. No traces, no Logpush.
 logpush = false
 # No usage telemetry from Wrangler itself.
 send_metrics = false
 
 [observability]
-enabled = false
+enabled = true
 
 [observability.logs]
-enabled = false
+enabled = true
 invocation_logs = false
 
 # The PWA is served from the same origin as the API. Only /api/* reaches the Worker; every

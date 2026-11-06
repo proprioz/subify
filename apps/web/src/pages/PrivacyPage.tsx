@@ -34,8 +34,8 @@ export function PrivacyPage() {
         <h2>What the server sees</h2>
         <p>
           The app never goes online on its own, never when it opens or on a timer: only for what you are doing in it, such as adding a channel, refreshing your feed or
-          restoring a backup. Its requests carry nothing that identifies your device or ties one request to another. The server then sees a few things. It is built not to
-          keep them, nor any log that would give clues about what you follow.
+          restoring a backup. Its requests carry nothing that identifies your device or ties one request to another. The server then sees a few things, and doesn’t watch
+          your habits: nothing it keeps lets anyone trace the channels you follow or what you do in the app.
         </p>
         <ul>
           <li>When you refresh, your device downloads the news of many channels at once and keeps only yours. The server doesn’t learn which ones are yours.</li>
@@ -67,6 +67,7 @@ export function PrivacyPage() {
             A record of requests, kept for a limited time: the address, the time, the browser and the country. These records never show the channels you follow or what the
             server holds: they are inside the requests, whose content isn’t recorded.
           </li>
+          <li>Technical records of how the server runs, such as errors and timings. They say nothing about who you are or what you follow.</li>
         </ul>
         <p>
           If you’d rather the host didn’t see your IP address, use a VPN. If you’d rather no one else handles your traffic, host the server yourself: the app only talks to the
