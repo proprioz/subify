@@ -49,8 +49,12 @@ export interface TendContext {
   ring: PassRing;
   /** Links to channels in the descriptions read during the pass: seed candidates. */
   mentions: Mention[];
-  /** The ThumbHash of each thumbnail read during the pass, by item: its stream entry carries it. */
-  previews: Map<string, Uint8Array>;
+}
+
+/** What an addition read for an item: its thumbnail, or null, and its preview. */
+export interface ReadThumbnail {
+  image: SlotImage | null;
+  preview: Uint8Array | null;
 }
 
 /**
@@ -62,7 +66,7 @@ export async function tend(
   updates: readonly Update[],
   context: TendContext,
   entering = false,
-  read: ReadonlyMap<string, SlotImage | null> = new Map(),
+  read: ReadonlyMap<string, ReadThumbnail> = new Map(),
 ): Promise<SlotChannel | null> {
   const known = new Set(entering ? [] : channel.items.map((item) => item.id));
   const since = entering ? context.now - THUMBNAILS_ON_ADD : -Infinity;
@@ -91,7 +95,13 @@ export async function tend(
   }
 
   slot = await renew(slot, source, context);
-  slot = { ...slot, items: mergeItems(slot.items, {}, context.cutoff, context.now) };
+  // A preview goes with its item's 7 days: snapshots give it only for those (THUMBNAILS_ON_ADD).
+  slot = {
+    ...slot,
+    items: mergeItems(slot.items, {}, context.cutoff, context.now).map((item) =>
+      item.preview !== null && !item.upcoming && item.published < context.now - THUMBNAILS_ON_ADD ? { ...item, preview: null } : item,
+    ),
+  };
 
   return readThumbnails(slot, source, context, (item) => !known.has(item.id) && item.published >= since, read);
 }
@@ -125,7 +135,7 @@ async function readThumbnails(
   source: SourceAdapter,
   context: TendContext,
   isNew: (item: SlotChannel['items'][number]) => boolean,
-  read: ReadonlyMap<string, SlotImage | null>,
+  read: ReadonlyMap<string, ReadThumbnail>,
 ): Promise<SlotChannel> {
   if (source.smallThumbnailUrl === undefined) {
     return slot;
@@ -139,19 +149,14 @@ async function readThumbnails(
       continue;
     }
 
-    let image = read.get(item.id) ?? null;
+    let { image, preview } = read.get(item.id) ?? { image: null, preview: null };
 
     try {
       if (!read.has(item.id)) {
         image = await source.readThumbnail(source.smallThumbnailUrl(item.id), http(context, source));
 
         if (image !== null && context.platform.thumbnails !== null) {
-          const encoded = await context.platform.thumbnails(image);
-          image = encoded.image;
-
-          if (encoded.preview !== null) {
-            context.previews.set(item.id, encoded.preview);
-          }
+          ({ image, preview } = await context.platform.thumbnails(image));
         }
       }
     } catch (error) {
@@ -162,7 +167,7 @@ async function readThumbnails(
 
     items.push(
       image !== null && image.bytes.length <= THUMBNAIL_MAX_BYTES
-        ? { ...item, thumbnail: context.ring.place({ source: slot.source, externalId: slot.externalId, itemId: item.id, image }, false) }
+        ? { ...item, preview, thumbnail: context.ring.place({ source: slot.source, externalId: slot.externalId, itemId: item.id, image }, false) }
         : item,
     );
   }

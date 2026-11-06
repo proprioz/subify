@@ -81,16 +81,36 @@ export function splitThumbnail(itemId: string, image: SlotImage): LotFragment[] 
 
 /** The tag of a channel's `index`-th fragment in the lot of `hour`: unlinkable across hours without K_c. */
 export async function lotTag(transitKey: Uint8Array, hour: number, index: number): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', new Uint8Array(transitKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await tagKeyOf(transitKey);
   const message = new Uint8Array([...utf8('subify/lot\0'), 0, 0, 0, 0, index]);
   new DataView(message.buffer).setUint32(message.length - 5, hour);
 
   return new Uint8Array(await crypto.subtle.sign('HMAC', key, message)).slice(0, TAG);
 }
 
+/** K_c as an HMAC key, imported once per key: a device computes dozens of tags per channel. */
+type HmacKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
+
+const tagKeys = new WeakMap<Uint8Array, Promise<HmacKey>>();
+
+export function tagKeyOf(transitKey: Uint8Array): Promise<HmacKey> {
+  let key = tagKeys.get(transitKey);
+
+  if (key === undefined) {
+    key = crypto.subtle.importKey('raw', new Uint8Array(transitKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    tagKeys.set(transitKey, key);
+  }
+
+  return key;
+}
+
 /** Server side: a fragment sealed under K_c, as the channel's `index`-th of the lot of `hour`. */
 export async function sealFragment(transitKey: Uint8Array, hour: number, index: number, fragment: LotFragment): Promise<Uint8Array> {
-  const tag = await lotTag(transitKey, hour, index);
+  return sealTaggedFragment(transitKey, await lotTag(transitKey, hour, index), fragment);
+}
+
+/** A fragment sealed under K_c behind `tag`: the lots' and the snapshots' thumbnails alike. */
+export async function sealTaggedFragment(transitKey: Uint8Array, tag: Uint8Array, fragment: LotFragment): Promise<Uint8Array> {
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE));
   const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, additionalData: new Uint8Array(tag) }, await aesKey(transitKey), new Uint8Array(lotFragmentCodec.encode(fragment))));
   const entry = new Uint8Array(LOT_FRAGMENT_SIZE);
@@ -110,7 +130,15 @@ export function decoyFragment(): Uint8Array {
  * Device side: one channel's thumbnails in the lot of `hour` (its fragments, concatenated), by
  * item id. A fragment whose tag matches but doesn't open is refused: it was not sealed with K_c.
  */
-export async function openLot(transitKey: Uint8Array, hour: number, fragments: Uint8Array): Promise<Map<string, SlotImage>> {
+export function openLot(transitKey: Uint8Array, hour: number, fragments: Uint8Array): Promise<Map<string, SlotImage>> {
+  return openFragments(transitKey, (index) => lotTag(transitKey, hour, index), LOT_MAX_PER_CHANNEL, fragments);
+}
+
+/**
+ * Device side: one channel's thumbnails among `fragments`, by item id: those behind the tags
+ * `tagOf` gives for 0, 1, 2…, up to the first it doesn't find or `max`.
+ */
+export async function openFragments(transitKey: Uint8Array, tagOf: (index: number) => Promise<Uint8Array>, max: number, fragments: Uint8Array): Promise<Map<string, SlotImage>> {
   if (fragments.length % LOT_FRAGMENT_SIZE !== 0) {
     throw new CodecError('Truncated payload');
   }
@@ -118,8 +146,8 @@ export async function openLot(transitKey: Uint8Array, hour: number, fragments: U
   const key = await aesKey(transitKey);
   const parts = new Map<string, LotFragment[]>();
 
-  for (let index = 0; index < LOT_MAX_PER_CHANNEL; index++) {
-    const tag = await lotTag(transitKey, hour, index);
+  for (let index = 0; index < max; index++) {
+    const tag = await tagOf(index);
     const entry = find(fragments, tag);
 
     if (entry === null) {
@@ -136,7 +164,7 @@ export async function openLot(transitKey: Uint8Array, hour: number, fragments: U
   for (const [itemId, list] of parts) {
     const ordered = [...list].sort((a, b) => a.part - b.part);
 
-    // A thumbnail is whole or isn't: the server never splits one across lots.
+    // A thumbnail is whole or isn't: the server never splits one across lots or snapshots.
     if (ordered.length === ordered[0]!.parts && ordered.every((fragment, i) => fragment.part === i)) {
       const bytes = new Uint8Array(ordered.reduce((sum, fragment) => sum + fragment.bytes.length, 0));
       ordered.reduce((at, fragment) => (bytes.set(fragment.bytes, at), at + fragment.bytes.length), 0);
@@ -147,14 +175,34 @@ export async function openLot(transitKey: Uint8Array, hour: number, fragments: U
   return images;
 }
 
+/** Each answer's fragments by tag, built once: a device looks for every channel's in the same answer. */
+const indexes = new WeakMap<Uint8Array, Map<string, number>>();
+
 function find(fragments: Uint8Array, tag: Uint8Array): Uint8Array | null {
-  for (let at = 0; at < fragments.length; at += LOT_FRAGMENT_SIZE) {
-    if (tag.every((byte, i) => fragments[at + i] === byte)) {
-      return fragments.subarray(at, at + LOT_FRAGMENT_SIZE);
+  let index = indexes.get(fragments);
+
+  if (index === undefined) {
+    index = new Map();
+
+    for (let at = 0; at < fragments.length; at += LOT_FRAGMENT_SIZE) {
+      const key = tagKey(fragments.subarray(at, at + TAG));
+
+      // The first one, should two random fragments share a tag.
+      if (!index.has(key)) {
+        index.set(key, at);
+      }
     }
+
+    indexes.set(fragments, index);
   }
 
-  return null;
+  const at = index.get(tagKey(tag));
+
+  return at === undefined ? null : fragments.subarray(at, at + LOT_FRAGMENT_SIZE);
+}
+
+function tagKey(tag: Uint8Array): string {
+  return String.fromCharCode(...tag);
 }
 
 function aesKey(transitKey: Uint8Array) {

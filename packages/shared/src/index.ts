@@ -58,6 +58,7 @@ export type ContactChallengeResponse = z.infer<typeof schemas.ContactChallengeRe
 export type ContactRequest = z.input<typeof schemas.ContactRequest>;
 
 export type SnapshotResponse = z.infer<typeof schemas.SnapshotResponse>;
+export type SnapshotThumbnailsResponse = z.infer<typeof schemas.SnapshotThumbnailsResponse>;
 
 export type AddResponse = z.infer<typeof schemas.AddResponse>;
 

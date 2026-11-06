@@ -83,7 +83,7 @@ function contains(haystack: Uint8Array, needle: string): boolean {
 describe('channels entering the encrypted catalog', () => {
   it('take a decoy’s place at the next pass, and the table holds nothing readable', async () => {
     const s = await setup();
-    const video = { id: 'videoidabcd', title: 'A recognisable video title', published: START - HOUR, ingestedAt: START, type: 'video' as const, deleted: false, upcoming: false, thumbnail: null };
+    const video = { id: 'videoidabcd', title: 'A recognisable video title', published: START - HOUR, ingestedAt: START, type: 'video' as const, deleted: false, upcoming: false, thumbnail: null, preview: null };
     await add(s, entering('fake', 'achannelid', { title: 'A recognisable title', items: [video] }));
 
     // Nothing is written before the pass.
@@ -196,7 +196,7 @@ describe('the pass polling the encrypted catalog', () => {
   it('keeps a failing channel’s items, retries it later and later, and recovers', async () => {
     const s = await setup();
     s.source.channel('a', [item('a1', START - DAY)]);
-    await add(s, entering('fake', 'a', { items: [{ id: 'a1', title: 'Video a1', published: START - DAY, ingestedAt: START, type: 'video', deleted: false, upcoming: false, thumbnail: null }], schedule: { ...entering('fake', 'a').schedule, nextPollAt: START } }));
+    await add(s, entering('fake', 'a', { items: [{ id: 'a1', title: 'Video a1', published: START - DAY, ingestedAt: START, type: 'video', deleted: false, upcoming: false, thumbnail: null, preview: null }], schedule: { ...entering('fake', 'a').schedule, nextPollAt: START } }));
     s.source.failing.set('a', 2);
     // A channel entering is polled from the pass after.
     s.harness.setNow(START + 10 * MINUTE);
@@ -410,7 +410,7 @@ describe('WebSub for the encrypted catalog', () => {
 // Thumbnails come from the ring: a pass that wrote more cases when more videos arrived would tell when channels publish, and a slot pointing at an overwritten case would show another video's picture.
 describe('thumbnails in the encrypted catalog', () => {
   const image = (fill: number, size = 3_000): SlotImage => ({ type: 'image/jpeg', bytes: new Uint8Array(size).fill(fill) });
-  const video = (id: string, published: number, upcoming = false): SlotItem => ({ id, title: id, published, ingestedAt: START, type: 'video', deleted: false, upcoming, thumbnail: null });
+  const video = (id: string, published: number, upcoming = false): SlotItem => ({ id, title: id, published, ingestedAt: START, type: 'video', deleted: false, upcoming, thumbnail: null, preview: null });
   const small = (id: string) => `https://fake.test/small/${id}`;
 
   async function thumbnails(s: Setup, externalId: string): Promise<Record<string, number | null>> {

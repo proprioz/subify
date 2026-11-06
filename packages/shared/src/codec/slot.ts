@@ -1,5 +1,6 @@
 import type { ItemType } from '../index';
 import { type Codec, CodecError, fitUtf8, flags, reader, utf8Length, writer } from './bytes';
+import { MAX_PREVIEW } from './stream';
 
 /**
  * A catalog slot (docs/FEATURES.md, D16): one channel with its scheduling state and its items, or
@@ -61,6 +62,12 @@ export interface SlotItem {
   upcoming: boolean;
   /** Its case in the thumbnail ring, or null when it has none. */
   thumbnail: number | null;
+  /**
+   * Its thumbnail's ThumbHash (docs/FEATURES.md, D3), kept while the item is of the last 7 days:
+   * snapshots give it, so a device that reads them shows a blurred preview until the thumbnail
+   * comes. Version 1 slots have none.
+   */
+  preview: Uint8Array | null;
 }
 
 /**
@@ -89,7 +96,8 @@ const HAS_TOKEN = 2;
 
 export const slotCodec: Codec<SlotPayload> = {
   kind: 1,
-  version: 1,
+  // 2: each item's preview, after its flags. Version 1 slots read the same, without previews.
+  version: 2,
   size: SLOT_SIZE,
 
   encode(value) {
@@ -102,7 +110,7 @@ export const slotCodec: Codec<SlotPayload> = {
     const title = fitUtf8(value.title, MAX_TEXT);
     const handle = value.handle === null ? '' : fitUtf8(value.handle, MAX_TEXT);
     const avatar = value.avatar !== null && value.avatar.bytes.length <= SLOT_MAX_AVATAR ? value.avatar : null;
-    const items = value.items.slice(0, SLOT_MAX_ITEMS).map((item) => ({ ...item, title: fitUtf8(item.title, MAX_TEXT) }));
+    const items = value.items.slice(0, SLOT_MAX_ITEMS).map((item) => ({ ...item, title: fitUtf8(item.title, MAX_TEXT), preview: item.preview !== null && item.preview.length <= MAX_PREVIEW ? item.preview : null }));
     const s = value.schedule;
     const fixed =
       1 + 1 + (1 + utf8Length(value.source)) + (1 + utf8Length(value.externalId)) + (1 + utf8Length(title)) + (1 + utf8Length(handle)) +
@@ -147,7 +155,9 @@ export const slotCodec: Codec<SlotPayload> = {
         .u32(seconds(item.published))
         .u32(seconds(item.ingestedAt))
         .u8(ITEM_TYPES.indexOf(item.type))
-        .u8((item.deleted ? DELETED : 0) | (item.upcoming ? UPCOMING : 0));
+        .u8((item.deleted ? DELETED : 0) | (item.upcoming ? UPCOMING : 0))
+        .u8(item.preview?.length ?? 0)
+        .raw(item.preview ?? new Uint8Array(0));
     }
 
     // Each thumbnail costs 6 bytes; their room was counted with their items'.
@@ -158,7 +168,7 @@ export const slotCodec: Codec<SlotPayload> = {
   },
 
   decode(bytes) {
-    const read = reader(slotCodec, bytes);
+    const read = reader(slotCodec, bytes, 1);
     const tag = read.u8();
 
     if (tag === 0) {
@@ -202,8 +212,10 @@ export const slotCodec: Codec<SlotPayload> = {
       const ingestedAt = read.u32() * 1000;
       const type = ITEM_TYPES[read.upTo(read.u8(), ITEM_TYPES.length - 1)]!;
       const itemFlags = flags(read.u8(), DELETED | UPCOMING);
+      const length = read.version < 2 ? 0 : read.upTo(read.u8(), MAX_PREVIEW);
+      const preview = length === 0 ? null : read.raw(length);
 
-      items.push({ id, title: itemTitle, published, ingestedAt, type, deleted: (itemFlags & DELETED) !== 0, upcoming: (itemFlags & UPCOMING) !== 0, thumbnail: null });
+      items.push({ id, title: itemTitle, published, ingestedAt, type, deleted: (itemFlags & DELETED) !== 0, upcoming: (itemFlags & UPCOMING) !== 0, thumbnail: null, preview });
     }
 
     const thumbnails = read.upTo(read.u16(), count);
@@ -247,7 +259,7 @@ export const slotCodec: Codec<SlotPayload> = {
 const SCHEDULE_SIZE = 4 + 1 + 1 + 4 + 4 + 1 + SECRET + TOKEN + 1 + 2;
 
 function itemSize(item: SlotItem): number {
-  return 1 + utf8Length(item.id) + 1 + utf8Length(item.title) + 4 + 4 + 1 + 1 + (item.thumbnail === null ? 0 : 6);
+  return 1 + utf8Length(item.id) + 1 + utf8Length(item.title) + 4 + 4 + 1 + 1 + 1 + (item.preview?.length ?? 0) + (item.thumbnail === null ? 0 : 6);
 }
 
 function seconds(ms: number): number {

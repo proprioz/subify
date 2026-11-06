@@ -13,8 +13,11 @@ const version = z.literal(2);
 /** The encrypted catalog's routes (docs/FEATURES.md, D16) answer in version 3, next to version 2's. */
 const version3 = z.literal(3);
 
-/** Answers that carry snapshot entries or stream deltas: version 4 since they may hold a channel's retry time. */
+/** Answers that carry stream deltas: version 4 since they may hold a channel's retry time. */
 const version4 = z.literal(4);
+
+/** Answers that carry snapshot entries: version 5 since their items carry previews, and their thumbnails come apart. */
+const version5 = z.literal(5);
 
 /** `bytes` bytes in base64url, without padding. */
 function bytes(count: number) {
@@ -234,24 +237,34 @@ export const ContactResponse = z.object({ v: version3, sent: z.literal(true) });
 
 export const SnapshotQuery = z.strictObject({
   group: count,
-  /** 1 to get the group's thumbnails of the last 7 days too: an addition asks for them, a restore doesn't. */
-  thumbnails: z.enum(['0', '1']).transform((value) => value === '1'),
 });
 
 export const SnapshotResponse = z.object({
-  v: version4,
-  /** The pass the thumbnails' tags are for. */
+  v: version5,
+  /** The pass the snapshot was taken at: the stream continues from there. */
   pass: z.number(),
   /** Snapshot groups: about 40 channels each. */
   groups: z.number(),
   /** Every slot of the group, in id order, 16 KB each: a slot id, then the channel sealed under its key, or random bytes. */
   entries: z.string(),
-  /** The thumbnails, a fixed number for the group, sealed under tags only each channel's key finds; empty without `thumbnails=1`. */
-  thumbnails: z.string(),
+});
+
+export const SnapshotThumbnailsResponse = z.object({
+  v: version5,
+  /** The pass the fragments' tags are for. */
+  pass: z.number(),
+  groups: z.number(),
+  /** The current hour (hours since the epoch): the thumbnail lots up to it hold nothing these don't. */
+  latest: z.number(),
+  /**
+   * The thumbnails of the last 7 days of every slot of the group, in fragments of 1,024 bytes as
+   * the lots', a fixed number for the group, sealed under tags only each channel's key finds.
+   */
+  fragments: z.string(),
 });
 
 export const AddResponse = z.object({
-  v: version4,
+  v: version5,
   /** The channel, as a snapshot gives it (packages/shared, codec/snapshot.ts), in clear: the device asked for it by name. */
   channel: z.string(),
   /** Its thumbnails of the last 7 days, a fixed number of thumbnail cases, empty ones last. */

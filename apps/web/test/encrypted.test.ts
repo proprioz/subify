@@ -1,6 +1,8 @@
 import type { SnapshotChannel } from '@subify/shared/codec';
 import { describe, expect, it } from 'vitest';
+import { type Backup, restoreBackup } from '../src/data/backup';
 import { getMeta } from '../src/data/db';
+import { unfinishedSync } from '../src/data/encrypted';
 import { followMany } from '../src/data/follow-many';
 import { findChannel, follow } from '../src/data/subscriptions';
 import { syncUpdates } from '../src/data/sync';
@@ -18,7 +20,7 @@ function snapshotChannel(id: string, itemCount: number, handle: string | null = 
     title: `Channel ${id}`,
     handle,
     avatar: null,
-    items: Array.from({ length: itemCount }, (_, i) => ({ id: `${id.slice(2, 6)}${i}`, title: `Video ${i}`, published: NOW - i * HOUR, type: 'video' as const, upcoming: false })),
+    items: Array.from({ length: itemCount }, (_, i) => ({ id: `${id.slice(2, 6)}${i}`, title: `Video ${i}`, published: NOW - i * HOUR, type: 'video' as const, upcoming: false, preview: null })),
     retryAt: null,
   };
 }
@@ -289,6 +291,43 @@ describe('the encrypted catalog', () => {
     expect(await db.subscriptions.get(`youtube:${B}`)).toMatchObject({ title: 'Old B', status: 'pending_submit' });
     expect(await itemsOf(db, A)).toHaveLength(2);
     expect(named(server, A) || named(server, B)).toBe(false);
+  });
+
+  // A backup holds no thumbnail: a restored device gets those of its channels' last 7 days from every group it read, with their blurred previews at once, and doesn't download again a week of lots that hold nothing more; following one channel from the dictionary mustn't cost every group's thumbnails.
+  it('restores the thumbnails of the last 7 days and their previews from the groups read, and skips the lots they cover', async () => {
+    const { server, catalog } = encryptedServer();
+    const a = snapshotChannel(A, 2);
+    a.items[0]!.preview = Uint8Array.of(1, 2, 3);
+    catalog.publish(a, { [a.items[0]!.id]: { type: 'image/webp', bytes: new Uint8Array(2_000).fill(7) } });
+    catalog.publish(snapshotChannel(B, 1));
+    catalog.lotAt(catalog.hour - 30);
+    const db = freshDb();
+    const api = server.api();
+    const backup: Backup = {
+      channels: [{ key: `youtube:${A}`, title: 'Old A', handle: null, secret: false, types: ['video'] }],
+      typeFilter: { video: true, short: true, live: true },
+      showUpcoming: true,
+      channelSort: 'recent',
+      secretCodeHash: null,
+      theme: 'system',
+      checkConnection: false,
+    };
+
+    await restoreBackup(db, api, backup, NOW);
+
+    // The restore ends with the channels, blurred; their thumbnails come with the refresh that follows.
+    expect((await db.items.get(`youtube:${a.items[0]!.id}`))?.preview).toEqual(Uint8Array.of(1, 2, 3));
+    expect(await db.thumbnails.count()).toBe(0);
+    expect(await unfinishedSync(db)).toBe(true);
+
+    await syncUpdates(db, api, NOW);
+    expect(server.paths).toContain('GET /api/snapshot/thumbnails?group=0');
+    expect((await db.thumbnails.get(`youtube:${a.items[0]!.id}`))?.data?.byteLength).toBe(2_000);
+    expect(await db.thumbnails.count()).toBe(1);
+    expect(await unfinishedSync(db)).toBe(false);
+    expect(named(server, A)).toBe(false);
+    // The first page of lots only: the hours before the restore are covered.
+    expect(server.paths.filter((path) => path.startsWith('GET /api/lots'))).toEqual(['GET /api/lots?group=0']);
   });
 
   // Following a second channel must not move the cursor the first one relies on, or its changes in between would be lost.

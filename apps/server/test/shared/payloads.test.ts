@@ -3,8 +3,9 @@ import { blind, channelInput, channelSecrets, evaluate, evaluateBlinded, finaliz
 import { describe, expect, it } from 'vitest';
 import { open, SealError, seal, sealedSize } from '../../src/crypto/aead';
 import { deriveKeys } from '../../src/crypto/keys';
-import { channel, GOLDEN, item } from '../fixtures/payloads/golden';
+import { channel, GOLDEN, GOLDEN_V2, item } from '../fixtures/payloads/golden';
 import slotV1 from '../fixtures/payloads/slot-v1.hex?raw';
+import slotV2 from '../fixtures/payloads/slot-v2.hex?raw';
 import stateV1 from '../fixtures/payloads/state-v1.hex?raw';
 import thumbnailV1 from '../fixtures/payloads/thumbnail-v1.hex?raw';
 import poolV1 from '../fixtures/payloads/pool-v1.hex?raw';
@@ -14,6 +15,7 @@ import deltaV2 from '../fixtures/payloads/delta-v2.hex?raw';
 import deltaV3 from '../fixtures/payloads/delta-v3.hex?raw';
 import snapshotV1 from '../fixtures/payloads/snapshot-v1.hex?raw';
 import snapshotV2 from '../fixtures/payloads/snapshot-v2.hex?raw';
+import snapshotV3 from '../fixtures/payloads/snapshot-v3.hex?raw';
 import handleV1 from '../fixtures/payloads/handle-v1.hex?raw';
 import lotFragmentV1 from '../fixtures/payloads/lot-fragment-v1.hex?raw';
 import lotV1 from '../fixtures/payloads/lot-v1.hex?raw';
@@ -66,12 +68,11 @@ describe('the slot codec', () => {
     expect(slotCodec.decode(bytes)).toEqual({ kind: 'empty' });
   });
 
-  // Like backup-v1.json: a format change shows in a diff, and stored slots of version 1 keep decoding.
-  it('keeps decoding the version 1 fixture, and encodes it the same way', () => {
-    const fixture = fromHex(slotV1, SLOT_SIZE);
-
-    expect(slotCodec.decode(fixture)).toEqual(GOLDEN);
-    expect(hex(slotCodec.encode(GOLDEN)).replace(/(00)+$/, '')).toBe(slotV1.trim());
+  // Like backup-v1.json: a format change shows in a diff, and stored slots of every version keep decoding.
+  it('keeps decoding the fixtures of every version, and encodes the latest the same way', () => {
+    expect(slotCodec.decode(fromHex(slotV1, SLOT_SIZE))).toEqual(GOLDEN);
+    expect(slotCodec.decode(fromHex(slotV2, SLOT_SIZE))).toEqual(GOLDEN_V2);
+    expect(hex(slotCodec.encode(GOLDEN_V2)).replace(/(00)+$/, '')).toBe(slotV2.trim());
   });
 
   // The catalog's state outlives every deploy: a format change would show in this diff, and a state written before a field existed must still read as its zero ("no feed answered", the ring at its start, no channel counted).
@@ -136,15 +137,17 @@ describe('the slot codec', () => {
       handle: 'unechaine',
       avatar: { type: 'image/png' as const, bytes: Uint8Array.of(0x89, 0x50, 0x4e, 0x47) },
       items: [
-        { id: 'videoidabcd', title: 'Première vidéo', published: 1_793_000_000_000, type: 'video' as const, upcoming: false },
-        { id: 'videoidefgh', title: '日本語', published: 1_792_990_000_000, type: 'live' as const, upcoming: true },
+        { id: 'videoidabcd', title: 'Première vidéo', published: 1_793_000_000_000, type: 'video' as const, upcoming: false, preview: null },
+        { id: 'videoidefgh', title: '日本語', published: 1_792_990_000_000, type: 'live' as const, upcoming: true, preview: null },
       ],
     };
+    const withPreview = { ...golden, items: golden.items.map((one, i) => (i === 0 ? { ...one, preview: Uint8Array.from({ length: 19 }, (_, j) => 0xa0 + j) } : one)), retryAt: 1_793_000_600_000 };
 
-    // Version 1 has no retry time.
+    // Version 1 has no retry time, versions 1 and 2 no previews.
     expect(snapshotChannelCodec.decode(fromHex(snapshotV1, snapshotChannelCodec.size))).toEqual({ ...golden, retryAt: null });
     expect(snapshotChannelCodec.decode(fromHex(snapshotV2, snapshotChannelCodec.size))).toEqual({ ...golden, retryAt: 1_793_000_600_000 });
-    expect(hex(snapshotChannelCodec.encode({ ...golden, retryAt: 1_793_000_600_000 })).replace(/(00)+$/, '')).toBe(snapshotV2.trim());
+    expect(snapshotChannelCodec.decode(fromHex(snapshotV3, snapshotChannelCodec.size))).toEqual(withPreview);
+    expect(hex(snapshotChannelCodec.encode(withPreview)).replace(/(00)+$/, '')).toBe(snapshotV3.trim());
     expect(snapshotChannelCodec.decode(snapshotChannelCodec.encode({ ...golden, retryAt: null })).retryAt).toBeNull();
   });
 
@@ -185,7 +188,7 @@ describe('the slot codec', () => {
 
     expect(() => slotCodec.decode(good.slice(0, -1))).toThrow(CodecError);
     expect(() => slotCodec.decode(changed(good.length - 1, 1))).toThrow(CodecError);
-    expect(() => slotCodec.decode(changed(0, 2))).toThrow(CodecError);
+    expect(() => slotCodec.decode(changed(0, 3))).toThrow(CodecError);
     expect(() => slotCodec.decode(changed(firstFlags, 0x80))).toThrow(CodecError);
     expect(() => slotCodec.decode(changed(countAt, 0xff))).toThrow(CodecError);
     // The offsets above are right: a known flag there decodes.

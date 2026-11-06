@@ -90,6 +90,14 @@ export class ConnectionGate {
     return this.during(step);
   }
 
+  /**
+   * Runs a step that carries on an approved step still running, as part of the same gesture (a
+   * restore's thumbnails, after its channels show): it asks nothing more. Refused outside one.
+   */
+  within<T>(step: () => Promise<T>): Promise<T> {
+    return this.running === 0 ? Promise.reject(new ServerError('The connection wasn’t approved.', 'cancelled')) : this.during(step);
+  }
+
   /** Runs a step the app starts on its own (the import queue) only if it may go online without asking. */
   async whenApproved<T>(step: () => Promise<T>): Promise<T | undefined> {
     return (await this.approved()) ? this.during(step) : undefined;

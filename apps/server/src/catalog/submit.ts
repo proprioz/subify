@@ -185,7 +185,7 @@ export const ADD_THUMBNAILS = 12;
  * The thumbnails of a channel's last 7 days, read once, when it enters: the add answer gives them,
  * and the pass keeps them in its ring. One that is missing, too large or failed is null.
  */
-async function recentThumbnails(source: SourceAdapter, items: readonly IncomingItem[], context: SubmitContext): Promise<{ itemId: string; image: Image | null }[]> {
+async function recentThumbnails(source: SourceAdapter, items: readonly IncomingItem[], context: SubmitContext): Promise<{ itemId: string; image: Image | null; preview: Uint8Array | null }[]> {
   const smallUrl = source.smallThumbnailUrl;
 
   if (smallUrl === undefined) {
@@ -201,11 +201,12 @@ async function recentThumbnails(source: SourceAdapter, items: readonly IncomingI
     recent.map(async (item) => {
       try {
         const read = await source.readThumbnail(smallUrl(item.externalId), context.http(source));
-        const image = read === null || context.thumbnails === null ? read : (await context.thumbnails(read)).image;
+        const encoded = read === null || context.thumbnails === null ? { image: read, preview: null } : await context.thumbnails(read);
+        const kept = encoded.image !== null && encoded.image.bytes.length <= THUMBNAIL_MAX_BYTES;
 
-        return { itemId: item.externalId, image: image !== null && image.bytes.length <= THUMBNAIL_MAX_BYTES ? image : null };
+        return { itemId: item.externalId, image: kept ? encoded.image : null, preview: kept ? encoded.preview : null };
       } catch {
-        return { itemId: item.externalId, image: null };
+        return { itemId: item.externalId, image: null, preview: null };
       }
     }),
   );

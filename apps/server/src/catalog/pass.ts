@@ -154,8 +154,7 @@ export async function runPass(
   const plan = options.ring ?? ringPlan({ slots: current.tableSize, period });
   const backlog = opened.filter(({ update }) => update.kind === 'thumbnail').length;
   const ring = new PassRing(plan, current.ringNext, await readCases(db, keys, ringPositions(plan, current.ringNext)), backlog);
-  const previews = new Map<string, Uint8Array>();
-  const context = { platform, sources, now, cutoff: retentionCutoff(platform), budget, ring, mentions, previews };
+  const context = { platform, sources, now, cutoff: retentionCutoff(platform), budget, ring, mentions };
   const decoys: Uint8Array[] = [];
   const gone: Uint8Array[] = [];
   let occupied = 0;
@@ -180,7 +179,7 @@ export async function runPass(
       const entry = waiting.get(hex(slot.id));
       waiting.delete(hex(slot.id));
       const next = await tend(slot.payload, entry?.updates ?? [], context);
-      stream.add(slot.payload.source, slot.payload.externalId, deltasOf(slot.payload, next, previews));
+      stream.add(slot.payload.source, slot.payload.externalId, deltasOf(slot.payload, next));
 
       if (next === null) {
         gone.push(slot.id);
@@ -219,7 +218,7 @@ export async function runPass(
       continue;
     }
 
-    const read = new Map((entering.thumbnails ?? []).map((thumbnail) => [thumbnail.itemId, thumbnail.image]));
+    const read = new Map((entering.thumbnails ?? []).map(({ itemId, image, preview }) => [itemId, { image, preview: preview ?? null }]));
     const channel: SlotChannel = (await tend(entering.channel, updates.filter((update) => update !== entering), context, true, read)) ?? entering.channel;
     replacements.push(...(await slotReplace(keys, decoy, { id, payload: channel })));
     occupied++;

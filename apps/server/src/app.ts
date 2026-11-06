@@ -25,6 +25,7 @@ import {
   OprfKeyResponse,
   SnapshotQuery,
   SnapshotResponse,
+  SnapshotThumbnailsResponse,
   StreamQuery,
   StreamResponse,
   LotsQuery,
@@ -37,7 +38,7 @@ import type { z } from 'zod';
 import { addByLink, atMinimumLatency } from './catalog/add';
 import { evaluateForDevice, oprfKey } from './catalog/blind';
 import { BudgetError } from './catalog/budgets';
-import { readSnapshot } from './catalog/snapshot';
+import { readSnapshot, readSnapshotThumbnails } from './catalog/snapshot';
 import { readStream } from './catalog/stream';
 import { readLotPage } from './catalog/lots';
 import { readHandleBounds, readHandleChunk } from './catalog/vault';
@@ -175,6 +176,14 @@ const snapshotRoute = createRoute({
   path: '/snapshot',
   request: { query: SnapshotQuery },
   responses: { 200: json(SnapshotResponse, 'Every slot of the group, sealed'), ...errors(400, 404, 503) },
+});
+
+// A whole group's thumbnails, read after its snapshot: asking for a channel's would name it.
+const snapshotThumbnailsRoute = createRoute({
+  method: 'get',
+  path: '/snapshot/thumbnails',
+  request: { query: SnapshotQuery },
+  responses: { 200: json(SnapshotThumbnailsResponse, 'The thumbnails of the last 7 days of every slot of the group, sealed'), ...errors(400, 404, 503) },
 });
 
 // The clear way to add a channel with the encrypted catalog: alone in its request, and answered
@@ -343,12 +352,22 @@ export function createApp({ sources }: AppOptions) {
       async (c) => {
         const { platform } = c.env;
 
-        const { group, thumbnails } = c.req.valid('query');
-        const answer = await readSnapshot(platform, await platform.keys, group, thumbnails);
+        const answer = await readSnapshot(platform, await platform.keys, c.req.valid('query').group);
 
         return answer === null ? fail(c, 'invalid_request', 'No such group, or no pass yet.', 404) : c.json(answer, 200);
       },
-      refuse('Send `group`, a number, and `thumbnails`, 0 or 1.'),
+      refuse('Send `group`, a number, and no other parameter.'),
+    )
+
+    .openapi(
+      snapshotThumbnailsRoute,
+      async (c) => {
+        const { platform } = c.env;
+        const answer = await readSnapshotThumbnails(platform, await platform.keys, c.req.valid('query').group);
+
+        return answer === null ? fail(c, 'invalid_request', 'No such group, or no pass yet.', 404) : c.json(answer, 200);
+      },
+      refuse('Send `group`, a number, and no other parameter.'),
     )
 
     .openapi(

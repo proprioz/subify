@@ -5,7 +5,6 @@ import {
   splitThumbnail,
   decoyHandleEntry,
   decoySnapshotEntry,
-  decoySnapshotThumbnail,
   HANDLE_CHUNK_ENTRIES,
   HANDLE_ENTRY_SIZE,
   compareEntries,
@@ -15,7 +14,7 @@ import {
   sealEntry,
   sealHandleEntry,
   sealSnapshotEntry,
-  sealSnapshotThumbnail,
+  sealSnapshotFragment,
   snapshotChannelCodec,
   thumbnailCodec,
   toBase64Url,
@@ -23,9 +22,9 @@ import {
 } from '@subify/shared/codec';
 import { channelInput, channelSecrets, evaluate, evaluateBlinded, handleInput, voprfKeys } from '@subify/shared/oprf';
 
-/** Entries per group in every stream batch, and thumbnails per snapshot: fixed, as on the real server. */
+/** Entries per group in every stream batch, and fragments of a snapshot's thumbnails: fixed, as on the real server. */
 const PER_BATCH = 4;
-const SNAPSHOT_THUMBNAILS = 6;
+const SNAPSHOT_FRAGMENTS = 24;
 const ADD_THUMBNAILS = 12;
 
 /**
@@ -118,7 +117,7 @@ export class FakeCatalog {
 
       for (const delta of deltas) {
         if (delta.kind === 'item') {
-          channel.items = [{ id: delta.id, title: delta.title, published: delta.published, type: delta.type, upcoming: delta.upcoming }, ...channel.items.filter((item) => item.id !== delta.id)];
+          channel.items = [{ id: delta.id, title: delta.title, published: delta.published, type: delta.type, upcoming: delta.upcoming, preview: delta.preview }, ...channel.items.filter((item) => item.id !== delta.id)];
         } else if (delta.kind === 'channel') {
           channel.title = delta.title;
         } else if (delta.kind === 'retry') {
@@ -154,27 +153,36 @@ export class FakeCatalog {
 
     if (path === '/api/snapshot' && method === 'GET') {
       const entries: Uint8Array[] = [];
-      const thumbnails: Uint8Array[] = [];
 
       for (const [key, channel] of this.channels) {
         const secrets = await this.secrets(key);
         entries.push(await sealSnapshotEntry(secrets.slotId, secrets.transitKey, channel));
-        let index = 0;
-
-        for (const [itemId, image] of this.thumbnails.get(key) ?? []) {
-          thumbnails.push(await sealSnapshotThumbnail(secrets.transitKey, this.pass, index++, { kind: 'thumbnail', itemId, image }));
-        }
       }
 
       entries.push(decoySnapshotEntry(crypto.getRandomValues(new Uint8Array(16))));
 
-      while (thumbnails.length < SNAPSHOT_THUMBNAILS) {
-        thumbnails.push(decoySnapshotThumbnail());
+      return { v: 5, pass: this.pass, groups: 1, entries: toBase64Url(concat(entries)) };
+    }
+
+    if (path === '/api/snapshot/thumbnails' && method === 'GET') {
+      const fragments: Uint8Array[] = [];
+
+      for (const [key, thumbnails] of this.thumbnails) {
+        const secrets = await this.secrets(key);
+        let index = 0;
+
+        for (const [itemId, image] of thumbnails) {
+          for (const fragment of splitThumbnail(itemId, image)) {
+            fragments.push(await sealSnapshotFragment(secrets.transitKey, this.pass, index++, fragment));
+          }
+        }
       }
 
-      const withThumbnails = url.searchParams.get('thumbnails') === '1';
+      while (fragments.length < SNAPSHOT_FRAGMENTS) {
+        fragments.push(decoyFragment());
+      }
 
-      return { v: 4, pass: this.pass, groups: 1, entries: toBase64Url(concat(entries)), thumbnails: withThumbnails ? toBase64Url(concat(thumbnails)) : '' };
+      return { v: 5, pass: this.pass, groups: 1, latest: this.hour, fragments: toBase64Url(concat(fragments)) };
     }
 
     if (path === '/api/lots' && method === 'GET') {
@@ -276,7 +284,7 @@ export class FakeCatalog {
         cases.push(thumbnailCodec.encode({ kind: 'empty' }));
       }
 
-      return { v: 4, channel: toBase64Url(snapshotChannelCodec.encode(channel)), thumbnails: toBase64Url(concat(cases)) };
+      return { v: 5, channel: toBase64Url(snapshotChannelCodec.encode(channel)), thumbnails: toBase64Url(concat(cases)) };
     }
 
     return undefined;

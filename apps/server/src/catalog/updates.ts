@@ -15,8 +15,11 @@ export type Update =
       kind: 'channel';
       channel: SlotChannel;
       mentions?: ParsedInput[];
-      /** The thumbnails the addition already read, by item; null for one it tried and didn't get. The pass doesn't read them again. */
-      thumbnails?: { itemId: string; image: SlotImage | null }[];
+      /**
+       * The thumbnails the addition already read, by item, with their previews; null for one it
+       * tried and didn't get. The pass doesn't read them again.
+       */
+      thumbnails?: { itemId: string; image: SlotImage | null; preview?: Uint8Array | null }[];
     }
   /** What a channel's feeds said, read after a WebSub notification. */
   | { kind: 'feed'; source: string; externalId: string; title: string; items: IncomingItem[]; dropped: string[]; deleted: string[]; mentions?: ParsedInput[] }

@@ -22,9 +22,9 @@ export interface WaitingDelta {
 
 /**
  * What a channel's slot became at a pass, as devices following it must learn it. A new item's
- * entry carries the preview of the thumbnail the pass read for it, by item id.
+ * entry carries the preview of the thumbnail the pass read for it.
  */
-export function deltasOf(before: SlotChannel, after: SlotChannel | null, previews: ReadonlyMap<string, Uint8Array> = new Map()): StreamDelta[] {
+export function deltasOf(before: SlotChannel, after: SlotChannel | null): StreamDelta[] {
   if (after === null) {
     return [{ kind: 'gone' }];
   }
@@ -48,7 +48,7 @@ export function deltasOf(before: SlotChannel, after: SlotChannel | null, preview
       previous.upcoming !== item.upcoming;
 
     if (changed) {
-      const preview = previous === undefined ? (previews.get(item.id) ?? null) : null;
+      const preview = previous === undefined ? item.preview : null;
       deltas.push({ kind: 'item', id: item.id, title: item.title, published: item.published, type: item.type, deleted: item.deleted, upcoming: item.upcoming, preview });
     }
   }

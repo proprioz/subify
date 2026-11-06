@@ -36,8 +36,11 @@ interface AppData {
   api: Api;
   /** The connection check: `gate.run(api, step)` asks first when Settings says so. */
   gate: ConnectionGate;
-  /** Runs a sync, or joins the one already running. */
-  sync(): Promise<void>;
+  /**
+   * Runs a sync, or joins the one already running. `continuing` carries on the approved step
+   * running now (a restore), without asking again; call it before that step ends.
+   */
+  sync(continuing?: boolean): Promise<void>;
   syncing: boolean;
   /** How far the running sync got, in percent, when it reads several pages; 0 otherwise. */
   syncDone: number;
@@ -204,7 +207,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, [db, vault]);
 
-  const sync = useCallback(() => {
+  const sync = useCallback((continuing = false) => {
     running.current ??= new Promise<void>((resolve) => {
       // The refresh is over once the feed is: the list of channel names that follows doesn't hold it.
       const settle = (error: unknown) => {
@@ -232,25 +235,25 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       // Inside the approved step, so a sync resumed back on screen does not ask again. The
       // refresh shows as running only from there: while the connection check waits for the
       // user, nothing is on its way.
-      gate
-        .run(api, async () => {
-          setSyncing(true);
+      const step = async () => {
+        setSyncing(true);
 
-          try {
-            await syncToTheEnd(() => syncUpdates(db, api, Date.now(), (share) => setSyncDone(share * 100)), documentVisibility);
-            await dropOldThumbnails(db);
-          } catch (error) {
-            settle(error);
+        try {
+          await syncToTheEnd(() => syncUpdates(db, api, Date.now(), (share) => setSyncDone(share * 100)), documentVisibility);
+          await dropOldThumbnails(db);
+        } catch (error) {
+          settle(error);
 
-            return;
-          }
+          return;
+        }
 
-          settle(null);
-          // Then, in the background but still inside the step the user approved, the list of
-          // channel names: a newer one when the server has it, checked at most once a day.
-          await refreshDictionary(db, api);
-        })
-        .catch(settle);
+        settle(null);
+        // Then, in the background but still inside the step the user approved, the list of
+        // channel names: a newer one when the server has it, checked at most once a day.
+        await refreshDictionary(db, api);
+      };
+
+      (continuing ? gate.within(step) : gate.run(api, step)).catch(settle);
     });
 
     return running.current;

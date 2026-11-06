@@ -240,7 +240,10 @@ export async function handleIndexWrites(keys: ServerKeys, chunks: readonly Uint8
 
 /** The ring's cases at these positions, by position. A case not written yet is absent. */
 export async function readCases(db: Db, keys: ServerKeys, positions: readonly number[]): Promise<Map<number, ThumbnailPayload>> {
-  const rows = positions.length === 0 ? [] : await db.all(compile(query.selectFrom('thumbnails').select(['position', 'blob']).where('position', 'in', [...positions])));
+  const unique = [...new Set(positions)];
+  // D1 binds at most 100 parameters a statement: a group's thumbnails of 7 days can be more.
+  const chunks = Array.from({ length: Math.ceil(unique.length / 100) }, (_, i) => unique.slice(i * 100, (i + 1) * 100));
+  const rows = (await Promise.all(chunks.map((chunk) => db.all(compile(query.selectFrom('thumbnails').select(['position', 'blob']).where('position', 'in', chunk)))))).flat();
 
   return new Map(await Promise.all(rows.map(async (row) => [row.position, await opened(open(keys, thumbnailCodec, casePositionId(row.position), row.blob))] as const)));
 }

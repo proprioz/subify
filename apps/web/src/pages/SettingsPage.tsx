@@ -63,7 +63,7 @@ import { useToast } from '../ui/toast';
 type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string } | { kind: 'change' } | { kind: 'set' };
 
 export function SettingsPage() {
-  const { db, api, gate, install, lock } = useAppData();
+  const { db, api, gate, install, lock, sync } = useAppData();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -157,6 +157,8 @@ export function SettingsPage() {
               .run(api, async () => {
                 const result = await restoreBackup(db, api, backup);
                 void toast(result.queued > 0 ? `Backup restored. ${result.queued} channels will be added one at a time.` : 'Backup restored.');
+                // The channels show already, blurred: their thumbnails come in the refresh that follows, with its bar.
+                void sync(true);
               })
               .catch((failure: unknown) => toast(failure instanceof ServerError ? failure.message : 'Couldn’t restore the backup.'));
           },

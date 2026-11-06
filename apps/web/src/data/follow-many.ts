@@ -27,10 +27,18 @@ const QUEUE_RETRY = 5 * 60_000;
 
 /**
  * Follows many channels at once, from a restored backup. The channels the catalog knows are
- * filled at once. The others go into a queue persisted with them and are submitted one at a time
- * (see runImportQueue): each costs the server several reads online.
+ * filled at once from the snapshots of their groups. The others go into a queue persisted with
+ * them and are submitted one at a time (see runImportQueue): each costs the server several reads
+ * online. A restore asks for the `thumbnails` of the last 7 days too, of every group it reads
+ * (see catchUp).
  */
-export async function followMany(db: SubifyDb, api: Api, channels: readonly ChannelToFollow[], now = Date.now()): Promise<FollowManyResult> {
+export async function followMany(
+  db: SubifyDb,
+  api: Api,
+  channels: readonly ChannelToFollow[],
+  now = Date.now(),
+  { thumbnails = false }: { thumbnails?: boolean } = {},
+): Promise<FollowManyResult> {
   const existing = new Set(await db.subscriptions.toCollection().primaryKeys());
   const fresh = [...new Map(channels.filter((channel) => !existing.has(channel.key)).map((channel) => [channel.key, channel])).values()];
 
@@ -39,7 +47,6 @@ export async function followMany(db: SubifyDb, api: Api, channels: readonly Chan
   }
 
   await checkRoom(db, fresh.length);
-  const catalog = await api.catalog();
   // The channels wait in the queue, then the snapshots of their groups fill those the catalog has,
   // without naming any; the others stay in the queue.
   await db.subscriptions.bulkPut(
@@ -57,7 +64,7 @@ export async function followMany(db: SubifyDb, api: Api, channels: readonly Chan
       secret: channel.secret ?? false,
     })),
   );
-  await catchUp(db, api, catalog, now);
+  await catchUp(db, api, await api.catalog(), now, thumbnails);
   const queued = (await db.subscriptions.bulkGet(fresh.map((channel) => channel.key))).filter((subscription) => subscription?.status === 'pending_submit').length;
 
   return { known: fresh.length - queued, queued, skipped: channels.length - fresh.length };

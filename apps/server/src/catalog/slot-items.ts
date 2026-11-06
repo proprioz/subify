@@ -36,6 +36,7 @@ export function mergeItems(items: readonly SlotItem[], changes: ItemChanges, cut
         deleted: false,
         upcoming: incoming.upcoming === true,
         thumbnail: null,
+        preview: null,
       });
       continue;
     }

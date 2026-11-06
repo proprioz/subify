@@ -33,8 +33,11 @@ function retryAfter(header: string | null, now = Date.now()): number | undefined
 
 type Client = ReturnType<typeof hc<AppType>>;
 
-/** The answer formats this app reads: 2, 3 for the encrypted catalog's routes, and 4 for those that carry a channel's retry time. */
-const KNOWN_VERSIONS: readonly number[] = [2, 3, 4];
+/**
+ * The answer formats this app reads: 2, 3 for the encrypted catalog's routes, 4 for those that
+ * carry a channel's retry time, and 5 for those that carry snapshot entries with previews.
+ */
+const KNOWN_VERSIONS: readonly number[] = [2, 3, 4, 5];
 
 /** The body a route declares for its 200 answer. */
 type Answer<R> = R extends ClientResponse<infer T, 200, 'json'> ? T : never;
@@ -102,9 +105,14 @@ export class Api {
     return this.read(this.call(() => this.client.api.lots.$get({ query: { group: String(group), ...(until === undefined ? {} : { until: String(until) }) } })));
   }
 
-  /** Every slot of a snapshot group, with its thumbnails of the last 7 days when asked. */
-  snapshot(group: number, thumbnails: boolean) {
-    return this.read(this.call(() => this.client.api.snapshot.$get({ query: { group: String(group), thumbnails: thumbnails ? '1' : '0' } })));
+  /** Every slot of a snapshot group. */
+  snapshot(group: number) {
+    return this.read(this.call(() => this.client.api.snapshot.$get({ query: { group: String(group) } })));
+  }
+
+  /** The thumbnails of the last 7 days of every slot of a snapshot group. */
+  snapshotThumbnails(group: number) {
+    return this.read(this.call(() => this.client.api.snapshot.thumbnails.$get({ query: { group: String(group) } })));
   }
 
   /** Where each chunk of the handle index starts. */

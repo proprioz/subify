@@ -90,7 +90,8 @@ export async function readBackup(file: string, password: string): Promise<Backup
 
 /**
  * Replaces everything on the device with the backup, then follows its channels like an import:
- * those the catalog knows at once, the others through the queue, one at a time.
+ * those the catalog knows at once, with the thumbnails of their last 7 days, the others through
+ * the queue, one at a time. The backup holds no thumbnail: they come back from the server.
  */
 export async function restoreBackup(db: SubifyDb, api: Api, backup: Backup, now = Date.now()): Promise<FollowManyResult> {
   await db.transaction('rw', db.subscriptions, db.items, db.thumbnails, db.meta, async () => {
@@ -113,7 +114,7 @@ export async function restoreBackup(db: SubifyDb, api: Api, backup: Backup, now 
     }
   });
 
-  return followMany(db, api, backup.channels, now);
+  return followMany(db, api, backup.channels, now, { thumbnails: true });
 }
 
 function parsePayload(value: unknown): Backup {

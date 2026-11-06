@@ -119,7 +119,7 @@ export async function findInCatalog(
   onStep({ kind: 'blind', inputs: 1 });
   const [slot] = await evaluate(api, catalog, [channelInput(key.slice(0, key.indexOf(':')), externalId(key))]);
   onStep({ kind: 'group' });
-  const found = await readSnapshots(api, [slot!], true);
+  const found = await readSnapshots(api, [slot!]);
   const channel = found.channels.get(hexOf(slot!.id));
 
   if (channel === undefined) {
@@ -127,8 +127,10 @@ export async function findInCatalog(
   }
 
   const converted = toApi(channel);
+  // The same group again, for its thumbnails: an addition asks for them as a restore does.
+  const thumbnails = await groupThumbnailsOf(api, slot!, found.groups);
 
-  return { ...converted, start: { pass: found.pass }, slot: slot!, thumbnails: thumbnailsOf(converted.channel.key, found.thumbnails.get(hexOf(slot!.id)) ?? new Map()) };
+  return { ...converted, start: { pass: found.pass }, slot: slot!, thumbnails: thumbnailsOf(converted.channel.key, thumbnails) };
 }
 
 /**
@@ -188,31 +190,42 @@ export async function addByLink(api: Api, url: string): Promise<NewChannel> {
 interface Snapshots {
   /** By slot id in hex: the channels found. */
   channels: Map<string, SnapshotChannel>;
-  thumbnails: Map<string, Map<string, SlotImage>>;
   /** The earliest pass among the snapshots read: the stream continues from there. */
   pass: number;
+  /** The grouping the snapshots were read with. */
+  groups: number;
 }
 
 /**
- * Reads the snapshots of every group these slots are in, each group once. The number of groups
- * comes from the server's answer: when it changed since the last time, the groups are worked out
- * again.
+ * These slots by snapshot group, the groups in ascending order: the order a device reads them in
+ * says nothing about its channels, only their set does.
  */
-async function readSnapshots(api: Api, slots: readonly Slot[], withThumbnails: boolean, knownGroups = 1): Promise<Snapshots> {
+async function byGroup(slots: readonly Slot[], groups: number): Promise<[number, Slot[]][]> {
   const { groupOf } = await oprf();
-  const found: Snapshots = { channels: new Map(), thumbnails: new Map(), pass: Infinity };
-  const groups = new Map<number, Slot[]>();
-  slots.forEach((slot) => groups.set(groupOf(slot.id, knownGroups), [...(groups.get(groupOf(slot.id, knownGroups)) ?? []), slot]));
+  const members = new Map<number, Slot[]>();
+  slots.forEach((slot) => members.set(groupOf(slot.id, groups), [...(members.get(groupOf(slot.id, groups)) ?? []), slot]));
 
-  for (const [group, members] of groups) {
-    const answer = await api.snapshot(group, withThumbnails);
+  return [...members].sort(([a], [b]) => a - b);
+}
 
-    if (answer.groups !== knownGroups) {
-      return readSnapshots(api, slots, withThumbnails, answer.groups);
-    }
+/**
+ * Reads the snapshots of every group these slots are in, each group once, a few at a time. The
+ * number of groups comes from the server's answer: when it changed since the last time, the
+ * groups are worked out again.
+ */
+async function readSnapshots(api: Api, slots: readonly Slot[], knownGroups = 1): Promise<Snapshots> {
+  const found: Snapshots = { channels: new Map(), pass: Infinity, groups: knownGroups };
+  const groups = await byGroup(slots, knownGroups);
+  const answers = await inParallel(groups, PARALLEL, async ([group]) => api.snapshot(group));
+  const regrouped = answers.find((answer) => answer.groups !== knownGroups);
 
+  if (regrouped !== undefined) {
+    return readSnapshots(api, slots, regrouped.groups);
+  }
+
+  for (const [i, [, members]] of groups.entries()) {
+    const answer = answers[i]!;
     const entries = fromBase64Url(answer.entries);
-    const thumbnails = fromBase64Url(answer.thumbnails);
     found.pass = Math.min(found.pass, answer.pass);
 
     for (const slot of members) {
@@ -220,12 +233,31 @@ async function readSnapshots(api: Api, slots: readonly Slot[], withThumbnails: b
 
       if (channel !== null) {
         found.channels.set(hexOf(slot.id), channel);
-        found.thumbnails.set(hexOf(slot.id), await openSnapshotThumbnails(slot.key, answer.pass, thumbnails));
       }
     }
   }
 
   return found;
+}
+
+/** One channel's thumbnails of the last 7 days, from its whole group's (an addition). */
+async function groupThumbnailsOf(api: Api, slot: Slot, knownGroups: number): Promise<Map<string, SlotImage>> {
+  const [[group]] = await byGroup([slot], knownGroups) as [[number, Slot[]]];
+  const answer = await api.snapshotThumbnails(group);
+
+  return answer.groups !== knownGroups ? groupThumbnailsOf(api, slot, answer.groups) : openSnapshotThumbnails(slot.key, answer.pass, fromBase64Url(answer.fragments));
+}
+
+/**
+ * The groups' thumbnails a catch-up from snapshots still has to read: those of every group whose
+ * snapshot it read (see syncGroupThumbnails), with the grouping they were read with.
+ */
+interface GroupThumbnailsRun {
+  groups: number;
+  wanted: number[];
+  done: number[];
+  /** The earliest hour the answers gave so far: the thumbnail lots up to it hold nothing more. */
+  latest: number | null;
 }
 
 /** Waits this long after adding a channel before resubmitting it for a missing slot: it enters at the next pass. */
@@ -237,11 +269,17 @@ const SLOT_GRACE = 60 * 60_000;
  * goes back to the import queue (the safety net), unless it is gone or was added in clear within
  * the hour.
  * Sets the stream's cursor when it has none, or is past what the snapshots show.
+ *
+ * With `thumbnails`, the next step of the refresh reads the thumbnails of the same groups, all of
+ * them (see syncGroupThumbnails): the channels show at once, blurred, and sharpen as they come.
+ * Whether it does depends on the gesture only (a restore, a return), never on what the device has.
  */
-export async function catchUp(db: SubifyDb, api: Api, catalog: CatalogKey, now = Date.now()): Promise<{ found: number }> {
+export async function catchUp(db: SubifyDb, api: Api, catalog: CatalogKey, now = Date.now(), thumbnails = false): Promise<{ found: number }> {
   await ensureSlots(db, api, catalog);
   const subscriptions = (await db.subscriptions.toArray()).filter((subscription) => subscription.slot !== undefined && subscription.status !== 'gone');
-  const snapshots = await readSnapshots(api, subscriptions.map((subscription) => subscription.slot!), false);
+  const slots = subscriptions.map((subscription) => subscription.slot!);
+  const snapshots = await readSnapshots(api, slots);
+  const read = thumbnails ? (await byGroup(slots, snapshots.groups)).map(([group]) => group) : [];
   let found = 0;
 
   await db.transaction('rw', db.subscriptions, db.items, db.meta, async () => {
@@ -267,6 +305,10 @@ export async function catchUp(db: SubifyDb, api: Api, catalog: CatalogKey, now =
       // The snapshots show where every channel stands: a sync cut short has nothing left to read.
       await db.meta.delete('streamRun');
     }
+
+    if (read.length > 0) {
+      await setMeta(db, 'groupThumbnails', { groups: snapshots.groups, wanted: read, done: [], latest: null } satisfies GroupThumbnailsRun);
+    }
   });
 
   return { found };
@@ -291,7 +333,11 @@ interface StreamRun {
 
 /** Whether a sync started before was cut short, the app closed meanwhile: the user may resume it. */
 export async function unfinishedSync(db: SubifyDb): Promise<boolean> {
-  return (await getMeta<StreamRun>(db, 'streamRun')) !== undefined || (await getMeta<boolean>(db, 'lotsRun')) === true;
+  return (
+    (await getMeta<StreamRun>(db, 'streamRun')) !== undefined ||
+    (await getMeta<GroupThumbnailsRun>(db, 'groupThumbnails')) !== undefined ||
+    (await getMeta<boolean>(db, 'lotsRun')) === true
+  );
 }
 
 /**
@@ -326,7 +372,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
     }
 
     if (since === undefined) {
-      await catchUp(db, api, catalog, now);
+      await catchUp(db, api, catalog, now, true);
       continue;
     }
 
@@ -338,7 +384,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
 
       // A catalog started over, or further behind than the stream keeps: snapshots tell the rest.
       if (latest.latest < since || since + 1 <= latest.latest - STREAM_KEPT_PASSES) {
-        await catchUp(db, api, catalog, now);
+        await catchUp(db, api, catalog, now, true);
         continue;
       }
 
@@ -365,7 +411,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
     }
 
     if (pages.some(({ page }) => page.expired || page.latest < from)) {
-      await catchUp(db, api, catalog, now);
+      await catchUp(db, api, catalog, now, true);
       continue;
     }
 
@@ -456,14 +502,87 @@ interface LotsRead {
 }
 
 /**
- * Downloads the thumbnails of the followed channels' new videos from their groups' hourly lots
- * (docs/FEATURES.md, D3), after the stream: whole lots of the groups the stream reads, the most
- * recent hour first, back a week, skipping the hours read before. Each answer is written in one
- * transaction with the hours it covered, so one cut short resumes where it stopped. A thumbnail
- * goes in only for an item the device has, keeps a thumbnail for and doesn't have one of.
- * `onProgress` gets the share of the hours read, from 0 to 1.
+ * Downloads the thumbnails the followed channels lack, after the stream (docs/FEATURES.md, D3):
+ * those of the groups a catch-up read, if one did, then the hourly lots. `onProgress` gets the
+ * share done, from 0 to 1.
  */
 export async function syncThumbnails(db: SubifyDb, api: Api, now = Date.now(), onProgress: (share: number) => void = () => {}): Promise<{ written: number }> {
+  // After a catch-up from snapshots, its groups' thumbnails first: they cover most of the week of lots.
+  const pending = (await getMeta<GroupThumbnailsRun>(db, 'groupThumbnails')) !== undefined;
+  const fromGroups = pending ? await syncGroupThumbnails(db, api, now, (share) => onProgress(share * 0.9)) : 0;
+  const lots = await syncLots(db, api, now, (share) => onProgress(pending ? 0.9 + share * 0.1 : share));
+
+  return { written: fromGroups + lots.written };
+}
+
+/**
+ * Reads the thumbnails of the last 7 days of every group a catch-up read the snapshot of, a few
+ * at a time, each answer written in one transaction with the groups done, so a refresh cut short
+ * resumes where it stopped. Every group is read, even one the device expects nothing from: the
+ * server knows what each group published, and a group skipped would tell which channels the
+ * device lacks. Once all are read, the lots up to then are skipped: they hold nothing more.
+ */
+async function syncGroupThumbnails(db: SubifyDb, api: Api, now: number, onProgress: (share: number) => void): Promise<number> {
+  const { groupOf } = await oprf();
+  const run = (await getMeta<GroupThumbnailsRun>(db, 'groupThumbnails'))!;
+  const subscriptions = (await db.subscriptions.toArray()).filter((subscription) => subscription.slot !== undefined && subscription.status !== 'gone');
+  const left = run.wanted.filter((group) => !run.done.includes(group));
+  let regrouped: number | null = null;
+  let written = 0;
+
+  onProgress(run.done.length / run.wanted.length);
+  await inParallel(left, PARALLEL, async (group) => {
+    const answer = await api.snapshotThumbnails(group);
+
+    if (answer.groups !== run.groups) {
+      regrouped = answer.groups;
+
+      return;
+    }
+
+    const fragments = fromBase64Url(answer.fragments);
+    const images = new Map<string, SlotImage>();
+
+    for (const subscription of subscriptions.filter((candidate) => groupOf(candidate.slot!.id, run.groups) === group)) {
+      for (const [id, image] of await openSnapshotThumbnails(subscription.slot!.key, answer.pass, fragments)) {
+        images.set(`${subscription.source}:${id}`, image);
+      }
+    }
+
+    await db.transaction('rw', db.items, db.thumbnails, db.meta, async () => {
+      written += await putThumbnails(db, images, now);
+      run.done.push(group);
+      run.latest = Math.min(run.latest ?? Infinity, answer.latest);
+      await setMeta(db, 'groupThumbnails', run);
+    });
+    onProgress(run.done.length / run.wanted.length);
+  });
+
+  // The table grew meanwhile: the device's groups, in the new grouping, from the start.
+  if (regrouped !== null) {
+    const groups: number = regrouped;
+    await setMeta(db, 'groupThumbnails', { groups, wanted: [...new Set(subscriptions.map((subscription) => groupOf(subscription.slot!.id, groups)))].sort((a, b) => a - b), done: [], latest: null } satisfies GroupThumbnailsRun);
+
+    return written + (await syncGroupThumbnails(db, api, now, onProgress));
+  }
+
+  await db.transaction('rw', db.meta, async () => {
+    await setMeta(db, 'lotsCovered', run.latest);
+    await db.meta.delete('groupThumbnails');
+  });
+
+  return written;
+}
+
+/**
+ * Downloads the thumbnails of the followed channels' new videos from their groups' hourly lots
+ * (docs/FEATURES.md, D3), after the stream: whole lots of the groups the stream reads, the most
+ * recent hour first, back a week, skipping the hours read before and those a catch-up covered.
+ * Each answer is written in one transaction with the hours it covered, so one cut short resumes
+ * where it stopped. A thumbnail goes in only for an item the device has, keeps a thumbnail for
+ * and doesn't have one of. `onProgress` gets the share of the hours read, from 0 to 1.
+ */
+async function syncLots(db: SubifyDb, api: Api, now: number, onProgress: (share: number) => void): Promise<{ written: number }> {
   const { groupOf } = await oprf();
   const subscriptions = (await db.subscriptions.toArray()).filter((subscription) => subscription.slot !== undefined && subscription.status !== 'gone');
   const groups = (await getMeta<number>(db, 'streamGroups')) ?? 1;
@@ -481,7 +600,8 @@ export async function syncThumbnails(db: SubifyDb, api: Api, now = Date.now(), o
   const read: LotsRead = kept?.groups === groups ? kept : { groups, hours: {} };
   const firsts = await inParallel(wanted, PARALLEL, (group) => api.lots(group));
   const { latest, page } = firsts[0]!;
-  const oldest = latest - LOT_HOURS + 1;
+  // Hours a catch-up's thumbnails covered hold nothing the device lacks.
+  const oldest = Math.max(latest - LOT_HOURS + 1, ((await getMeta<number>(db, 'lotsCovered')) ?? -Infinity) + 1);
   const missing = (group: number, from: number, to: number) => {
     const had = new Set(read.hours[group] ?? []);
 
@@ -515,15 +635,7 @@ export async function syncThumbnails(db: SubifyDb, api: Api, now = Date.now(), o
     }
 
     await db.transaction('rw', db.items, db.thumbnails, db.meta, async () => {
-      const keys = [...images.keys()];
-      const [items, thumbnails] = await Promise.all([db.items.bulkGet(keys), db.thumbnails.bulkGet(keys)]);
-      const fresh = keys.flatMap((key, i) => {
-        const item = items[i];
-
-        return item === undefined || (thumbnails[i]?.data ?? null) !== null || !keepsThumbnail(item, now) ? [] : [{ key, channel: item.channel, type: images.get(key)!.type, data: images.get(key)!.bytes.slice().buffer }];
-      });
-      await db.thumbnails.bulkPut(fresh);
-      written += fresh.length;
+      written += await putThumbnails(db, images, now);
       await setMeta(db, 'lotsRead', read);
     });
 
@@ -534,6 +646,20 @@ export async function syncThumbnails(db: SubifyDb, api: Api, now = Date.now(), o
   onProgress(1);
 
   return { written };
+}
+
+/** Keeps these thumbnails, by item key, for the items the device has, keeps a thumbnail for and has none of; gives how many. */
+async function putThumbnails(db: SubifyDb, images: ReadonlyMap<string, SlotImage>, now: number): Promise<number> {
+  const keys = [...images.keys()];
+  const [items, thumbnails] = await Promise.all([db.items.bulkGet(keys), db.thumbnails.bulkGet(keys)]);
+  const fresh = keys.flatMap((key, i) => {
+    const item = items[i];
+
+    return item === undefined || (thumbnails[i]?.data ?? null) !== null || !keepsThumbnail(item, now) ? [] : [{ key, channel: item.channel, type: images.get(key)!.type, data: images.get(key)!.bytes.slice().buffer }];
+  });
+  await db.thumbnails.bulkPut(fresh);
+
+  return fresh.length;
 }
 
 /** Runs `run` on every value, at most `limit` at a time, and gives the results in order. */
@@ -569,13 +695,13 @@ function toApiItem(channel: string, item: { id: string; title: string; published
   };
 }
 
-/** A channel as a snapshot or an addition gives it, as the app stores channels and items. */
-export function toApi(channel: SnapshotChannel): { channel: ApiChannel; items: ApiItem[]; retryAt: number | null } {
+/** A channel as a snapshot or an addition gives it, as the app stores channels and items, with their previews. */
+export function toApi(channel: SnapshotChannel): { channel: ApiChannel; items: (ApiItem & { preview?: Uint8Array })[]; retryAt: number | null } {
   const key = `${channel.source}:${channel.externalId}`;
 
   return {
     channel: { key, source: channel.source, title: channel.title, handle: channel.handle, icon: null, avatar: channel.avatar === null ? null : dataUrl(channel.avatar) },
-    items: channel.items.map((item) => toApiItem(key, item)),
+    items: channel.items.map((item) => ({ ...toApiItem(key, item), ...(item.preview === null ? {} : { preview: item.preview }) })),
     retryAt: channel.retryAt,
   };
 }

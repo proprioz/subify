@@ -41,7 +41,7 @@ describe('a busy server', () => {
 describe('a server newer than the app', () => {
   it('asks for the new version on an answer', async () => {
     let outdated = 0;
-    const failure = await answering(200, { v: 5, ok: true }, () => outdated++).health().catch((error: unknown) => error);
+    const failure = await answering(200, { v: 6, ok: true }, () => outdated++).health().catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(ServerError);
     expect((failure as ServerError).code).toBe('outdated');
@@ -50,7 +50,7 @@ describe('a server newer than the app', () => {
 
   it('asks for the new version on an error, which may come from a request the new server refuses', async () => {
     let outdated = 0;
-    const failure = await answering(400, { v: 5, error: 'invalid_request', message: 'No.' }, () => outdated++).stream(0, 0).catch((error: unknown) => error);
+    const failure = await answering(400, { v: 6, error: 'invalid_request', message: 'No.' }, () => outdated++).stream(0, 0).catch((error: unknown) => error);
 
     expect((failure as ServerError).code).toBe('outdated');
     expect(outdated).toBe(1);

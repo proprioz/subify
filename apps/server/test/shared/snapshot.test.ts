@@ -1,11 +1,12 @@
 import { createHarness, type Harness } from '#harness';
-import type { SnapshotResponse } from '@subify/shared';
-import { fromBase64Url, openSnapshotEntry, openSnapshotThumbnails, SNAPSHOT_ENTRY_SIZE, type SlotChannel, type SlotImage, type SlotItem } from '@subify/shared/codec';
+import type { SnapshotResponse, SnapshotThumbnailsResponse } from '@subify/shared';
+import { fromBase64Url, LOT_FRAGMENT_SIZE, openSnapshotEntry, openSnapshotThumbnails, SNAPSHOT_ENTRY_SIZE, type SlotChannel, type SlotImage, type SlotItem } from '@subify/shared/codec';
 import { channelInput, channelSecrets, evaluate } from '@subify/shared/oprf';
 import { describe, expect, it } from 'vitest';
 import { type PassOptions, runPass } from '../../src/catalog/pass';
 import { DAY, HOUR, MINUTE } from '../../src/catalog/schedule';
 import { snapshotGroups } from '../../src/catalog/snapshot';
+import type { ThumbnailEncoder } from '../../src/catalog/thumbnails';
 import { enqueueUpdate } from '../../src/catalog/updates';
 import { readState } from '../../src/catalog/vault';
 import type { ServerKeys } from '../../src/crypto/keys';
@@ -22,18 +23,20 @@ interface Setup {
   pass(): Promise<void>;
 }
 
-async function setup(): Promise<Setup> {
+async function setup(options = OPTIONS, thumbnails?: ThumbnailEncoder): Promise<Setup> {
   const source = new FakeSource();
-  const harness = await createHarness({ sources: [source] });
+  const harness = await createHarness({ sources: [source], ...(thumbnails === undefined ? {} : { thumbnails }) });
   const keys = await harness.platform.keys;
-  await runPass(harness.platform, keys, undefined, OPTIONS);
+  await runPass(harness.platform, keys, undefined, options);
   harness.setNow(START + 10 * MINUTE);
 
-  return { harness, keys, source, pass: async () => void (await runPass(harness.platform, keys, await readState(harness.db, keys), OPTIONS, [source])) };
+  return { harness, keys, source, pass: async () => void (await runPass(harness.platform, keys, await readState(harness.db, keys), options, [source])) };
 }
 
-const video = (id: string, published: number, type: SlotItem['type'] = 'video', upcoming = false): SlotItem => ({ id, title: `Title ${id}`, published, ingestedAt: START, type, deleted: false, upcoming, thumbnail: null });
+const video = (id: string, published: number, type: SlotItem['type'] = 'video', upcoming = false): SlotItem => ({ id, title: `Title ${id}`, published, ingestedAt: START, type, deleted: false, upcoming, thumbnail: null, preview: null });
 const image = (fill: number): SlotImage => ({ type: 'image/jpeg', bytes: new Uint8Array(3_000).fill(fill) });
+/** Keeps the picture, and gives a preview made of its first byte: enough to tell whose it is. */
+const fakeEncoder: ThumbnailEncoder = async (picture) => ({ image: picture, preview: Uint8Array.of(picture.bytes[0]!, 0xee) });
 
 async function add(s: Setup, externalId: string, items: SlotItem[]): Promise<void> {
   const base = slotChannel([]);
@@ -43,18 +46,20 @@ async function add(s: Setup, externalId: string, items: SlotItem[]): Promise<voi
 }
 
 /** What a device does for a channel it knows the VOPRF output of: download its group's snapshot, keep its own entry. */
-async function read(s: Setup, externalId: string, thumbnails: boolean) {
+async function read(s: Setup, externalId: string) {
   const secrets = await channelSecrets(evaluate(s.keys.voprf, channelInput('fake', externalId)));
-  const response = await s.harness.request(`/api/snapshot?group=0&thumbnails=${thumbnails ? 1 : 0}`);
-  const answer = (await response.json()) as SnapshotResponse;
+  const answer = (await (await s.harness.request('/api/snapshot?group=0')).json()) as SnapshotResponse;
   const entries = fromBase64Url(answer.entries);
 
-  return {
-    answer,
-    entries,
-    channel: await openSnapshotEntry(secrets.slotId, secrets.transitKey, entries),
-    thumbnails: await openSnapshotThumbnails(secrets.transitKey, answer.pass, fromBase64Url(answer.thumbnails)),
-  };
+  return { answer, entries, channel: await openSnapshotEntry(secrets.slotId, secrets.transitKey, entries) };
+}
+
+/** Then the group's thumbnails, keeping its channel's. */
+async function readThumbnails(s: Setup, externalId: string) {
+  const secrets = await channelSecrets(evaluate(s.keys.voprf, channelInput('fake', externalId)));
+  const answer = (await (await s.harness.request('/api/snapshot/thumbnails?group=0')).json()) as SnapshotThumbnailsResponse;
+
+  return { answer, thumbnails: await openSnapshotThumbnails(secrets.transitKey, answer.pass, fromBase64Url(answer.fragments)) };
 }
 
 // Adding a channel the catalog has, restoring, or coming back after 30 days all go through the snapshot: a device that can't find its channel there would send it in clear, and a snapshot that shows only one channel would name it.
@@ -65,37 +70,41 @@ describe('group snapshots', () => {
     await add(s, 'a', [video('soon', START + DAY, 'live', true), ...videos, video('s1', START - 2 * DAY, 'short')]);
     await s.pass();
 
-    const { answer, channel } = await read(s, 'a', false);
-    expect(answer).toMatchObject({ v: 4, groups: 1, thumbnails: '' });
+    const { answer, channel } = await read(s, 'a');
+    expect(answer).toMatchObject({ v: 5, groups: 1 });
     expect(channel).toMatchObject({ source: 'fake', externalId: 'a', title: 'Channel a', avatar: image(9) });
     expect(channel?.items.map((item) => item.id)).toEqual(['soon', ...videos.slice(0, 15).map((item) => item.id), 's1']);
-    expect((await read(s, 'nobody', false)).channel).toBeNull();
+    expect((await read(s, 'nobody')).channel).toBeNull();
   });
 
   it('hold one entry of the same size per slot of the group, decoys included, whatever the channels hold', async () => {
     const s = await setup();
-    const empty = (await read(s, 'a', false)).entries.length;
+    const empty = (await read(s, 'a')).entries.length;
     await add(s, 'a', [video('x', START - HOUR)]);
     await add(s, 'b', Array.from({ length: 40 }, (_, i) => video(`b${i}`, START - (i + 1) * HOUR)));
     await s.pass();
 
     expect(empty).toBe(8 * SNAPSHOT_ENTRY_SIZE);
-    expect((await read(s, 'a', false)).entries.length).toBe(empty);
+    expect((await read(s, 'a')).entries.length).toBe(empty);
   });
 
-  it('carry the group’s thumbnails of the last 7 days when asked, a fixed number of them, each found only with its channel’s key', async () => {
-    const s = await setup();
+  // A restored device shows a video's blurred preview at once only if the snapshot carries it; one kept past the 7 days would take the room of titles.
+  it('give each video of the last 7 days the preview of its thumbnail, until its 7 days are over', async () => {
+    const s = await setup(OPTIONS, fakeEncoder);
     s.source.images.set('https://fake.test/small/recent', image(1));
     s.source.images.set('https://fake.test/small/old', image(2));
-    const quiet = (await read(s, 'b', true)).answer.thumbnails.length;
     await add(s, 'a', [video('recent', START - DAY), video('old', START - 8 * DAY)]);
-    await add(s, 'b', []);
     await s.pass();
 
-    const a = await read(s, 'a', true);
-    expect([...a.thumbnails]).toEqual([['recent', image(1)]]);
-    expect((await read(s, 'b', true)).thumbnails.size).toBe(0);
-    expect(a.answer.thumbnails.length).toBe(quiet);
+    const items = (await read(s, 'a')).channel!.items;
+    expect(items.map((item) => [item.id, item.preview])).toEqual([
+      ['recent', Uint8Array.of(1, 0xee)],
+      ['old', null],
+    ]);
+
+    s.harness.setNow(START + 7 * DAY);
+    await s.pass();
+    expect((await read(s, 'a')).channel!.items.map((item) => item.preview)).toEqual([null, null]);
   });
 
   // The group's size is the privacy a snapshot gives: about 40 channels, whatever the table's size.
@@ -108,9 +117,49 @@ describe('group snapshots', () => {
   it('are absent before the first pass, and refuse a group out of range', async () => {
     const s = await setup();
 
-    expect((await s.harness.request('/api/snapshot?group=1&thumbnails=0')).status).toBe(404);
-    expect((await s.harness.request('/api/snapshot?group=0')).status).toBe(400);
+    expect((await s.harness.request('/api/snapshot?group=1')).status).toBe(404);
+    expect((await s.harness.request('/api/snapshot/thumbnails?group=1')).status).toBe(404);
+    expect((await s.harness.request('/api/snapshot')).status).toBe(400);
+    expect((await s.harness.request('/api/snapshot/thumbnails?group=0&thumbnails=1')).status).toBe(400);
     // A second harness starts from an empty database, on both runtimes.
-    expect((await (await createHarness()).request('/api/snapshot?group=0&thumbnails=0')).status).toBe(404);
+    expect((await (await createHarness()).request('/api/snapshot?group=0')).status).toBe(404);
+  });
+});
+
+// A restore, a return after 30 days and an addition get their thumbnails from these: an answer whose size followed what the channels published, or that a busy channel filled alone, would tell the server what the others lack.
+describe('a group’s thumbnails', () => {
+  it('carry those of the last 7 days, a fixed number of fragments, each found only with its channel’s key', async () => {
+    const s = await setup();
+    s.source.images.set('https://fake.test/small/recent', image(1));
+    s.source.images.set('https://fake.test/small/old', image(2));
+    const quiet = (await readThumbnails(s, 'b')).answer.fragments.length;
+    await add(s, 'a', [video('recent', START - DAY), video('old', START - 8 * DAY)]);
+    await add(s, 'b', []);
+    await s.pass();
+
+    const a = await readThumbnails(s, 'a');
+    expect([...a.thumbnails]).toEqual([['recent', image(1)]]);
+    expect((await readThumbnails(s, 'b')).thumbnails.size).toBe(0);
+    expect(a.answer.fragments.length).toBe(quiet);
+    expect(fromBase64Url(a.answer.fragments).length % LOT_FRAGMENT_SIZE).toBe(0);
+    expect(a.answer).toMatchObject({ v: 5, groups: 1, latest: Math.floor((START + 10 * MINUTE) / HOUR) });
+  });
+
+  it('give each channel its newest in turn when they don’t all fit, so that a busy channel never takes the room of another', async () => {
+    // 8 slots: 152 fragments, 38 thumbnails of 4 fragments, for two channels with 32 each.
+    const s = await setup({ ...OPTIONS, ring: { perPass: 64, cases: 80 } });
+    const recent = (prefix: string) => Array.from({ length: 32 }, (_, i) => video(`${prefix}${String(i).padStart(2, '0')}`, START - (i + 1) * HOUR));
+
+    for (const one of [...recent('a'), ...recent('b')]) {
+      s.source.images.set(`https://fake.test/small/${one.id}`, image(3));
+    }
+
+    await add(s, 'a', recent('a'));
+    await add(s, 'b', recent('b'));
+    await s.pass();
+
+    const [a, b] = [(await readThumbnails(s, 'a')).thumbnails, (await readThumbnails(s, 'b')).thumbnails];
+    expect([...a.keys()].sort()).toEqual(recent('a').slice(0, 19).map((one) => one.id));
+    expect([...b.keys()].sort()).toEqual(recent('b').slice(0, 19).map((one) => one.id));
   });
 });

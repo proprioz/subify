@@ -217,7 +217,7 @@ export function snapshotOf(newChannel: ApiChannel, items: readonly ApiItem[]): S
     avatar: imageOf(newChannel.avatar),
     items: items
       .filter((i) => i.deleted !== true)
-      .map((i) => ({ id: idOf(i.key), title: i.title, published: i.published, type: i.type, upcoming: i.upcoming === true }))
+      .map((i) => ({ id: idOf(i.key), title: i.title, published: i.published, type: i.type, upcoming: i.upcoming === true, preview: null }))
       .sort((x, y) => y.published - x.published),
     retryAt: null,
   };

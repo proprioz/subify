@@ -71,12 +71,14 @@ describe('the encrypted catalog’s read routes', () => {
     const statuses = [
       await harness.post('/api/oprf/evaluate', { blinded: blinded.map(toBase64Url) }),
       await harness.request('/api/stream?since=0&group=0'),
-      await harness.request('/api/snapshot?group=0&thumbnails=1'),
+      await harness.request('/api/snapshot?group=0'),
+      await harness.request('/api/snapshot/thumbnails?group=0'),
+      await harness.request('/api/lots?group=0'),
       await harness.request('/api/handles'),
       await harness.request('/api/handles/0'),
     ].map((response) => response.status);
 
-    expect(statuses).toEqual([200, 200, 200, 200, 200]);
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 200, 200]);
     expect(await harness.dump()).toBe(before);
   });
 });

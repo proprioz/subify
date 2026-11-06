@@ -620,18 +620,6 @@
             "required": true,
             "name": "group",
             "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "0",
-                "1"
-              ]
-            },
-            "required": true,
-            "name": "thumbnails",
-            "in": "query"
           }
         ],
         "responses": {
@@ -645,7 +633,7 @@
                     "v": {
                       "type": "number",
                       "enum": [
-                        4
+                        5
                       ]
                     },
                     "pass": {
@@ -656,8 +644,88 @@
                     },
                     "entries": {
                       "type": "string"
+                    }
+                  },
+                  "required": [
+                    "v",
+                    "pass",
+                    "groups",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/snapshot/thumbnails": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,9}$"
+            },
+            "required": true,
+            "name": "group",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnails of the last 7 days of every slot of the group, sealed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "type": "number",
+                      "enum": [
+                        5
+                      ]
                     },
-                    "thumbnails": {
+                    "pass": {
+                      "type": "number"
+                    },
+                    "groups": {
+                      "type": "number"
+                    },
+                    "latest": {
+                      "type": "number"
+                    },
+                    "fragments": {
                       "type": "string"
                     }
                   },
@@ -665,8 +733,8 @@
                     "v",
                     "pass",
                     "groups",
-                    "entries",
-                    "thumbnails"
+                    "latest",
+                    "fragments"
                   ]
                 }
               }
@@ -1236,7 +1304,7 @@
                     "v": {
                       "type": "number",
                       "enum": [
-                        4
+                        5
                       ]
                     },
                     "channel": {
