@@ -272,7 +272,7 @@ Default: generated on Node, none on Workers.
 
 ### `WIKIDATA_USER_AGENT`
 
-**What it is for.** When someone types a channel's name rather than its @handle or link, the app first looks for it in a dictionary of about 157,000 YouTube channels that Wikidata names, which it downloads whole (about 5 MB) and searches on the device. The server never learns a name the dictionary knows. The server builds that dictionary from Wikidata, and Wikimedia asks every automated client to name itself and give a way to reach its operator: this variable is that name and contact, sent to Wikidata only. Your server's other requests keep the generic User-Agent.
+**What it is for.** When someone types a channel's name rather than its @handle or link, the app first looks for it in a dictionary of about 157,000 YouTube channels that Wikidata names, which it downloads whole (about 7 MB) and searches on the device. The server never learns a name the dictionary knows. The server builds that dictionary from Wikidata, and Wikimedia asks every automated client to name itself and give a way to reach its operator: this variable is that name and contact, sent to Wikidata only. Your server's other requests keep the generic User-Agent.
 
 **Without it**, the server never contacts Wikidata and has no dictionary. Adding a channel by its @handle or its link works the same; a name is only tried as the @handles it likely gives, which the server reads online, so the server learns it, and a channel whose handle doesn't follow its name can't be found by name.
 

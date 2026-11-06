@@ -4,7 +4,7 @@ import { fromBase64Url } from '@subify/shared/codec';
 import { describe, expect, it } from 'vitest';
 import { createHarness, type Harness } from '#harness';
 import { DAY, MINUTE } from '../../src/catalog/schedule';
-import { parseSlice, refreshDictionary, sliceQuery, WIKIDATA_HOST } from '../../src/search/dictionary';
+import { parsePopularity, parseSlice, popularityQuery, refreshDictionary, sliceQuery, WIKIDATA_HOST } from '../../src/search/dictionary';
 import { NASA } from '../fixtures';
 import { START } from '../harness/types';
 import { FakeFetch, withRecordedChannels, youtubeUrls } from '../support/fake-fetch';
@@ -21,14 +21,21 @@ function row(id: string, { shared = false, named = '', channelHandle = '', handl
   return [id, `"${shared}"^^<http://www.w3.org/2001/XMLSchema#boolean>`, named, channelHandle, handle, handleFor, label].join('\t');
 }
 
+const POPULARITY_HEADER = '?id\t?subscribers\t?sitelinks';
+
 function sliceUrl(slice: number): string {
   return `https://${WIKIDATA_HOST}/sparql?query=${encodeURIComponent(sliceQuery(slice))}`;
 }
 
-/** Wikidata answering every slice: `first` for slice 0 (ids starting with `UCA`), only the header for the others. */
-function wikidata(first: string, fake = new FakeFetch()): FakeFetch {
+function popularityUrl(slice: number): string {
+  return `https://${WIKIDATA_HOST}/sparql?query=${encodeURIComponent(popularityQuery(slice))}`;
+}
+
+/** Wikidata answering every slice: `first` and `audience` for slice 0 (ids starting with `UCA`), only the headers for the others. */
+function wikidata(first: string, fake = new FakeFetch(), audience = ''): FakeFetch {
   for (let slice = 0; slice < DICTIONARY_SLICES; slice++) {
     fake.on(sliceUrl(slice), { body: `${HEADER}\n${slice === 0 ? first : ''}` });
+    fake.on(popularityUrl(slice), { body: `${POPULARITY_HEADER}\n${slice === 0 ? audience : ''}` });
   }
 
   return fake;
@@ -61,7 +68,7 @@ describe('the Wikidata dictionary', () => {
   // Devices download it whole and compare versions: it must appear only once every slice is in, then be served as stored.
   it('reads one slice a minute and publishes the dictionary once all are in', async () => {
     const harness = await createHarness({
-      fake: wikidata(`${row(`"${A}"`, { handle: '"@nasa"', label: '"NASA"@en' })}\n${row(`"${A}"`, { handle: '"@nasa"', label: '"Nasa"@fr' })}\n`),
+      fake: wikidata(`${row(`"${A}"`, { handle: '"@nasa"', label: '"NASA"@en' })}\n${row(`"${A}"`, { handle: '"@nasa"', label: '"Nasa"@fr' })}\n`, undefined, `"${A}"\t12300000.0\t96\n`),
       config: { wikidataUserAgent: AGENT },
     });
 
@@ -73,10 +80,10 @@ describe('the Wikidata dictionary', () => {
     const slice = (await (await harness.request('/api/dictionary/0')).json()) as DictionarySliceResponse;
 
     expect(early.status).toBe(404);
-    expect(harness.fake.urls).toEqual(Array.from({ length: DICTIONARY_SLICES }, (_, i) => sliceUrl(i)));
+    expect(harness.fake.urls).toEqual(Array.from({ length: DICTIONARY_SLICES }, (_, i) => [sliceUrl(i), popularityUrl(i)]).flat());
     expect(harness.fake.calls.every((call) => call.headers.get('User-Agent') === AGENT && call.headers.get('Accept') === 'text/tab-separated-values')).toBe(true);
     expect(index).toEqual({ v: 3, version: START + (DICTIONARY_SLICES - 1) * MINUTE, slices: DICTIONARY_SLICES });
-    expect(await gunzip(fromBase64Url(slice.data))).toBe(`${A}\tnasa\tNASA\u001fNasa\n`);
+    expect(await gunzip(fromBase64Url(slice.data))).toBe(`${A}\tnasa\tNASA\u001fNasa\te\n`);
     expect(((await (await harness.request(`/api/dictionary/${DICTIONARY_SLICES}`)).json()) as ApiError).error).toBe('invalid_request');
   });
 
@@ -91,8 +98,8 @@ describe('the Wikidata dictionary', () => {
     harness.setNow(done + 3 * DAY);
     await refreshDictionary(harness.platform);
 
-    expect(waited).toBe(DICTIONARY_SLICES);
-    expect(harness.fake.urls.at(-1)).toBe(sliceUrl(0));
+    expect(waited).toBe(2 * DICTIONARY_SLICES);
+    expect(harness.fake.urls.slice(-2)).toEqual([sliceUrl(0), popularityUrl(0)]);
   });
 
   // The query service rate-limits and times out: a failed slice must be asked again later, not skipped and not retried at once.
@@ -105,7 +112,7 @@ describe('the Wikidata dictionary', () => {
     await refreshDictionary(harness.platform);
     await everyMinute(harness, 1, START + 11 * MINUTE);
 
-    expect(harness.fake.urls).toEqual([sliceUrl(0), sliceUrl(0), sliceUrl(1)]);
+    expect(harness.fake.urls).toEqual([sliceUrl(0), sliceUrl(0), popularityUrl(0), sliceUrl(1), popularityUrl(1)]);
   });
 
   // Only Wikidata gets the bot's name and contact: YouTube and every other host keep the generic User-Agent.
@@ -117,7 +124,7 @@ describe('the Wikidata dictionary', () => {
 
     expect(youtube).toHaveLength(1);
     expect(youtube[0]!.headers.get('User-Agent')).not.toContain('Subify');
-    expect(harness.fake.calls.filter((call) => call.headers.get('User-Agent') === AGENT).map((call) => new URL(call.url).hostname)).toEqual([WIKIDATA_HOST]);
+    expect(harness.fake.calls.filter((call) => call.headers.get('User-Agent') === AGENT).map((call) => new URL(call.url).hostname)).toEqual([WIKIDATA_HOST, WIKIDATA_HOST]);
   });
 });
 
@@ -136,7 +143,7 @@ describe('a slice of Wikidata’s answer', () => {
       '',
     ].join('\n');
 
-    expect(parseSlice(tsv)).toBe(`${A}\tnasa\tNASA\u001fTab here\n${B}\t\tZeta "Z"\n`);
+    expect(parseSlice(tsv)).toBe(`${A}\tnasa\tNASA\u001fTab here\t\n${B}\t\tZeta "Z"\t\n`);
   });
 
   // An organisation's item lists several channels (Apple Inc.: Apple, Apple Support): giving each
@@ -154,6 +161,24 @@ describe('a slice of Wikidata’s answer', () => {
       '',
     ].join('\n');
 
-    expect(parseSlice(tsv)).toBe(`${A}\tApple\tApple\u001fApple Inc.\n${B}\tapplesupport\tApple Support\n`);
+    expect(parseSlice(tsv)).toBe(`${A}\tApple\tApple\u001fApple Inc.\t\n${B}\tapplesupport\tApple Support\t\n`);
+  });
+
+  // Without an audience, devices ranked thousands of obscure channels a few letters match before the famous one typed.
+  it('gives each channel a rough audience: its subscribers, else its sitelinks', () => {
+    const C = 'UCAccccccccccccccccccccc';
+    const D = 'UCAddddddddddddddddddddd';
+    const audience = parsePopularity(
+      [POPULARITY_HEADER, `"${A}"\t523000000.0\t72`, `"${B}"\t\t7`, `"${C}"\t\t2`, `"${D}"\t\t0`, '"not-a-channel"\t1000.0\t3', ''].join('\n'),
+    );
+    const tsv = [HEADER, row(`"${A}"`, { label: '"MrBeast"@en' }), row(`"${D}"`, { label: '"Nobody"@en' }), ''].join('\n');
+
+    // 523 million subscribers: 2 × 8.7, rounded down, is 17, “h” in base 36; the sitelinks only stand in without a count.
+    expect([...audience]).toEqual([
+      [A, 17],
+      [B, 10],
+      [C, 9],
+    ]);
+    expect(parseSlice(tsv, audience)).toBe(`${A}\t\tMrBeast\th\n${D}\t\tNobody\t\n`);
   });
 });

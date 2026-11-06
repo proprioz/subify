@@ -42,7 +42,7 @@ export function PrivacyPage() {
           <li>When you add a channel it doesn’t have yet, the server sees that channel, but not who asked.</li>
           <li>
             Looking a channel up by its name starts on this device, in a public list of channel names, the same for everyone, that the app downloads when you start
-            adding a channel or refresh (about 5 MB, again when the server renews it). If nothing is found there, the server searches: on Invidious or Piped, services
+            adding a channel or refresh (about 7 MB, again when the server renews it). If nothing is found there, the server searches: on Invidious or Piped, services
             run by others, if this server’s operator turned them on, and last on YouTube. These searches leave from the server, never from your device, so they stay anonymous, and the server forgets
             them.
           </li>

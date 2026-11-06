@@ -40,7 +40,7 @@ describe('the Wikidata dictionary on the device', () => {
     expect(await hasDictionary(db)).toBe(true);
   });
 
-  // 5 MB on a phone: it must be downloaded again only when the server has a newer one.
+  // 7 MB on a phone: it must be downloaded again only when the server has a newer one.
   it('downloads it again only for a new version', async () => {
     const fake = server(1);
     const db = freshDb();
@@ -94,6 +94,19 @@ describe('the Wikidata dictionary on the device', () => {
     // A name that starts with the words beats a shorter one that only contains them.
     expect((await searchDictionary(db, 'situations')).map((channel) => channel.id)).toEqual([COMEDY, LENA, LENA_FAN]);
     expect(await searchDictionary(db, 'ar')).toEqual([]);
+  });
+
+  // Typing “léna” matched thousands of channels as well, and the shortest names came first: the famous channel never showed.
+  it('ranks the more popular channel first among those that match as well', async () => {
+    const HALL = 'UCffffffffffffffffffffff';
+    const fake = new FakeServer();
+    // Léna Situations has an audience (“c”, a million subscribers); the two others come from a slice without one.
+    fake.dictionary = { version: 1, slices: [`${LENA}\tlenasituations\tLéna Situations\tc\n`, `${HALL}\t\tLena Hall\n${ARTE}\t\tLena\n`] };
+    const db = freshDb();
+    await ensureDictionary(db, fake.api());
+
+    // The exact name still comes first: popularity only orders channels that match as well.
+    expect((await searchDictionary(db, 'lena')).map((channel) => channel.id)).toEqual([ARTE, LENA, HALL]);
   });
 
   // A row must show what was typed: a channel found through another of its names (“Le monde en face” for one shown as “x32b4hd67”) puzzled people.

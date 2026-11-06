@@ -19,15 +19,25 @@ import { DAY, MINUTE } from '../catalog/schedule';
  * left with nothing of its own is left out: listed under its organisation's name, it would show as
  * a twin of the channel that name belongs to.
  *
- * A refresh reads one slice a minute (the channels whose id has the same third character), each
+ * Each channel also takes a rough audience, so that devices rank the famous channels a few letters
+ * bring up before the thousands of obscure ones they match too: its subscriber count as Wikidata
+ * gives it (P8687 qualified by the channel id), or else, more roughly, its item's Wikipedia
+ * articles (sitelinks). Both are public and the same for everyone; nothing comes from the catalog,
+ * which must not tell which channels users follow (D16).
+ *
+ * A refresh reads one slice a minute (the channels whose id has the same third character, in two queries), each
  * well under the query service's 60-second limit and the Free plan's CPU per run, and starts again
  * every WIKIDATA_REFRESH_DAYS. Nothing is read without WIKIDATA_USER_AGENT: Wikimedia asks every
  * automated client to name itself and give a contact.
  */
 
 export const WIKIDATA_HOST = 'query.wikidata.org';
-/** The languages whose labels the dictionary keeps: `mul` is a label for every language. */
-const LANGUAGES = ['mul', 'en', 'fr', 'de', 'es', 'it'];
+/**
+ * The languages whose labels the dictionary keeps: `mul` is a label for every language. Users
+ * mostly speak English and French; labels in other languages made names nobody types, which the
+ * typo search then suggested.
+ */
+const LANGUAGES = ['mul', 'en', 'fr'];
 /** A failed slice is asked again after this long. */
 const RETRY = 10 * MINUTE;
 /** The query service gives up after 60 s; its answer may come late, never larger than this. */
@@ -53,6 +63,19 @@ export function sliceQuery(slice: number): string {
 }`;
 }
 
+/**
+ * The audience of every channel of a slice: its largest subscriber count, and its item's number
+ * of sitelinks. A query of its own: joined to the names', it would multiply their rows.
+ */
+export function popularityQuery(slice: number): string {
+  return `SELECT ?id (MAX(?followers) AS ?subscribers) (MAX(?links) AS ?sitelinks) WHERE {
+  ?item wdt:P2397 ?id .
+  FILTER(STRSTARTS(?id, "${dictionarySlicePrefix(slice)}"))
+  OPTIONAL { ?item p:P8687 ?count . ?count ps:P8687 ?followers ; pq:P2397 ?id . }
+  OPTIONAL { ?item wikibase:sitelinks ?links }
+} GROUP BY ?id`;
+}
+
 /** Reads the next slice when one is due. Called every minute; most minutes it only reads the state. */
 export async function refreshDictionary(platform: Platform): Promise<void> {
   const { config, db, clock } = platform;
@@ -69,10 +92,8 @@ export async function refreshDictionary(platform: Platform): Promise<void> {
   }
 
   const http = new Http(platform.fetch, config.wikidataUserAgent, new Set([WIKIDATA_HOST]));
-  let lines: string;
-
-  try {
-    const response = await http.get(`https://${WIKIDATA_HOST}/sparql?query=${encodeURIComponent(sliceQuery(state.next_slice))}`, {
+  const read = async (sparql: string): Promise<string> => {
+    const response = await http.get(`https://${WIKIDATA_HOST}/sparql?query=${encodeURIComponent(sparql)}`, {
       maxBytes: MAX_BYTES,
       timeoutMs: TIMEOUT_MS,
       headers: { Accept: 'text/tab-separated-values' },
@@ -82,7 +103,13 @@ export async function refreshDictionary(platform: Platform): Promise<void> {
       throw new Error(`Wikidata answered ${response.status}`);
     }
 
-    lines = parseSlice(response.body);
+    return response.body;
+  };
+  let lines: string;
+
+  try {
+    // Without its audiences, a slice would rank its channels worse than the copy devices have: it waits too.
+    lines = parseSlice(await read(sliceQuery(state.next_slice)), parsePopularity(await read(popularityQuery(state.next_slice))));
   } catch (error) {
     logError('The dictionary slice could not be read', error);
     await saveState(db, { next_slice: state.next_slice, next_at: now + RETRY, version: state.version });
@@ -127,10 +154,10 @@ interface SliceChannel {
 
 /**
  * The query's answer as the dictionary's lines, sorted by channel id: `id`, tab, `handle` (or
- * nothing), tab, the names separated by U+001F. Values that aren't what Wikidata should hold are
- * left out.
+ * nothing), tab, the names separated by U+001F, tab, the channel's audience (`popularity`) as one
+ * base-36 digit, or nothing. Values that aren't what Wikidata should hold are left out.
  */
-export function parseSlice(tsv: string): string {
+export function parseSlice(tsv: string, popularity: ReadonlyMap<string, number> = new Map()): string {
   const channels = new Map<string, SliceChannel>();
 
   for (const line of tsv.split('\n').slice(1)) {
@@ -167,8 +194,43 @@ export function parseSlice(tsv: string): string {
     })
     .filter(([, handle, names]) => names.size > 0 || handle !== '')
     .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([id, handle, names]) => `${id}\t${handle}\t${[...names].join('\u001f')}\n`)
+    .map(([id, handle, names]) => `${id}\t${handle}\t${[...names].join('\u001f')}\t${popularity.get(id)?.toString(36) ?? ''}\n`)
     .join('');
+}
+
+/**
+ * The audience query's answer, by channel id: twice the subscriber count's order of magnitude
+ * (12 for a million, 14 for ten million), or, without a count, 10 for an item with 5 Wikipedia
+ * articles or more and 9 for one with fewer, where the subscribers of such channels mostly lie.
+ * Coarse on purpose: a device only needs to tell famous channels from obscure ones, and one digit
+ * per line keeps the download small.
+ */
+export function parsePopularity(tsv: string): Map<string, number> {
+  const popularity = new Map<string, number>();
+
+  for (const line of tsv.split('\n').slice(1)) {
+    const [cell, subscribers, sitelinks] = line.split('\t').map((value, index) => (index === 0 ? literal(value) : number(value)));
+
+    if (typeof cell !== 'string' || !CHANNEL_ID.test(cell)) {
+      continue;
+    }
+    const bucket =
+      typeof subscribers === 'number' && subscribers >= 1 ? Math.floor(2 * Math.log10(subscribers)) : typeof sitelinks === 'number' && sitelinks >= 1 ? (sitelinks >= 5 ? 10 : 9) : null;
+
+    if (bucket !== null) {
+      popularity.set(cell, Math.min(bucket, 35));
+    }
+  }
+
+  return popularity;
+}
+
+/** A number cell of SPARQL results, bare (`1200`) or typed (`"1.2E7"^^<…#double>`), or null. */
+function number(cell: string | undefined): number | null {
+  const match = /^"?([\d.eE+-]+)"?(?:\^\^<[^>]*>)?$/.exec((cell ?? '').trim());
+  const value = match === null ? NaN : Number(match[1]);
+
+  return Number.isFinite(value) ? value : null;
 }
 
 /** A handle as Wikidata gives it, without its @, or undefined when it isn't one. */

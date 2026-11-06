@@ -36,6 +36,8 @@ interface Entry extends NamedChannel {
   /** The same keys' words, and each key with its words run together, for the search of typos. */
   words: string[];
   compacts: string[];
+  /** Its rough audience, from the server (0 without one, as in slices from before it gave any). */
+  popularity: number;
 }
 
 /** The parsed dictionary of each database, kept while the app runs: parsing takes a moment. */
@@ -161,7 +163,8 @@ export async function searchDictionary(db: SubifyDb, text: string, limit = 10): 
   }
 
   return scored
-    .sort((a, b) => b.score - a.score || a.entry.name.length - b.entry.name.length)
+    // A few letters match thousands of channels as well: the famous ones come first, the shorter names after.
+    .sort((a, b) => b.score - a.score || b.entry.popularity - a.entry.popularity || a.entry.name.length - b.entry.name.length)
     .slice(0, limit)
     .map(({ entry: { id, handle, name, others }, similar, key }) => ({
       id,
@@ -297,13 +300,16 @@ function entries(db: SubifyDb): Promise<Entry[]> {
   return found;
 }
 
-/** The server's lines: `id`, tab, `handle` or nothing, tab, the names separated by U+001F. */
+/**
+ * The server's lines: `id`, tab, `handle` or nothing, tab, the names separated by U+001F, tab, the
+ * audience as one base-36 digit or nothing. Slices from before the audience have three columns.
+ */
 function parse(text: string): Entry[] {
   return text
     .split('\n')
     .filter((line) => line !== '')
     .map((line) => {
-      const [id = '', handle = '', names = ''] = line.split('\t');
+      const [id = '', handle = '', names = '', popularity = ''] = line.split('\t');
       const all = names === '' ? [] : names.split('\u001f');
       const name = all[0] ?? `@${handle}`;
       const shown = [name, ...(handle === '' ? [] : [handle])].map(normalize);
@@ -318,6 +324,7 @@ function parse(text: string): Entry[] {
         keys,
         words: [...new Set(keys.flatMap((key) => key.split(' ')))],
         compacts: [...new Set(keys.map((key) => key.replaceAll(' ', '')))],
+        popularity: Number.parseInt(popularity, 36) || 0,
       };
     });
 }

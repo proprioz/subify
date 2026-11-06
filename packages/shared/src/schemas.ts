@@ -148,7 +148,7 @@ export const DictionarySliceParams = z.strictObject({ slice: count });
 
 export const DictionarySliceResponse = z.object({
   v: version3,
-  /** The slice's lines, gzipped: `id`, tab, `handle` or nothing, tab, the names separated by U+001F. */
+  /** The slice's lines, gzipped: `id`, tab, `handle` or nothing, tab, the names separated by U+001F, tab, the audience as one base-36 digit or nothing. */
   data: z.string(),
 });
 
