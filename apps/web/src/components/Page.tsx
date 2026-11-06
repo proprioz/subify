@@ -1,6 +1,5 @@
-import { getConfig, IonBackButton, IonButtons, IonCol, IonContent, IonFab, IonGrid, IonHeader, IonNote, IonPage, IonProgressBar, IonRow, IonTitle, IonToolbar } from '@ionic/react';
+import { getConfig, IonBackButton, IonButtons, IonCol, IonContent, IonFab, IonGrid, IonHeader, IonNote, IonPage, IonRow, IonTitle, IonToolbar } from '@ionic/react';
 import { type ReactNode, useRef, useState } from 'react';
-import { useRefreshProgress } from '../ui/refresh-progress';
 import { useWideScreen } from '../ui/wide-screen';
 
 interface Props {
@@ -27,8 +26,8 @@ interface Props {
   /** Uses the full width of large screens, for the feed's grid, instead of a reading column. */
   wide?: boolean;
   /**
-   * Shows a loading bar along the bottom of the header while true. An action icon with
-   * the `refresh-icon` class turns for as long as the bar shows.
+   * While true, an action icon with the `refresh-icon` class turns. The loading bar itself is the
+   * app's, at the top of the screen (RefreshBar).
    */
   refreshing?: boolean;
   children: ReactNode;
@@ -48,11 +47,6 @@ interface Props {
  */
 export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays, wide = false, refreshing = false, children }: Props) {
   const wideScreen = useWideScreen();
-  const progress = useRefreshProgress(refreshing);
-  // The bar lives in this component alone, so its frames do not render the page's content again.
-  const refreshBar = progress !== null && (
-    <IonProgressBar className="refresh-bar" value={progress / 100} aria-label="Refreshing feed" />
-  );
   const [fabHidden, setFabHidden] = useState(false);
   // Where the content stood the last time the button's state was decided: a scroll counts only
   // once it has moved far enough from there, so a finger's small jitter does not flicker it.
@@ -68,7 +62,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
   );
 
   return (
-    <IonPage className={progress === null ? '' : 'refreshing'}>
+    <IonPage className={refreshing ? 'refreshing' : ''}>
       {!barOnTop && (
         <IonHeader translucent className="ion-hide-lg-up">
           <IonToolbar>
@@ -76,7 +70,6 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
             <IonTitle>{title}</IonTitle>
             {actions !== undefined && <IonButtons slot="end">{actions}</IonButtons>}
           </IonToolbar>
-          {!wideScreen && refreshBar}
         </IonHeader>
       )}
       <IonContent
@@ -104,7 +97,6 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
               {backButton}
               <h1 className="ion-flex-1">{title}</h1>
               {actions !== undefined && <IonButtons>{actions}</IonButtons>}
-              {refreshBar}
             </div>
           ) : (
             // The buttons sit in the small toolbar above (or the bar), as in iOS's own apps,
@@ -129,10 +121,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
             </IonNote>
           )}
           {barOnTop ? (
-            <div className="page-bar">
-              {bar}
-              {refreshBar}
-            </div>
+            <div className="page-bar">{bar}</div>
           ) : (
             bar
           )}

@@ -3,10 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * The loading bar of a feed refresh.
  *
- * A sync does not tell how far it got, so the bar runs on time instead: it heads for
+ * A sync that reads one page does not tell how far it got, so the bar runs on time: it heads for
  * {@link WAITING_CAP} at the end of an estimate, the length of the last sync, and only creeps on
  * once that is overdue. When the sync is over, it fills up within a short time and then hides.
- * The speed eases towards the one it needs, so the bar never jumps or goes back.
+ * The speed eases towards the one it needs, so the bar never goes back. A sync that reads several
+ * pages, after an absence, tells how far it got after each one: the bar moves up to that.
  */
 
 /** A sync that finishes sooner still fills the bar across this time, so it can be seen. */
@@ -83,12 +84,14 @@ interface Run {
 
 /**
  * The width of the loading bar while `running` is true and as it fills up afterwards, or null
- * when the bar is hidden.
+ * when the bar is hidden. `done` is how far the sync says it got, in percent, when it knows.
  */
-export function useRefreshProgress(running: boolean): number | null {
+export function useRefreshProgress(running: boolean, done = 0): number | null {
   const [progress, setProgress] = useState<number | null>(null);
   const run = useRef<Run | null>(null);
   const lastMs = useRef(FIRST_ESTIMATE_MS);
+  const known = useRef(done);
+  known.current = done;
 
   useEffect(() => {
     const now = performance.now();
@@ -117,6 +120,8 @@ export function useRefreshProgress(running: boolean): number | null {
       const remainingMs = (bar.finishBy ?? bar.startedAt + bar.estimatedMs) - at;
 
       [bar.shown, bar.speed] = advance(bar.shown, bar.speed, remainingMs, at - bar.frameAt, bar.finishBy !== null);
+      // A long sync tells how far it got: the bar never stays behind that.
+      bar.shown = Math.max(bar.shown, Math.min(OVERDUE_CAP, known.current));
       bar.frameAt = at;
       setProgress(bar.shown);
 

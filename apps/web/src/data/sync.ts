@@ -7,9 +7,9 @@ export interface SyncResult {
   written: number;
 }
 
-/** Brings the followed channels up to date from the encrypted catalog's sync stream (see syncStream). */
-export async function syncUpdates(db: SubifyDb, api: Api, now = Date.now()): Promise<SyncResult> {
-  const result = await syncStream(db, api, await api.catalog(), now);
+/** Brings the followed channels up to date from the encrypted catalog's sync stream, newest first (see syncStream). */
+export async function syncUpdates(db: SubifyDb, api: Api, now = Date.now(), onProgress?: (share: number) => void): Promise<SyncResult> {
+  const result = await syncStream(db, api, await api.catalog(), now, onProgress);
   await setMeta(db, 'lastSyncAt', now);
 
   return result;

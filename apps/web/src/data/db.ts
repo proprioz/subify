@@ -43,6 +43,8 @@ export interface Subscription {
    * failed (YouTube didn't answer). Absent otherwise.
    */
   retryAt?: number;
+  /** The stream's pass that last renamed it: a rename from an earlier pass, read later, is older. */
+  renamedAt?: number;
 }
 
 /** Sets or removes a subscription's retry time, in a Dexie update callback. */
@@ -66,11 +68,17 @@ export interface Slot {
  * A copy of a catalog item of a followed channel. `upcoming` is kept as 1 rather than true:
  * IndexedDB cannot index a boolean, and the feed finds upcoming items through their index.
  */
-export type StoredItem = Omit<ApiItem, 'upcoming'> & { upcoming?: 1 };
+export type StoredItem = Omit<ApiItem, 'upcoming'> & {
+  upcoming?: 1;
+  /** The stream's pass that last changed it: a change from an earlier pass, read later, is older. */
+  pass?: number;
+};
 
-/** Writes items from the server, replacing the copies already there. */
-export async function putItems(db: SubifyDb, items: readonly ApiItem[]): Promise<void> {
-  await db.items.bulkPut(items.map(({ upcoming, ...item }): StoredItem => (upcoming === true ? { ...item, upcoming: 1 } : item)));
+/** Writes items from the server, replacing the copies already there; `pass` is the stream's pass they come from. */
+export async function putItems(db: SubifyDb, items: readonly ApiItem[], pass?: number): Promise<void> {
+  await db.items.bulkPut(
+    items.map(({ upcoming, ...item }): StoredItem => ({ ...item, ...(upcoming === true ? { upcoming: 1 as const } : {}), ...(pass === undefined ? {} : { pass }) })),
+  );
 }
 
 /**

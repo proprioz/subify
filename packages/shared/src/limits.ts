@@ -1,6 +1,9 @@
 /** Channels one device may follow: far more than anyone follows, and a bound on what a restore downloads. */
 export const MAX_SYNC_CHANNELS = 5000;
 
+/** Passes the sync stream keeps, 30 days of 10-minute passes: a device further behind reads its groups' snapshots. */
+export const STREAM_KEPT_PASSES = 30 * 144;
+
 /**
  * The sizes a blind evaluation batch may have: a device pads its batch with random elements up to
  * one of them, so that the request and its answer tell only which size it chose.

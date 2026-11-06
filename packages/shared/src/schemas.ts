@@ -102,7 +102,10 @@ export const EvaluateResponse = z.object({
 const count = z.string().regex(/^\d{1,9}$/).transform(Number);
 
 export const StreamQuery = z.strictObject({
-  /** The last pass the device has, the `latest` of a previous answer. */
+  /**
+   * The answer holds the batches after this pass, at most a page of them. A device reads pages
+   * from the latest back to the last pass it has; a `since` past the latest gives `latest` alone.
+   */
   since: count,
   /** The device's group: its channels' group seeds modulo `groups`. A device with channels in several groups asks for each. */
   group: count,
@@ -119,6 +122,8 @@ export const StreamResponse = z.object({
   expired: z.boolean(),
   /** More batches follow: ask again with the last batch's pass. */
   more: z.boolean(),
+  /** Batches an answer holds at most: a device reading back from the latest steps by this much. */
+  page: z.number(),
   batches: z.array(z.object({ pass: z.number(), entries: z.string() })),
 });
 

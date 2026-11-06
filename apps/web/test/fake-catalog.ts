@@ -162,7 +162,7 @@ export class FakeCatalog {
       const since = Number(url.searchParams.get('since'));
 
       if (since < this.keptFrom) {
-        return { v: 4, latest: this.pass, groups: 1, k: 1, expired: true, more: false, batches: [] };
+        return { v: 4, latest: this.pass, groups: 1, k: 1, expired: true, more: false, page: this.streamPage, batches: [] };
       }
 
       const batches = [];
@@ -186,7 +186,7 @@ export class FakeCatalog {
         batches.push({ pass, entries: toBase64Url(concat(entries)) });
       }
 
-      return { v: 4, latest: this.pass, groups: 1, k: this.channels.size, expired: false, more: last < this.pass, batches };
+      return { v: 4, latest: this.pass, groups: 1, k: this.channels.size, expired: false, more: last < this.pass, page: this.streamPage, batches };
     }
 
     if (path.startsWith('/api/handles') && method === 'GET') {

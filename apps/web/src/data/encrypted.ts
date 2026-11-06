@@ -1,4 +1,4 @@
-import { type ApiChannel, type ApiItem, BLIND_BATCH_SIZES, type OprfKeyResponse } from '@subify/shared';
+import { type ApiChannel, type ApiItem, BLIND_BATCH_SIZES, type OprfKeyResponse, STREAM_KEPT_PASSES } from '@subify/shared';
 import {
   chunkOf,
   fromBase64Url,
@@ -262,23 +262,47 @@ export async function catchUp(db: SubifyDb, api: Api, catalog: CatalogKey, now =
 
     if (subscriptions.length > 0) {
       await setMeta(db, 'streamPass', snapshots.pass);
+      // The snapshots show where every channel stands: a sync cut short has nothing left to read.
+      await db.meta.delete('streamRun');
     }
   });
 
   return { found };
 }
 
-/** Batches per stream answer, as the server pages them. */
-const STREAM_PAGE = 144;
+/** A `since` past any pass the stream will reach: the answer gives `latest` alone. */
+const LATEST_ONLY = 999_999_999;
+
+/** Groups asked for at once, for each page. */
+const PARALLEL = 6;
 
 /**
- * Brings the followed channels up to date from the sync stream, page by page, each page written in
- * one transaction with the new cursor, so an app suspended mid-sync (iOS does that) resumes where it
- * stopped, without a duplicate or a gap. Without a cursor, or further
- * behind than the stream keeps, it catches up from snapshots instead, as it does an hour after a
- * channel was added in clear.
+ * A sync under way, kept so that one cut short resumes where it stopped: it has read the passes in
+ * (below, top], newest first; those in (streamPass, below] are left.
  */
-export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, now = Date.now()): Promise<{ written: number }> {
+interface StreamRun {
+  top: number;
+  below: number;
+  /** Batches per answer, as the server pages them. */
+  page: number;
+}
+
+/** Whether a sync started before was cut short, the app closed meanwhile: the user may resume it. */
+export async function unfinishedSync(db: SubifyDb): Promise<boolean> {
+  return (await getMeta<StreamRun>(db, 'streamRun')) !== undefined;
+}
+
+/**
+ * Brings the followed channels up to date from the sync stream, newest first: it learns the latest
+ * pass, then reads its groups' pages back from there to the last pass it has, so the feed shows
+ * the latest videos first after a long absence. Each page is written in one transaction with where
+ * the sync stands, so an app suspended mid-sync (iOS does that) resumes where it stopped, without a
+ * duplicate or a gap. A change older than one already written for the same item or channel is
+ * skipped. Without a cursor, or further behind than the stream keeps, it catches up from snapshots
+ * instead, as it does an hour after a channel was added in clear. `onProgress` gets the share of
+ * the passes read, from 0 to 1.
+ */
+export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, now = Date.now(), onProgress: (share: number) => void = () => {}): Promise<{ written: number }> {
   const { groupOf } = await oprf();
   await ensureSlots(db, api, catalog);
   let written = 0;
@@ -294,6 +318,8 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
     const subscriptions = (await db.subscriptions.toArray()).filter((subscription) => subscription.slot !== undefined && subscription.status !== 'gone');
 
     if (subscriptions.length === 0) {
+      await db.meta.delete('streamRun');
+
       return { written };
     }
 
@@ -302,85 +328,106 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
       continue;
     }
 
-    const groups = (await getMeta<number>(db, 'streamGroups')) ?? 1;
-    const wanted = [...new Set(subscriptions.map((subscription) => groupOf(subscription.slot!.id, groups)))];
-    const pages = [];
-    let regrouped = false;
-    let behind = false;
+    let run = await getMeta<StreamRun>(db, 'streamRun');
 
-    for (const group of wanted) {
-      const page = await api.stream(since, group);
+    if (run === undefined) {
+      const latest = await api.stream(LATEST_ONLY, 0);
+      await setMeta(db, 'streamGroups', latest.groups);
 
-      if (page.groups !== groups) {
-        await setMeta(db, 'streamGroups', page.groups);
-        regrouped = true;
-        break;
+      // A catalog started over, or further behind than the stream keeps: snapshots tell the rest.
+      if (latest.latest < since || since + 1 <= latest.latest - STREAM_KEPT_PASSES) {
+        await catchUp(db, api, catalog, now);
+        continue;
       }
 
-      // Further behind than the stream keeps, or a catalog started over: snapshots tell the rest.
-      if (page.expired || page.latest < since) {
-        behind = true;
-        break;
+      if (latest.latest === since) {
+        onProgress(1);
+
+        return { written };
       }
 
-      pages.push({ group, page });
+      run = { top: latest.latest, below: latest.latest, page: latest.page };
+      await setMeta(db, 'streamRun', run);
     }
 
-    if (regrouped) {
+    onProgress(run.top === since ? 1 : (run.top - run.below) / (run.top - since));
+    const from = Math.max(since, run.below - run.page);
+    const groups = (await getMeta<number>(db, 'streamGroups')) ?? 1;
+    const wanted = [...new Set(subscriptions.map((subscription) => groupOf(subscription.slot!.id, groups)))];
+    const pages = await inParallel(wanted, PARALLEL, async (group) => ({ group, page: await api.stream(from, group) }));
+    const regrouped = pages.find(({ page }) => page.groups !== groups);
+
+    if (regrouped !== undefined) {
+      await setMeta(db, 'streamGroups', regrouped.page.groups);
       continue;
     }
 
-    if (behind) {
+    if (pages.some(({ page }) => page.expired || page.latest < from)) {
       await catchUp(db, api, catalog, now);
       continue;
     }
 
-    const changes: { subscription: Subscription; deltas: StreamDelta[] }[] = [];
+    const changes: { subscription: Subscription; pass: number; deltas: StreamDelta[] }[] = [];
 
     for (const { group, page } of pages) {
       for (const subscription of subscriptions.filter((candidate) => groupOf(candidate.slot!.id, groups) === group)) {
-        for (const batch of page.batches) {
+        // Passes after `below` were read already: the page may reach past it on its last range.
+        for (const batch of page.batches.filter((candidate) => candidate.pass <= run.below)) {
           const deltas = await openEntries(subscription.slot!.key, batch.pass, fromBase64Url(batch.entries));
 
           if (deltas.length > 0) {
-            changes.push({ subscription, deltas });
+            changes.push({ subscription, pass: batch.pass, deltas });
           }
         }
       }
     }
 
-    const first = pages[0]!.page;
-    // Every group's answer covers the same passes. A page with no batch written (a catalog started over) still moves on.
-    const passes = pages.flatMap(({ page }) => page.batches.map((batch) => batch.pass));
-    const next = first.more ? Math.max(since + 1, ...passes, passes.length === 0 ? since + STREAM_PAGE : 0) : first.latest;
+    const done = from === since;
 
     await db.transaction('rw', db.subscriptions, db.items, db.meta, async () => {
-      for (const { subscription, deltas } of changes) {
+      for (const { subscription, pass, deltas } of changes) {
         // A channel removed while the page was on its way must not get its items back.
         if ((await db.subscriptions.get(subscription.key)) !== undefined) {
-          written += await apply(db, subscription, deltas);
+          written += await apply(db, subscription, pass, deltas);
         }
       }
 
-      await setMeta(db, 'streamPass', next);
+      if (done) {
+        await setMeta(db, 'streamPass', run.top);
+        await db.meta.delete('streamRun');
+      } else {
+        await setMeta(db, 'streamRun', { ...run, below: from });
+      }
     });
 
-    if (!first.more) {
+    if (done) {
+      onProgress(1);
+
       return { written };
     }
   }
 }
 
-async function apply(db: SubifyDb, subscription: Subscription, deltas: readonly StreamDelta[]): Promise<number> {
+/** Applies one pass's changes of a channel, but not over a change from a later pass, read before. */
+async function apply(db: SubifyDb, subscription: Subscription, pass: number, deltas: readonly StreamDelta[]): Promise<number> {
   const items: ApiItem[] = [];
 
   for (const delta of deltas) {
     switch (delta.kind) {
-      case 'item':
-        items.push(toApiItem(subscription.key, delta));
+      case 'item': {
+        const item = toApiItem(subscription.key, delta);
+
+        if (((await db.items.get(item.key))?.pass ?? -1) < pass) {
+          items.push(item);
+        }
+
         break;
+      }
       case 'channel':
-        await db.subscriptions.update(subscription.key, { title: delta.title, handle: delta.handle });
+        if (((await db.subscriptions.get(subscription.key))?.renamedAt ?? -1) < pass) {
+          await db.subscriptions.update(subscription.key, { title: delta.title, handle: delta.handle, renamedAt: pass });
+        }
+
         break;
       case 'gone':
         await db.subscriptions.update(subscription.key, { status: 'gone' });
@@ -391,9 +438,26 @@ async function apply(db: SubifyDb, subscription: Subscription, deltas: readonly 
     }
   }
 
-  await putItems(db, items);
+  await putItems(db, items, pass);
 
   return items.length;
+}
+
+/** Runs `run` on every value, at most `limit` at a time, and gives the results in order. */
+async function inParallel<T, R>(values: readonly T[], limit: number, run: (value: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, async () => {
+      while (next < values.length) {
+        const at = next++;
+        results[at] = await run(values[at]!);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function toApiItem(channel: string, item: { id: string; title: string; published: number; type: ApiItem['type']; upcoming: boolean; deleted?: boolean }): ApiItem {

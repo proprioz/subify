@@ -129,7 +129,7 @@ export async function readStream(platform: Platform, keys: ServerKeys, since: nu
     return null;
   }
 
-  const answer = { v: 4 as const, latest, groups: last.groups, k: Math.floor((state.tableSize / 2) / last.groups) };
+  const answer = { v: 4 as const, latest, groups: last.groups, k: Math.floor((state.tableSize / 2) / last.groups), page: PAGE };
 
   if (since + 1 <= latest - STREAM_ROWS) {
     return { ...answer, expired: true, more: false, batches: [] };

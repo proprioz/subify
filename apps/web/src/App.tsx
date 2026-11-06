@@ -24,6 +24,7 @@ import { BiometricsFlowProvider } from './app/BiometricsFlow';
 import { SecretFlowProvider } from './app/SecretFlow';
 import { VaultGate } from './app/VaultGate';
 import { TourPage } from './pages/TourPage';
+import { RefreshBar } from './components/RefreshBar';
 import { StorageWarning } from './components/StorageWarning';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { FeedPage } from './pages/FeedPage';
@@ -46,6 +47,7 @@ export function App() {
                 </IonSplitPane>
                 <StorageWarning />
               </IonReactRouter>
+              <RefreshBar />
             </SecretFlowProvider>
           </BiometricsFlowProvider>
         </VaultGate>

@@ -105,7 +105,7 @@ export function FeedPage() {
     (updatedLabel(lastSyncAt) ?? 'Latest uploads, newest first')
   );
 
-  // The icon itself turns while the loading bar shows (see Page). The button stays
+  // The icon itself turns while the refresh runs (see Page). The button stays
   // enabled, at full opacity: a tap then only joins the sync already running.
   const refreshButton = hasChannels ? (
     <IonFabButton color="red" aria-label={syncing ? 'Refreshing feed' : 'Refresh'} onClick={() => void sync()}>

@@ -4,6 +4,7 @@
  * never on how many channels changed, so that nothing the database or the sync stream shows
  * varies with activity.
  */
+import { STREAM_KEPT_PASSES } from '@subify/shared';
 import { DAY, MINUTE } from './schedule';
 
 const MONTH = 30 * DAY;
@@ -148,4 +149,4 @@ export function streamPlan({ slots, period, changesPerChannelPerDay = 0.88, marg
 }
 
 /** Rows of the stream's ring: 30 days of 10-minute passes. With longer passes, it keeps more. */
-export const STREAM_ROWS = 30 * 144;
+export const STREAM_ROWS = STREAM_KEPT_PASSES;

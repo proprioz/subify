@@ -9,6 +9,7 @@ import { refreshDictionary } from '../data/dictionary';
 import { runImportQueue } from '../data/follow-many';
 import { countryFlag, countryName } from '../data/format';
 import { loadTheme } from '../data/settings';
+import { unfinishedSync } from '../data/encrypted';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../data/sync';
 import { dropOldThumbnails } from '../data/thumbnails';
 import { forgetKeptKey, LockedError, lockVault, readKeyring, startVault } from '../data/vault';
@@ -38,6 +39,8 @@ interface AppData {
   /** Runs a sync, or joins the one already running. */
   sync(): Promise<void>;
   syncing: boolean;
+  /** How far the running sync got, in percent, when it reads several pages; 0 otherwise. */
+  syncDone: number;
   syncError: string | null;
   /** Whether secret channels are shown. Never saved: they hide again on another screen, or when the app leaves the screen. */
   secretsShown: boolean;
@@ -107,6 +110,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const theme = useLiveQuery(() => loadTheme(db), [db]);
   const running = useRef<Promise<void> | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncDone, setSyncDone] = useState(0);
+  // Resumes a sync from a toast: the toast outlives the render that showed it.
+  const resumeSync = useRef(() => {});
   const [syncError, setSyncError] = useState<string | null>(null);
   const [presentToast] = useIonToast();
   // Asks to load the newer version of the app, which `updateApp` does.
@@ -117,6 +123,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ...toastPlacement(),
         buttons: [
           { text: button, handler: () => void updateApp() },
+          { icon: close, role: 'cancel', htmlAttributes: { 'aria-label': 'Close' } },
+        ],
+      }),
+    [presentToast],
+  );
+  // A refresh that stopped: the next one picks up where it did.
+  const offerResume = useCallback(
+    (message: string) =>
+      void presentToast({
+        message,
+        ...toastPlacement(),
+        buttons: [
+          { text: 'Resume', handler: () => resumeSync.current() },
           { icon: close, role: 'cancel', htmlAttributes: { 'aria-label': 'Close' } },
         ],
       }),
@@ -198,11 +217,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           setSyncError(null);
           offerUpdate('This version of the app is out of date.', 'Update');
         } else {
-          setSyncError(error instanceof ServerError ? error.message : 'Couldn’t update the feed.');
+          const message = error instanceof ServerError ? error.message : 'Couldn’t update the feed.';
+          setSyncError(message);
+          // Said on every page, not only in the feed's subtitle: the user may be elsewhere.
+          offerResume(message);
         }
 
         running.current = null;
         setSyncing(false);
+        setSyncDone(0);
         resolve();
       };
 
@@ -214,7 +237,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           setSyncing(true);
 
           try {
-            await syncToTheEnd(() => syncUpdates(db, api), documentVisibility);
+            await syncToTheEnd(() => syncUpdates(db, api, Date.now(), (share) => setSyncDone(share * 100)), documentVisibility);
             await dropOldThumbnails(db);
           } catch (error) {
             settle(error);
@@ -231,7 +254,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     });
 
     return running.current;
-  }, [db, api, gate, offerUpdate]);
+  }, [db, api, gate, offerUpdate, offerResume]);
+
+  resumeSync.current = () => void sync();
+
+  // A sync cut short when the app closed doesn't go on by itself at the next launch (D12): the
+  // user is asked, once the app is open.
+  const askedToResume = useRef(false);
+
+  useEffect(() => {
+    if (vault !== 'open' || askedToResume.current) {
+      return;
+    }
+
+    askedToResume.current = true;
+    void unfinishedSync(db).then((unfinished) => unfinished && offerResume('Your last refresh didn’t finish.'));
+  }, [db, vault, offerResume]);
 
   // A newer version installed at launch still runs the old code until the page reloads: the user
   // chooses when, rather than losing what they were doing.
@@ -324,7 +362,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [installEvent]);
 
   return (
-    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: () => forgetKeptKey(db).then(() => setVault('locked')), api, gate, sync, syncing, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
+    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: () => forgetKeptKey(db).then(() => setVault('locked')), api, gate, sync, syncing, syncDone, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
       {children}
     </AppDataContext.Provider>
   );

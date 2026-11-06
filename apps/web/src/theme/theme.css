@@ -967,24 +967,21 @@ ion-avatar {
   display: none;
 }
 
-/* The title row on wide screens, where the refresh bar sits along its bottom. */
-.page-title {
-  position: relative;
-}
-
-/* The refresh bar: a thin line of the platform's red along the bottom of the header, on a
-   grey track, laid over it, above the toolbar, so the header keeps its height when the bar shows. */
+/* The refresh bar (RefreshBar): a thin line of the platform's red at the very top of the screen,
+   under the status bar, laid over every page, so that a refresh shows wherever the user goes or
+   scrolls. Above the pages and the tab bar, under the overlays (toasts, popovers). */
 ion-progress-bar.refresh-bar {
-  --background: var(--ion-border-color);
+  --background: transparent;
   --progress-background: var(--ion-color-red);
-  position: absolute;
-  bottom: 0;
+  position: fixed;
+  top: var(--ion-safe-area-top, 0);
   left: 0;
-  z-index: 11;
-  height: 2px;
+  right: 0;
+  z-index: 1000;
+  height: 3px;
 }
 
-/* The refresh button's icon turns while the loading bar shows (Page), unless motion is reduced. */
+/* The refresh button's icon turns while a refresh runs (Page), unless motion is reduced. */
 @media (prefers-reduced-motion: no-preference) {
   .refreshing ion-icon.refresh-icon {
     animation: spinning 1s linear infinite;

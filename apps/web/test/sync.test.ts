@@ -21,24 +21,51 @@ function onePassEach(server: FakeServer, count: number): void {
   many(A, 'v', count).forEach((video) => server.publish(null, video));
 }
 
+/** The ids of the items kept, in order. */
+async function ids(db: ReturnType<typeof freshDb>): Promise<string[]> {
+  return (await db.items.toArray()).map((item) => item.key.slice(item.key.indexOf(':') + 1)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+}
+
 // iOS may suspend the app in the middle of a sync: there must be neither a duplicate nor a gap when it resumes.
 describe('a sync cut short', () => {
-  it('resumes where the last written page ended', async () => {
+  // After an absence, the latest videos matter most: they must be the first written, and a sync cut short must go on back from there.
+  it('writes the newest page first and resumes back from the last one written', async () => {
     const server = new FakeServer().publish(channel(A));
     const { db, api } = await followedA(server);
+    const cursor = await getMeta<number>(db, 'streamPass');
     onePassEach(server, 25);
     server.encrypted.streamPage = 10;
-    server.failStreamAt = 2;
+    // The first request asks for the latest pass, the second brings the newest page.
+    server.failStreamAt = 3;
 
     await expect(syncUpdates(db, api, NOW)).rejects.toThrow();
-    const afterFirstPage = await getMeta<number>(db, 'streamPass');
-    expect(await db.items.count()).toBe(10);
+    expect(await ids(db)).toEqual(many(A, 'v', 25).slice(15).map((video) => video.key.slice(video.key.indexOf(':') + 1)));
+    expect(await getMeta<number>(db, 'streamPass')).toBe(cursor);
 
     await syncUpdates(db, api, NOW);
 
-    expect(afterFirstPage).toBeLessThan(server.encrypted.pass);
     expect(await db.items.count()).toBe(25);
     expect(await getMeta<number>(db, 'streamPass')).toBe(server.encrypted.pass);
+    expect(await getMeta(db, 'streamRun')).toBeUndefined();
+  });
+
+  // Read newest first, an older change comes after a newer one: it must not undo it.
+  it('keeps the newest change of an item read before an older one', async () => {
+    const server = new FakeServer().publish(channel(A));
+    const { db, api } = await followedA(server);
+    const [video] = many(A, 'v', 1);
+    // One pass a page: the passes are read from the last to the first.
+    server.encrypted.streamPage = 1;
+    server.publish(null, { ...video!, title: 'First title', upcoming: true });
+    server.publish(channel(A, 'Old name'));
+    server.publish(null, { ...video!, title: 'Final title' });
+    server.publish(channel(A, 'New name'));
+
+    await syncUpdates(db, api, NOW);
+
+    expect(await db.items.get(video!.key)).toMatchObject({ title: 'Final title' });
+    expect((await db.items.get(video!.key))?.upcoming).toBeUndefined();
+    expect((await db.subscriptions.get(`youtube:${A}`))?.title).toBe('New name');
   });
 
   it('keeps the cursor when writing a page fails', async () => {
@@ -131,22 +158,22 @@ describe('a sync started by the user', () => {
     const { db, api } = await followedA(server);
     onePassEach(server, 25);
     server.encrypted.streamPage = 10;
-    server.failStreamAt = 2;
+    server.failStreamAt = 3;
     const screen = new FakeScreen();
     let calls = 0;
     // The user leaves the app while the first page is on its way.
     server.onStream = (call) => {
       calls = call;
 
-      if (call === 1) {
+      if (call === 2) {
         screen.set(false);
       }
     };
 
     const done = syncToTheEnd(() => syncUpdates(db, api, NOW), screen);
-    await vi.waitFor(() => expect(calls).toBe(2));
+    await vi.waitFor(() => expect(calls).toBe(3));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
     expect(await db.items.count()).toBe(10);
 
     screen.set(true);
@@ -161,7 +188,7 @@ describe('a sync started by the user', () => {
     const { db, api } = await followedA(server);
     onePassEach(server, 25);
     server.encrypted.streamPage = 10;
-    server.failStreamAt = 2;
+    server.failStreamAt = 3;
 
     await expect(syncToTheEnd(() => syncUpdates(db, api, NOW), new FakeScreen())).rejects.toThrow();
     expect(await db.items.count()).toBe(10);

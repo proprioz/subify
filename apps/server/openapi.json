@@ -335,6 +335,9 @@
                     "more": {
                       "type": "boolean"
                     },
+                    "page": {
+                      "type": "number"
+                    },
                     "batches": {
                       "type": "array",
                       "items": {
@@ -361,6 +364,7 @@
                     "k",
                     "expired",
                     "more",
+                    "page",
                     "batches"
                   ]
                 }
