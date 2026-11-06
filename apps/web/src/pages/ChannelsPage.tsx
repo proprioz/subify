@@ -183,7 +183,7 @@ export function ChannelsPage() {
         // approved yet, the first name looked up brings it.
         onIonFocus={() => void gate.whenApproved(() => refreshDictionary(db, api))}
         onKeyDown={(event) => {
-          // Enter does what the list's last row does: search more widely.
+          // Enter does what the list's last row does: search online.
           if (event.key === 'Enter') {
             void finder.widen();
           }
@@ -289,7 +289,7 @@ export function ChannelsPage() {
       )}
 
       {/* As soon as something is typed, one list replaces the page's: the followed channels it
-          matches, the channels to follow, and “Search more widely”. */}
+          matches, the channels to follow, and “Search online”. */}
       {term !== '' && <ChannelSearchResults finder={finder} own={shown} onOpen={showVideos} />}
     </Page>
   );

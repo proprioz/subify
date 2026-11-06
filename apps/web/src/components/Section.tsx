@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 interface Props {
   heading?: string;
   /** A line of help under the group, where both platforms put it. */
-  footer?: string;
+  footer?: ReactNode;
   children: ReactNode;
 }
 

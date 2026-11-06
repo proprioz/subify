@@ -2,6 +2,7 @@ import { IonButton, IonIcon, IonItem, IonLabel, IonNote, IonSpinner } from '@ion
 import { useLiveQuery } from 'dexie-react-hooks';
 import { add, checkmark, search } from 'ionicons/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { ServerError } from '../data/api';
 import { isChannelInput, isChannelName } from '../data/channel-link';
@@ -18,7 +19,7 @@ import { Section } from './Section';
  * Adding a channel (docs/FEATURES.md, §2): one list under the Channels tab's field, as a search
  * box's suggestions. It holds the followed channels the text matches, marked “Following”, the
  * channels the Wikidata dictionary names like it, searched on the device while it is typed, each
- * with “Follow”, and last, always, “Search more widely”, which goes online and adds what it finds
+ * with “Follow”, and last, always, “Search online”, which adds what it finds online
  * to the same list. The user never sees where a search goes: the steps behind it (the catalog
  * blindly, the search services, the guessed handles read online) are the app's business.
  *
@@ -44,7 +45,7 @@ export interface ChannelSearch {
   /** The dictionary's matches, while the text is typed. */
   suggested: NamedChannel[];
   wider: Wider | null;
-  /** Whether “Search more widely” can go further for this text. */
+  /** Whether “Search online” can go further for this text. */
   canWiden: boolean;
   widen(): Promise<void>;
 }
@@ -135,7 +136,7 @@ type Row = { kind: 'own'; subscription: Subscription } | { kind: 'named'; channe
 
 /**
  * The list under the field: followed channels the text matches first, then the dictionary's
- * suggestions, then what the wider search found, each channel once, and “Search more widely”.
+ * suggestions, then what the wider search found, each channel once, and “Search online”.
  */
 export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelSearch; own: readonly Subscription[]; onOpen(subscription: Subscription): void }) {
   const { db, api, gate, secretsShown } = useAppData();
@@ -147,6 +148,20 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
   const byKey = new Map(subscriptions.map((subscription) => [subscription.key, subscription]));
   const hidden = (key: string) => byKey.get(key)?.secret === true && !secretsShown;
   const { wider } = finder;
+  // The last step of a wider search answers after 8 seconds at least (POST /add): past a few
+  // seconds, the row says the search is still going rather than leave a spinner alone.
+  const searching = wider?.status === 'searching';
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+
+    if (!searching) {
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 3000);
+
+    return () => clearTimeout(timer);
+  }, [searching]);
 
   const rows: Row[] = [];
   const seen = new Set<string>();
@@ -209,7 +224,13 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
   const letters = finder.term.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
 
   return (
-    <Section>
+    <Section
+      // Until the user searches online, every row comes from the device: the heading says so, since
+      // it is why a channel can be missing and why “Search online” is there.
+      {...(rows.length === 0 ? {} : { heading: wider === null ? 'Suggestions on this device' : 'Suggestions' })}
+      // Where the suggestions and the online search come from is the Privacy page's to say, not the list's.
+      {...(!explicit && searchable ? { footer: <Link to="/settings/privacy">How search works</Link> } : {})}
+    >
       {rows.map((row) => {
         const item =
           row.kind === 'own'
@@ -261,14 +282,17 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
       {wider?.status === 'searching' ? (
         <IonItem lines="none">
           <IonSpinner slot="start" name="crescent" className="search-wider-spinner" />
-          <IonLabel color="medium">{explicit ? 'Looking for this channel…' : 'Searching more widely…'}</IonLabel>
+          <IonLabel color="medium" className="ion-text-wrap">
+            {explicit ? 'Looking for this channel…' : 'Searching online…'}
+            {slow && <p>This can take a few seconds.</p>}
+          </IonLabel>
         </IonItem>
       ) : finder.canWiden ? (
         <IonItem lines="none" button detail={false} onClick={() => void finder.widen()}>
           <IonIcon slot="start" icon={search} color="medium" aria-hidden="true" />
           <IonLabel className="ion-text-wrap">
-            <h2>{explicit ? 'Find this channel' : wider === null ? 'Search more widely' : 'Search even more widely'}</h2>
-            {!explicit && <p>{rows.length === 0 ? `Look further for “${finder.term}”.` : 'Not in this list? Look further.'}</p>}
+            <h2>{explicit ? 'Find this channel' : wider === null ? 'Search online' : 'Not there? Keep searching'}</h2>
+            {!explicit && wider === null && <p>{rows.length === 0 ? `“${finder.term}” isn’t on this device. Look for it online.` : 'Not in these suggestions? Look for it online.'}</p>}
           </IonLabel>
         </IonItem>
       ) : !searchable ? (
