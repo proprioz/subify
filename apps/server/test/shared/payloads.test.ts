@@ -1,4 +1,4 @@
-import { addingHoursCodec, CodecError, catalogStateCodec, HANDLE_ENTRY_SIZE, openHandleEntry, seedPoolCodec, snapshotChannelCodec, streamDeltaCodec, SLOT_MAX_ITEMS, SLOT_SIZE, type SlotChannel, slotCodec, THUMBNAIL_MAX_BYTES, thumbnailCodec, utf8Length } from '@subify/shared/codec';
+import { addingHoursCodec, CodecError, catalogStateCodec, HANDLE_ENTRY_SIZE, lotCodec, lotFragmentCodec, splitThumbnail, openHandleEntry, seedPoolCodec, snapshotChannelCodec, streamDeltaCodec, SLOT_MAX_ITEMS, SLOT_SIZE, type SlotChannel, slotCodec, THUMBNAIL_MAX_BYTES, thumbnailCodec, utf8Length } from '@subify/shared/codec';
 import { blind, channelInput, channelSecrets, evaluate, evaluateBlinded, finalize, groupOf } from '@subify/shared/oprf';
 import { describe, expect, it } from 'vitest';
 import { open, SealError, seal, sealedSize } from '../../src/crypto/aead';
@@ -11,9 +11,12 @@ import poolV1 from '../fixtures/payloads/pool-v1.hex?raw';
 import hoursV1 from '../fixtures/payloads/hours-v1.hex?raw';
 import deltaV1 from '../fixtures/payloads/delta-v1.hex?raw';
 import deltaV2 from '../fixtures/payloads/delta-v2.hex?raw';
+import deltaV3 from '../fixtures/payloads/delta-v3.hex?raw';
 import snapshotV1 from '../fixtures/payloads/snapshot-v1.hex?raw';
 import snapshotV2 from '../fixtures/payloads/snapshot-v2.hex?raw';
 import handleV1 from '../fixtures/payloads/handle-v1.hex?raw';
+import lotFragmentV1 from '../fixtures/payloads/lot-fragment-v1.hex?raw';
+import lotV1 from '../fixtures/payloads/lot-v1.hex?raw';
 
 function hex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -108,13 +111,15 @@ describe('the slot codec', () => {
 
   // Devices decode stream entries with this codec: a format change would show in this diff, and an app must keep reading every version.
   it('keeps decoding the stream delta fixtures of every version, and refuses an unknown kind', () => {
-    const golden = { kind: 'item' as const, id: 'videoidabcd', title: 'Titre', published: 1_793_000_000_000, type: 'short' as const, deleted: false, upcoming: true };
+    const golden = { kind: 'item' as const, id: 'videoidabcd', title: 'Titre', published: 1_793_000_000_000, type: 'short' as const, deleted: false, upcoming: true, preview: null };
+    const withPreview = { ...golden, preview: Uint8Array.from({ length: 19 }, (_, i) => 0xa0 + i) };
     const fixture = fromHex(deltaV1, streamDeltaCodec.size);
     const retry = { kind: 'retry' as const, retryAt: 1_793_000_600_000 };
 
     expect(streamDeltaCodec.decode(fixture)).toEqual(golden);
     expect(streamDeltaCodec.decode(fromHex(deltaV2, streamDeltaCodec.size))).toEqual(retry);
-    expect(hex(streamDeltaCodec.encode(retry)).replace(/(00)+$/, '')).toBe(deltaV2.trim());
+    expect(streamDeltaCodec.decode(fromHex(deltaV3, streamDeltaCodec.size))).toEqual(withPreview);
+    expect(hex(streamDeltaCodec.encode(withPreview)).replace(/(00)+$/, '')).toBe(deltaV3.trim());
     expect(streamDeltaCodec.decode(streamDeltaCodec.encode({ kind: 'gone' }))).toEqual({ kind: 'gone' });
     expect(streamDeltaCodec.decode(streamDeltaCodec.encode({ kind: 'retry', retryAt: null }))).toEqual({ kind: 'retry', retryAt: null });
     // Version 1 had no 'retry' kind; 5 is no kind at all.
@@ -141,6 +146,23 @@ describe('the slot codec', () => {
     expect(snapshotChannelCodec.decode(fromHex(snapshotV2, snapshotChannelCodec.size))).toEqual({ ...golden, retryAt: 1_793_000_600_000 });
     expect(hex(snapshotChannelCodec.encode({ ...golden, retryAt: 1_793_000_600_000 })).replace(/(00)+$/, '')).toBe(snapshotV2.trim());
     expect(snapshotChannelCodec.decode(snapshotChannelCodec.encode({ ...golden, retryAt: null })).retryAt).toBeNull();
+  });
+
+  // Devices decode lot fragments with this codec, and the server reads back a week of lots across deploys: a format change would show in this diff.
+  it('keeps decoding the version 1 lot fragment and lot fixtures, and cuts a thumbnail in parts that join back', () => {
+    const fragment = { itemId: 'videoidabcd', type: 'image/webp' as const, part: 1, parts: 3, bytes: Uint8Array.of(0x52, 0x49, 0x46, 0x46) };
+    const lot = { hour: 498_000, groups: 32, fragments: new Uint8Array(1024).fill(0xab) };
+
+    expect(lotFragmentCodec.decode(fromHex(lotFragmentV1, lotFragmentCodec.size))).toEqual(fragment);
+    expect(hex(lotFragmentCodec.encode(fragment)).replace(/(00)+$/, '')).toBe(lotFragmentV1.trim());
+    expect(lotCodec(1).decode(fromHex(lotV1, lotCodec(1).size))).toEqual(lot);
+    expect(() => lotFragmentCodec.decode(fromHex(lotFragmentV1, lotFragmentCodec.size).map((byte, i) => (i === 13 ? 3 : byte)))).toThrow(CodecError);
+
+    // 7,000 bytes, the size of a typical WebP, in 8 parts.
+    const image = { type: 'image/webp' as const, bytes: Uint8Array.from({ length: 7_000 }, (_, i) => i % 251) };
+    const parts = splitThumbnail('videoidabcd', image);
+    expect(parts.map((part) => [part.part, part.parts])).toEqual(Array.from({ length: 8 }, (_, i) => [i, 8]));
+    expect(parts.map((part) => lotFragmentCodec.decode(lotFragmentCodec.encode(part)).bytes).reduce((all, bytes) => Uint8Array.from([...all, ...bytes]))).toEqual(image.bytes);
   });
 
   // Devices open handle entries with this layout and key: a change to the sealed value or its associated data would leave every device unable to find a channel by its @handle.

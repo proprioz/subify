@@ -49,6 +49,8 @@ export interface TendContext {
   ring: PassRing;
   /** Links to channels in the descriptions read during the pass: seed candidates. */
   mentions: Mention[];
+  /** The ThumbHash of each thumbnail read during the pass, by item: its stream entry carries it. */
+  previews: Map<string, Uint8Array>;
 }
 
 /**
@@ -142,6 +144,15 @@ async function readThumbnails(
     try {
       if (!read.has(item.id)) {
         image = await source.readThumbnail(source.smallThumbnailUrl(item.id), http(context, source));
+
+        if (image !== null && context.platform.thumbnails !== null) {
+          const encoded = await context.platform.thumbnails(image);
+          image = encoded.image;
+
+          if (encoded.preview !== null) {
+            context.previews.set(item.id, encoded.preview);
+          }
+        }
       }
     } catch (error) {
       if (!(error instanceof UpstreamError)) {
@@ -198,7 +209,8 @@ export function applyUpdate(slot: SlotChannel, update: Update, context: Pick<Ten
     case 'forget':
     case 'added':
     case 'delta':
-      // Seeding's and the stream's own: the pass takes them before slots.
+    case 'lot':
+      // Seeding's, the stream's and the lots' own: the pass takes them before slots.
       return slot;
   }
 }

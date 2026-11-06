@@ -91,6 +91,7 @@ const ALLOWED_COLUMNS = {
   thumbnails: ['position', 'blob'],
   stream: ['position', 'blob'],
   handles: ['position', 'blob'],
+  lots: ['position', 'blob'],
   // Public data from Wikidata, the same for everyone.
   dictionary: ['slice', 'data'],
   dictionary_state: ['id', 'next_slice', 'next_at', 'version'],

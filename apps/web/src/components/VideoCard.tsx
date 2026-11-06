@@ -1,6 +1,7 @@
 import { IonBadge, IonButton, IonCard, IonContent, IonIcon, IonItem, IonLabel, IonPopover, IonText, IonThumbnail } from '@ionic/react';
-import { eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
-import { useEffect, useState } from 'react';
+import { cloudDownloadOutline, eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
 import { keepsThumbnail, THUMBNAIL_DAYS } from '../data/thumbnails';
@@ -32,14 +33,25 @@ interface Props {
 
 /**
  * One video. Tapping it copies its link, the app's main action: the user opens it wherever they
- * like; opening it on the platform and sharing it live in the ⋯ menu. Without a kept thumbnail,
- * the placeholder holds a button that says why, since an empty frame looks like a fault.
+ * like; opening it on the platform and sharing it live in the ⋯ menu. Until its thumbnail comes,
+ * the card shows the blurred preview the stream gave (its ThumbHash, docs/FEATURES.md, D3) with a
+ * mark that says it is on its way, and the thumbnail then fades in. Without either, the
+ * placeholder holds a button that says why, since an empty frame looks like a fault.
  */
 export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
   const toast = useToast();
   const image = useImage(thumbnail);
   const fill = useShortFill(item, image);
   const short = item.type === 'short' && image !== null;
+  const preview = usePreview(item.preview);
+  const kept = (thumbnail?.data ?? null) !== null;
+  const coming = !kept && preview !== null && keepsThumbnail(item);
+  // Fades in only a thumbnail that arrived while the card was showing: not every card as it mounts.
+  const waited = useRef(false);
+  useEffect(() => {
+    waited.current ||= coming;
+  }, [coming]);
+  const fadeIn = waited.current && image !== null;
   const [menuFrom, setMenuFrom] = useState<Event | null>(null);
   const [helpFrom, setHelpFrom] = useState<Event | null>(null);
   const unavailable = item.deleted === true;
@@ -79,7 +91,13 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
           <IonThumbnail
             slot="start"
             className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : short ? ' short-thumbnail' : ''}`}
-            style={image === null ? { background: blurredPicture(item.key) } : short ? { background: blurredPicture(item.key, fill ?? GREY) } : undefined}
+            style={
+              image === null
+                ? { background: preview === null ? blurredPicture(item.key) : `center / cover no-repeat url(${preview})` }
+                : short
+                  ? { background: blurredPicture(item.key, fill ?? GREY) }
+                  : undefined
+            }
           >
             {/* Said by the channel's mark below; this one is for the eye, while scrolling. */}
             {channel.secret && (
@@ -89,19 +107,20 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
               </span>
             )}
             {image !== null ? (
-              <img src={image} alt="" />
+              <img src={image} alt="" {...(fadeIn ? { className: 'fade-in' } : {})} />
             ) : (
               !unavailable && (
                 <IonButton
                   fill="clear"
-                  size="large"
-                  aria-label="Why there’s no thumbnail"
+                  size={coming ? 'small' : 'large'}
+                  {...(coming ? { className: 'thumbnail-coming' } : {})}
+                  aria-label={coming ? 'Thumbnail on its way' : 'Why there’s no thumbnail'}
                   onClick={(event) => {
                     event.stopPropagation();
                     setHelpFrom(event.nativeEvent);
                   }}
                 >
-                  <IonIcon slot="icon-only" icon={helpCircleOutline} />
+                  <IonIcon slot="icon-only" icon={coming ? cloudDownloadOutline : helpCircleOutline} />
                 </IonButton>
               )
             )}
@@ -149,7 +168,7 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
       <IonPopover className="info-popover" isOpen={helpFrom !== null} event={helpFrom ?? undefined} onDidDismiss={() => setHelpFrom(null)}>
         <IonContent className="ion-padding">
           <IonText>
-            <p className="ion-no-margin">{missingThumbnailReason(item, thumbnail)}</p>
+            <p className="ion-no-margin">{coming ? 'The thumbnail is on its way: a refresh brings it, usually within an hour of the video.' : missingThumbnailReason(item, thumbnail)}</p>
           </IonText>
         </IonContent>
       </IonPopover>
@@ -170,7 +189,7 @@ function missingThumbnailReason(item: StoredItem, thumbnail: StoredThumbnail | u
     return `To save space, the app keeps thumbnails for the last ${THUMBNAIL_DAYS} days only.`;
   }
 
-  return 'No thumbnail: the app gets them only for a channel’s last 7 days, when you add it.';
+  return 'No thumbnail: the app gets them with a refresh, for the videos of the last 7 days.';
 }
 
 /** A Short's fill until its main colour is known: no colour of its own, rather than a wrong one. */
@@ -197,6 +216,21 @@ function useShortFill(item: StoredItem, image: string | null): Hsl | null {
   }, [short, item.key, image]);
 
   return fill;
+}
+
+/** The blurred preview the stream gave, as a data: URL drawn on the device; null without one. */
+function usePreview(hash: Uint8Array | undefined): string | null {
+  return useMemo(() => {
+    if (hash === undefined) {
+      return null;
+    }
+
+    try {
+      return thumbHashToDataURL(hash);
+    } catch {
+      return null;
+    }
+  }, [hash]);
 }
 
 /** The kept thumbnail as an object URL, released when the card no longer shows it. */

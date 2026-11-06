@@ -27,6 +27,8 @@ import {
   SnapshotResponse,
   StreamQuery,
   StreamResponse,
+  LotsQuery,
+  LotsResponse,
 } from '@subify/shared/schemas';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -37,6 +39,7 @@ import { evaluateForDevice, oprfKey } from './catalog/blind';
 import { BudgetError } from './catalog/budgets';
 import { readSnapshot } from './catalog/snapshot';
 import { readStream } from './catalog/stream';
+import { readLotPage } from './catalog/lots';
 import { readHandleBounds, readHandleChunk } from './catalog/vault';
 import { receiveNotification, verifySubscription } from './catalog/websub';
 import { createChallenge, messagesOn, sendMessage } from './contact';
@@ -140,6 +143,14 @@ const streamRoute = createRoute({
   path: '/stream',
   request: { query: StreamQuery },
   responses: { 200: json(StreamResponse, 'The group’s entries in the batches after `since`'), ...errors(400, 404) },
+});
+
+// The thumbnail lots (D3): like the stream, whole groups only, and noise without the channels' keys.
+const lotsRoute = createRoute({
+  method: 'get',
+  path: '/lots',
+  request: { query: LotsQuery },
+  responses: { 200: json(LotsResponse, 'The group’s thumbnail lots of the hours up to `until`'), ...errors(400, 404) },
 });
 
 // The handle index, in two steps: where each chunk starts, then one whole chunk. The server learns
@@ -290,6 +301,19 @@ export function createApp({ sources }: AppOptions) {
         return answer === null ? fail(c, 'invalid_request', 'No such group, or no batch yet.', 404) : c.json(answer, 200);
       },
       refuse('Send `since`, the `latest` of a previous answer, and `group`, as numbers.'),
+    )
+
+    .openapi(
+      lotsRoute,
+      async (c) => {
+        const { platform } = c.env;
+
+        const { group, until } = c.req.valid('query');
+        const answer = await readLotPage(platform, await platform.keys, group, until);
+
+        return answer === null ? fail(c, 'invalid_request', 'No such group, or no pass yet.', 404) : c.json(answer, 200);
+      },
+      refuse('Send `group` and, to read back, `until`, as numbers.'),
     )
 
     .openapi(

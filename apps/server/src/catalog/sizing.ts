@@ -150,3 +150,39 @@ export function streamPlan({ slots, period, changesPerChannelPerDay = 0.88, marg
 
 /** Rows of the stream's ring: 30 days of 10-minute passes. With longer passes, it keeps more. */
 export const STREAM_ROWS = STREAM_KEPT_PASSES;
+
+/** Hours of thumbnail lots kept: a device away up to 7 days still gets the thumbnails it lacks (D3). */
+export const LOT_HOURS = 7 * 24;
+/** Fragments a thumbnail takes on average: about 7 KB of WebP in parts of 909 bytes, rounded up. */
+const FRAGMENTS_PER_THUMBNAIL = 8;
+/** What one answer of /lots holds at most, so that a device on a slow connection sees progress. */
+const LOT_PAGE_BYTES = 1.5 * KB * KB;
+
+export interface LotOptions {
+  slots: number;
+  videosPerChannelPerDay?: number;
+  /** Over the expected thumbnails: a busy evening makes some wait an hour or two (the study's simulation). */
+  margin?: number;
+}
+
+export interface LotPlan {
+  /** The stream's groups: a device reads the lots of the groups it reads already. */
+  groups: number;
+  /** Fragments in each group's lot every hour, real and decoys. */
+  perGroup: number;
+  /** Lots an answer holds at most. */
+  page: number;
+}
+
+/**
+ * The thumbnail lots' shape, from the table's size alone, like the stream: its channels counted
+ * as half the slots. 2,500 slots: one group of 220 fragments an hour, about 5.4 MB a day.
+ */
+export function lotPlan({ slots, videosPerChannelPerDay = 0.44, margin = 1.2 }: LotOptions): LotPlan {
+  const channels = Math.floor(slots * GROWTH_THRESHOLD);
+  // The grouping doesn't depend on the period.
+  const { groups } = streamPlan({ slots, period: 10 * MINUTE });
+  const perGroup = Math.max(1, Math.ceil(((channels / groups) * videosPerChannelPerDay * FRAGMENTS_PER_THUMBNAIL * margin) / 24));
+
+  return { groups, perGroup, page: Math.min(LOT_HOURS, Math.max(1, Math.floor(LOT_PAGE_BYTES / (perGroup * KB)))) };
+}

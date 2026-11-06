@@ -822,6 +822,44 @@ ion-thumbnail.video-thumbnail {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
 }
 
+/* Over a video's blurred preview (VideoCard): a small mark in the corner, which says the thumbnail
+   is on its way, and leaves the preview's colours in view. */
+.video-thumbnail ion-button.thumbnail-coming {
+  position: absolute;
+  inset-block-end: 2px;
+  inset-inline-end: 2px;
+  margin: 0;
+  animation: thumbnail-coming 1.6s ease-in-out infinite;
+}
+
+.video-thumbnail ion-button.thumbnail-coming ion-icon {
+  font-size: 20px;
+}
+
+@keyframes thumbnail-coming {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* The thumbnail that replaces its preview, faded in. */
+.video-thumbnail img.fade-in {
+  animation: thumbnail-in 0.45s ease-out;
+}
+
+@keyframes thumbnail-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-thumbnail ion-button.thumbnail-coming,
+  .video-thumbnail img.fade-in {
+    animation: none;
+  }
+}
+
 /* Two cards side by side on extra-wide screens (FeedPage) share the row's height. */
 .feed-row ion-col {
   display: flex;

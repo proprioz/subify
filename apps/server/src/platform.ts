@@ -1,6 +1,7 @@
 import type { Coordinator } from './catalog/coordinator';
 import type { Config } from './config';
 import type { ServerKeys } from './crypto/keys';
+import type { ThumbnailEncoder } from './catalog/thumbnails';
 import type { Db } from './db/db';
 
 /**
@@ -40,6 +41,11 @@ export interface Platform {
   coordinator: Coordinator;
   /** Sends the contact form's messages, or null when this runtime has no way to. */
   mailer: Mailer | null;
+  /**
+   * Re-encodes a new video's thumbnail and computes its preview (src/catalog/thumbnails.ts), with
+   * the WASM modules the runtime loads; null keeps thumbnails as read, without previews.
+   */
+  thumbnails: ThumbnailEncoder | null;
 }
 
 /** A plain-text email, nothing else: no HTML, no attachment. */

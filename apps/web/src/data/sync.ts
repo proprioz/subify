@@ -1,16 +1,21 @@
 import { type Api, ServerError } from './api';
 import { setMeta, type SubifyDb } from './db';
-import { syncStream } from './encrypted';
+import { syncStream, syncThumbnails } from './encrypted';
 
 export interface SyncResult {
   /** Items of followed channels written. */
   written: number;
 }
 
-/** Brings the followed channels up to date from the encrypted catalog's sync stream, newest first (see syncStream). */
-export async function syncUpdates(db: SubifyDb, api: Api, now = Date.now(), onProgress?: (share: number) => void): Promise<SyncResult> {
-  const result = await syncStream(db, api, await api.catalog(), now, onProgress);
+/**
+ * Brings the followed channels up to date from the encrypted catalog's sync stream, newest first
+ * (see syncStream), then brings their new videos' thumbnails from the hourly lots (syncThumbnails).
+ * The feed shows the videos as soon as the stream has them; each half of `onProgress` is one step.
+ */
+export async function syncUpdates(db: SubifyDb, api: Api, now = Date.now(), onProgress: (share: number) => void = () => {}): Promise<SyncResult> {
+  const result = await syncStream(db, api, await api.catalog(), now, (share) => onProgress(share / 2));
   await setMeta(db, 'lastSyncAt', now);
+  await syncThumbnails(db, api, now, (share) => onProgress(0.5 + share / 2));
 
   return result;
 }

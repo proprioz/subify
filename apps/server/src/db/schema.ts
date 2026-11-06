@@ -21,6 +21,11 @@ export interface HandlesTable {
   blob: Uint8Array;
 }
 
+export interface LotsTable {
+  position: number;
+  blob: Uint8Array;
+}
+
 export interface SlotsTable {
   id: Uint8Array;
   blob: Uint8Array;
@@ -45,6 +50,7 @@ export interface Database {
   dictionary: DictionaryTable;
   dictionary_state: DictionaryStateTable;
   handles: HandlesTable;
+  lots: LotsTable;
   slots: SlotsTable;
   stream: StreamTable;
   thumbnails: ThumbnailsTable;

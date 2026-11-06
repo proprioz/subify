@@ -11,3 +11,4 @@ export * from './seeding';
 export * from './stream';
 export * from './handles';
 export * from './snapshot';
+export * from './lot';

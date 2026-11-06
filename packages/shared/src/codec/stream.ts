@@ -10,8 +10,11 @@ import type { ItemType } from '../index';
 
 /** What changed for one channel at a pass. */
 export type StreamDelta =
-  /** A new item, or one whose title, flags or type changed. */
-  | { kind: 'item'; id: string; title: string; published: number; type: ItemType; deleted: boolean; upcoming: boolean }
+  /**
+   * A new item, or one whose title, flags or type changed. `preview` is its thumbnail's ThumbHash
+   * (docs/FEATURES.md, D3), sent with the item's first entry: null after, and before version 3.
+   */
+  | { kind: 'item'; id: string; title: string; published: number; type: ItemType; deleted: boolean; upcoming: boolean; preview: Uint8Array | null }
   /** The channel's title or handle changed. */
   | { kind: 'channel'; title: string; handle: string | null }
   /** The channel is gone from the platform: the app says so and keeps its history. */
@@ -34,6 +37,8 @@ export const STREAM_MAX_PER_CHANNEL = 8;
 const MAX_ID = 64;
 const MAX_TEXT = 255;
 const MAX_HANDLE = 100;
+/** A ThumbHash takes at most 25 bytes. */
+export const MAX_PREVIEW = 32;
 const ITEM_TYPES: readonly ItemType[] = ['video', 'short', 'live', 'unknown'];
 const KINDS = ['item', 'channel', 'gone', 'retry'] as const;
 const DELETED = 1;
@@ -41,8 +46,8 @@ const UPCOMING = 2;
 
 export const streamDeltaCodec: Codec<StreamDelta> = {
   kind: 7,
-  // 2: the 'retry' kind. Version 1 payloads read the same.
-  version: 2,
+  // 2: the 'retry' kind. 3: an item's preview. Earlier payloads read the same.
+  version: 3,
   size: STREAM_DELTA_SIZE,
 
   encode(value) {
@@ -50,7 +55,7 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
 
     switch (value.kind) {
       case 'item':
-        if (value.id.length > MAX_ID) {
+        if (value.id.length > MAX_ID || (value.preview?.length ?? 0) > MAX_PREVIEW) {
           throw new CodecError('Payload too large');
         }
 
@@ -60,6 +65,8 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
           .u32(Math.floor(value.published / 1000))
           .u8(ITEM_TYPES.indexOf(value.type))
           .u8((value.deleted ? DELETED : 0) | (value.upcoming ? UPCOMING : 0))
+          .u8(value.preview?.length ?? 0)
+          .raw(value.preview ?? new Uint8Array(0))
           .finish();
       case 'channel':
         return out
@@ -75,6 +82,7 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
 
   decode(bytes) {
     const read = reader(streamDeltaCodec, bytes, 1);
+    const version = read.version;
     const kind = KINDS[read.upTo(read.u8(), KINDS.length) - 1];
     let delta: StreamDelta;
 
@@ -85,7 +93,9 @@ export const streamDeltaCodec: Codec<StreamDelta> = {
         const published = read.u32() * 1000;
         const type = ITEM_TYPES[read.upTo(read.u8(), ITEM_TYPES.length - 1)]!;
         const itemFlags = flags(read.u8(), DELETED | UPCOMING);
-        delta = { kind, id, title, published, type, deleted: (itemFlags & DELETED) !== 0, upcoming: (itemFlags & UPCOMING) !== 0 };
+        const length = version < 3 ? 0 : read.upTo(read.u8(), MAX_PREVIEW);
+        const preview = length === 0 ? null : read.raw(length);
+        delta = { kind, id, title, published, type, deleted: (itemFlags & DELETED) !== 0, upcoming: (itemFlags & UPCOMING) !== 0, preview };
         break;
       }
       case 'channel': {

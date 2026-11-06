@@ -7,7 +7,7 @@ import { DAY, HOUR, MINUTE } from '../../src/catalog/schedule';
 import { slotIdOf } from '../../src/catalog/slot-id';
 import { snapshotChannel } from '../../src/catalog/snapshot';
 import { DEAD_AFTER_DAYS, hex } from '../../src/catalog/tend';
-import { enqueueUpdate } from '../../src/catalog/updates';
+import { enqueueUpdate, openUpdates } from '../../src/catalog/updates';
 import { readCases, readSlot, readSlots, readState } from '../../src/catalog/vault';
 import type { Config } from '../../src/config';
 import type { ServerKeys } from '../../src/crypto/keys';
@@ -451,6 +451,10 @@ describe('thumbnails in the encrypted catalog', () => {
     expect(new Set(blobs.map((row) => row.blob.length)).size).toBe(1);
   });
 
+  // Thumbnails the hour's lots haven't carried yet wait there too: only those without a case count here.
+  const waitingThumbnails = async (s: Awaited<ReturnType<typeof setup>>) =>
+    (await openUpdates(await s.harness.platform.keys, await s.harness.platform.coordinator.pending(100))).opened.filter(({ update }) => update.kind === 'thumbnail').length;
+
   it('wait in the coordinator when a pass has no case left, and go before new ones at the next', async () => {
     const s = await setup();
     // 'busy' is read before 'waits' in the table's id order: its new videos would take every case first.
@@ -462,7 +466,7 @@ describe('thumbnails in the encrypted catalog', () => {
     await s.pass();
 
     expect(Object.values(await thumbnails(s, 'waits')).filter((position) => position !== null)).toHaveLength(2);
-    expect(await s.harness.platform.coordinator.pending(10)).toHaveLength(1);
+    expect(await waitingThumbnails(s)).toBe(1);
 
     // Two new videos arrive with the one that waited: it has a case, one of them waits in turn.
     s.source.publish('busy', item('b1', START + 15 * MINUTE), item('b2', START + 15 * MINUTE));
@@ -471,7 +475,7 @@ describe('thumbnails in the encrypted catalog', () => {
 
     expect(Object.values(await thumbnails(s, 'waits')).every((position) => position !== null)).toBe(true);
     expect(Object.values(await thumbnails(s, 'busy')).filter((position) => position !== null)).toHaveLength(1);
-    expect(await s.harness.platform.coordinator.pending(10)).toHaveLength(1);
+    expect(await waitingThumbnails(s)).toBe(1);
   });
 
   it('are gone once the ring wraps over them, except an upcoming item’s, which moves to a new case', async () => {

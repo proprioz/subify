@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MINUTE } from '../../src/catalog/schedule';
-import { FIRST_TABLE_SIZE, groupPlan, grownSize, needsGrowth, passPeriod, ringPlan, streamPlan } from '../../src/catalog/sizing';
+import { FIRST_TABLE_SIZE, groupPlan, grownSize, needsGrowth, lotPlan, passPeriod, ringPlan, streamPlan } from '../../src/catalog/sizing';
 
 const KB = 1024;
 
@@ -56,5 +56,13 @@ describe('the encrypted catalog’s sizes', () => {
     const fetched = later.groups * (1 - Math.exp(-50 / later.groups));
     expect(later).toEqual({ groups: 128, k: 49, perGroup: 1 });
     expect(fetched * later.perGroup * 512 * 144).toBeLessThan(3 * KB * KB);
+  });
+
+  // The lots must depend on the table's size alone, share the stream's groups, and keep a device's daily download near the study's figures (D3).
+  it('size the thumbnail lots from the table alone, with the stream’s groups', () => {
+    // 2,500 slots: 1,250 channels × 0.44 videos × 8 fragments × 1.2, over 24 hours: 220 fragments, about 5.4 MB a day.
+    expect(lotPlan({ slots: 2_500 })).toEqual({ groups: 1, perGroup: 220, page: 6 });
+    // 12,657 slots, 128 groups of 49 channels: 2 KB an hour each, a whole week in one answer.
+    expect(lotPlan({ slots: 12_657 })).toEqual({ groups: 128, perGroup: 9, page: 168 });
   });
 });

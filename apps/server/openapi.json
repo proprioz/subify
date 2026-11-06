@@ -394,6 +394,104 @@
         }
       }
     },
+    "/api/lots": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,9}$"
+            },
+            "required": true,
+            "name": "group",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,9}$"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The group’s thumbnail lots of the hours up to `until`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "type": "number",
+                      "enum": [
+                        3
+                      ]
+                    },
+                    "latest": {
+                      "type": "number"
+                    },
+                    "groups": {
+                      "type": "number"
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "lots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "hour": {
+                            "type": "number"
+                          },
+                          "fragments": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "hour",
+                          "fragments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "v",
+                    "latest",
+                    "groups",
+                    "page",
+                    "lots"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Refused or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/handles": {
       "get": {
         "responses": {

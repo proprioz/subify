@@ -39,6 +39,8 @@ export type EvaluateResponse = z.infer<typeof schemas.EvaluateResponse>;
 
 export type StreamResponse = z.infer<typeof schemas.StreamResponse>;
 
+export type LotsResponse = z.infer<typeof schemas.LotsResponse>;
+
 export type HandleBoundsResponse = z.infer<typeof schemas.HandleBoundsResponse>;
 
 export type HandleChunkResponse = z.infer<typeof schemas.HandleChunkResponse>;

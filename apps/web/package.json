@@ -24,7 +24,8 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router": "^6.30.0",
-    "react-router-dom": "^6.30.0"
+    "react-router-dom": "^6.30.0",
+    "thumbhash": "^0.1.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

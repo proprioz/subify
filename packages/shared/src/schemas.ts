@@ -127,6 +127,24 @@ export const StreamResponse = z.object({
   batches: z.array(z.object({ pass: z.number(), entries: z.string() })),
 });
 
+export const LotsQuery = z.strictObject({
+  /** The device's group, as for the stream. */
+  group: count,
+  /** The answer holds the lots of the hours up to this one, at most a page of them, the newest first; the latest hour when absent. */
+  until: count.optional(),
+});
+
+export const LotsResponse = z.object({
+  v: version3,
+  /** The current hour (hours since the epoch): the server keeps the lots of the 168 up to it. */
+  latest: z.number(),
+  groups: z.number(),
+  /** Lots an answer holds at most: a device reading back steps by this much. */
+  page: z.number(),
+  /** The group's lot of each hour of the page that has one: `perGroup` fragments of 1,024 bytes. */
+  lots: z.array(z.object({ hour: z.number(), fragments: z.string() })),
+});
+
 export const HandleBoundsResponse = z.object({
   v: version3,
   /** The first entry id of each chunk of the handle index: a device reads the last one not above its entry's. */

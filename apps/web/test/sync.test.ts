@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ServerError } from '../src/data/api';
 import { getMeta } from '../src/data/db';
+import { unfinishedSync } from '../src/data/encrypted';
 import { unsubscribe } from '../src/data/subscriptions';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../src/data/sync';
 import { channel, FakeServer, freshDb, many, NOW, subscribe } from './fake-server';
@@ -207,3 +208,88 @@ describe('a sync started by the user', () => {
     expect(runs).toBe(1);
   });
 });
+
+// Videos that arrive after a channel was added get their thumbnails from the hourly lots alone (docs/FEATURES.md, D3): a wrong one, one missed, or a week read again at every refresh would each break that.
+describe('thumbnails from the lots', () => {
+  const image = (fill: number) => ({ type: 'image/webp' as const, bytes: new Uint8Array(2_000).fill(fill) });
+  const thumbnail = async (db: ReturnType<typeof freshDb>, id: string) => {
+    const kept = await db.thumbnails.get(`youtube:${id}`);
+
+    return (kept?.data ?? null) === null ? undefined : new Uint8Array(kept!.data!)[0];
+  };
+
+  it('keeps those of the followed channels’ videos from the last week of lots, and asks again only for the hours it lacks', async () => {
+    const server = new FakeServer().publish(channel(A)).publish(channel(B));
+    const { db, api } = await followedA(server);
+    const [recent, older, tooOld] = many(A, 'a', 3);
+    const [other] = many(B, 'b', 1);
+    server.publish(null, recent!, older!, tooOld!, other!);
+    const lots = server.encrypted;
+    lots
+      .lotAt(lots.hour - 1, { key: `youtube:${A}`, itemId: idOf(recent!.key), image: image(1) }, { key: `youtube:${B}`, itemId: idOf(other!.key), image: image(2) })
+      .lotAt(lots.hour - 100, { key: `youtube:${A}`, itemId: idOf(older!.key), image: image(3) })
+      .lotAt(lots.hour - 170, { key: `youtube:${A}`, itemId: idOf(tooOld!.key), image: image(4) });
+
+    await syncUpdates(db, api, NOW);
+
+    expect(await thumbnail(db, idOf(recent!.key))).toBe(1);
+    expect(await thumbnail(db, idOf(older!.key))).toBe(3);
+    expect(await thumbnail(db, idOf(tooOld!.key))).toBeUndefined();
+    expect(await thumbnail(db, idOf(other!.key))).toBeUndefined();
+    // A week in pages of 6 hours, the newest first.
+    const asked = server.paths.filter((path) => path.startsWith('GET /api/lots'));
+    expect(asked).toHaveLength(1 + 27);
+    expect(asked.slice(0, 3)).toEqual(['GET /api/lots?group=0', `GET /api/lots?group=0&until=${lots.hour - 6}`, `GET /api/lots?group=0&until=${lots.hour - 12}`]);
+
+    // An hour later, only the new hour, and the current one, which had no lot yet.
+    lots.hour++;
+    await syncUpdates(db, api, NOW);
+    expect(server.paths.filter((path) => path.startsWith('GET /api/lots'))).toHaveLength(asked.length + 1);
+  });
+
+  // A refresh cut short in its thumbnails must be offered again at the next launch, and go on from the hours it read.
+  it('resumes after a refresh cut short in its thumbnails', async () => {
+    const server = new FakeServer().publish(channel(A));
+    const { db, api } = await followedA(server);
+    const [video] = many(A, 'a', 1);
+    server.publish(null, video!);
+    server.encrypted.lotAt(server.encrypted.hour - 50, { key: `youtube:${A}`, itemId: idOf(video!.key), image: image(5) });
+    const lots = api.lots.bind(api);
+    let calls = 0;
+    api.lots = async (group, until) => {
+      if (++calls === 3) {
+        throw new ServerError('The app was suspended.', 'network');
+      }
+
+      return lots(group, until);
+    };
+
+    await expect(syncUpdates(db, api, NOW)).rejects.toThrow();
+    expect(await unfinishedSync(db)).toBe(true);
+    expect(await thumbnail(db, idOf(video!.key))).toBeUndefined();
+
+    await syncUpdates(db, api, NOW);
+    expect(await thumbnail(db, idOf(video!.key))).toBe(5);
+    expect(await unfinishedSync(db)).toBe(false);
+    // The two pages read before the cut aren't asked for again.
+    expect(calls).toBe(3 + 1 + 26);
+  });
+
+  // The blurred preview shows only while the item keeps its ThumbHash: a later change of its title carries none.
+  it('keeps an item’s preview when a later change carries none', async () => {
+    const server = new FakeServer().publish(channel(A));
+    const { db, api } = await followedA(server);
+    const preview = Uint8Array.from({ length: 19 }, (_, i) => i);
+    const delta = { kind: 'item' as const, id: 'p1', title: 'First', published: NOW, type: 'video' as const, deleted: false, upcoming: false };
+    server.encrypted.passWith({ key: `youtube:${A}`, deltas: [{ ...delta, preview }] });
+    await syncUpdates(db, api, NOW);
+    server.encrypted.passWith({ key: `youtube:${A}`, deltas: [{ ...delta, title: 'Renamed', preview: null }] });
+    await syncUpdates(db, api, NOW);
+
+    expect(await db.items.get('youtube:p1')).toMatchObject({ title: 'Renamed', preview });
+  });
+});
+
+function idOf(key: string): string {
+  return key.slice(key.indexOf(':') + 1);
+}

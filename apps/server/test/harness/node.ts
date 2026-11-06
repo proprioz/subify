@@ -4,6 +4,7 @@ import { buildHarness } from './common';
 import type { Harness, HarnessOptions } from './types';
 
 export type { Harness } from './types';
+export { nodeThumbnailModules as thumbnailModules } from '../../src/node/thumbnails';
 
 const migrations = fileURLToPath(new URL('../../migrations', import.meta.url));
 

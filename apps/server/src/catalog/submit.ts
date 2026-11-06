@@ -14,6 +14,7 @@ import { nextPollDelay, retentionCutoff, withJitter } from './schedule';
 import { slotIdOf } from './slot-id';
 import { mergeItems } from './slot-items';
 import { THUMBNAILS_ON_ADD } from './tend';
+import type { ThumbnailEncoder } from './thumbnails';
 import { enqueueUpdate } from './updates';
 import { readSlot } from './vault';
 
@@ -24,6 +25,7 @@ export interface SubmitContext {
   coordinator: Coordinator;
   sources: readonly SourceAdapter[];
   http: (source: SourceAdapter) => Http;
+  thumbnails: ThumbnailEncoder | null;
   now: () => number;
   random: () => number;
   sleep: (ms: number) => Promise<void>;
@@ -52,6 +54,7 @@ export async function submitContext(platform: Platform, sources: readonly Source
     coordinator: platform.coordinator,
     sources,
     http: (source) => new Http(platform.fetch, userAgent(platform.config), source.hosts),
+    thumbnails: platform.thumbnails,
     now: () => platform.clock.now(),
     random: () => platform.random(),
     sleep: (ms) => platform.sleep(ms),
@@ -197,7 +200,8 @@ async function recentThumbnails(source: SourceAdapter, items: readonly IncomingI
   return Promise.all(
     recent.map(async (item) => {
       try {
-        const image = await source.readThumbnail(smallUrl(item.externalId), context.http(source));
+        const read = await source.readThumbnail(smallUrl(item.externalId), context.http(source));
+        const image = read === null || context.thumbnails === null ? read : (await context.thumbnails(read)).image;
 
         return { itemId: item.externalId, image: image !== null && image.bytes.length <= THUMBNAIL_MAX_BYTES ? image : null };
       } catch {

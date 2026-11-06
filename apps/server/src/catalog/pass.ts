@@ -5,14 +5,15 @@ import type { Platform } from '../platform';
 import type { SourceAdapter } from '../sources/source';
 import { DAY, HOUR, MINUTE, retentionCutoff } from './schedule';
 import { buildHandleIndex, type Handle } from './handles';
+import { buildLots, lotDue, lotPosition, type LotThumbnail } from './lots';
 import { PassRing, ringPositions } from './ring';
 import { countHours, emptyHours, harvest, type Mention, packPool, POOL_ROWS } from './seed-pool';
-import { FIRST_TABLE_SIZE, GROWTH_WINDOW, grownSize, needsGrowth, passPeriod, type RingPlan, ringPlan, STREAM_ROWS, type StreamPlan, streamPlan } from './sizing';
+import { FIRST_TABLE_SIZE, GROWTH_WINDOW, grownSize, type LotPlan, lotPlan, needsGrowth, passPeriod, type RingPlan, ringPlan, STREAM_ROWS, type StreamPlan, streamPlan } from './sizing';
 import { deltasOf, PassStream } from './stream';
 import { slotIdOf } from './slot-id';
 import { hex, type PassBudget, tend } from './tend';
 import { enqueueUpdate, openUpdates, type Update } from './updates';
-import { batchWrite, caseWrite, clearSlots, handleIndexWrites, readHandleBounds, decoyId, decoyInserts, readCases, readHours, readPool, readSlots, seedingWrites, readState, type Slot, slotReplace, slotWrite, stateWrite } from './vault';
+import { batchWrite, caseWrite, clearSlots, handleIndexWrites, lotWrite, readHandleBounds, decoyId, decoyInserts, readCases, readHours, readPool, readSlots, seedingWrites, readState, type Slot, slotReplace, slotWrite, stateWrite } from './vault';
 
 /**
  * The pass (docs/FEATURES.md, D16): every few minutes, every slot of the encrypted catalog is
@@ -41,6 +42,8 @@ export interface PassOptions {
   stream?: StreamPlan;
   /** The seed pool's rows. Tests take fewer: each is 40 KB to seal at every pass. */
   poolRows?: number;
+  /** The thumbnail lots' shape. Tests take a small one, to see a lot fill up. */
+  lots?: LotPlan;
 }
 
 /**
@@ -61,14 +64,16 @@ export async function runPassIfDue(platform: Platform, sources: readonly SourceA
 
 /**
  * The time between two passes, from the rows each writes: every slot, the state row, seeding's
- * rows, the stream's batch and the ring's cases. The ring's share depends on the period, hence two steps.
+ * rows, the stream's batch, the ring's cases and its share of the hour's thumbnail lots. The ring's
+ * and the lots' shares depend on the period, hence two steps.
  */
 export function periodOf(tableSize: number): number {
   // Every slot, the state row, seeding's rows and the stream's batch.
   const rows = tableSize + 1 + 1 + POOL_ROWS + 1;
   const first = passPeriod({ rowsPerPass: rows });
+  const lots = Math.ceil((lotPlan({ slots: tableSize }).groups * first) / HOUR);
 
-  return passPeriod({ rowsPerPass: rows + ringPlan({ slots: tableSize, period: first }).perPass });
+  return passPeriod({ rowsPerPass: rows + ringPlan({ slots: tableSize, period: first }).perPass + lots });
 }
 
 export async function runPass(
@@ -96,7 +101,8 @@ export async function runPass(
   const pending = await platform.coordinator.pending(MAX_UPDATES);
   const { opened, broken } = await openUpdates(keys, pending);
   const waiting = new Map<string, { id: Uint8Array; updates: Update[]; keys: string[] }>();
-  const stream = new PassStream(options.stream ?? streamPlan({ slots: current.tableSize, period }), current.passes + 1);
+  const streamShape = options.stream ?? streamPlan({ slots: current.tableSize, period });
+  const stream = new PassStream(streamShape, current.passes + 1);
   const mentions: Mention[] = [];
   const handles: Handle[] = [];
   const keep = (channel: SlotChannel) => {
@@ -106,8 +112,14 @@ export async function runPass(
   };
   const forgotten: Mention[] = [];
   const additions: number[] = [];
+  const lotted: { key: string; update: Extract<Update, { kind: 'lot' }> }[] = [];
 
   for (const { key, update } of opened) {
+    if (update.kind === 'lot') {
+      lotted.push({ key, update });
+      continue;
+    }
+
     if (update.kind === 'forget') {
       forgotten.push(update);
       continue;
@@ -142,7 +154,8 @@ export async function runPass(
   const plan = options.ring ?? ringPlan({ slots: current.tableSize, period });
   const backlog = opened.filter(({ update }) => update.kind === 'thumbnail').length;
   const ring = new PassRing(plan, current.ringNext, await readCases(db, keys, ringPositions(plan, current.ringNext)), backlog);
-  const context = { platform, sources, now, cutoff: retentionCutoff(platform), budget, ring, mentions };
+  const previews = new Map<string, Uint8Array>();
+  const context = { platform, sources, now, cutoff: retentionCutoff(platform), budget, ring, mentions, previews };
   const decoys: Uint8Array[] = [];
   const gone: Uint8Array[] = [];
   let occupied = 0;
@@ -167,7 +180,7 @@ export async function runPass(
       const entry = waiting.get(hex(slot.id));
       waiting.delete(hex(slot.id));
       const next = await tend(slot.payload, entry?.updates ?? [], context);
-      stream.add(slot.payload.source, slot.payload.externalId, deltasOf(slot.payload, next));
+      stream.add(slot.payload.source, slot.payload.externalId, deltasOf(slot.payload, next, previews));
 
       if (next === null) {
         gone.push(slot.id);
@@ -226,7 +239,36 @@ export async function runPass(
   }
 
   await writeAll(platform, replacements);
-  await writeAll(platform, await Promise.all(ring.cases().map(([position, payload]) => caseWrite(keys, position, payload))));
+  const cases = ring.cases();
+  await writeAll(platform, await Promise.all(cases.map(([position, payload]) => caseWrite(keys, position, payload))));
+
+  // The hour's thumbnail lots, at its first pass: what waited, the oldest first, then this pass's.
+  // At the other passes, this pass's thumbnails join those waiting.
+  const placedNow = ring.placed.map(({ source, externalId, itemId, position }) => ({ source, externalId, itemId, position }));
+
+  if (lotDue(now, period)) {
+    const held = new Map([...(await readCases(db, keys, lotted.map(({ update }) => update.position))), ...cases]);
+    const thumbnails: LotThumbnail[] = [...lotted.map(({ update }) => update), ...placedNow].flatMap((ref) => {
+      const payload = held.get(ref.position);
+
+      // The ring may have wrapped over it since.
+      return payload?.kind === 'thumbnail' && payload.itemId === ref.itemId ? [{ ...ref, image: payload.image }] : [];
+    });
+    const lotsPlan = options.lots ?? { ...lotPlan({ slots: current.tableSize }), groups: streamShape.groups };
+    const hour = Math.floor(now / HOUR);
+    const built = await buildLots(keys, lotsPlan, hour, thumbnails, () => platform.random());
+    await writeAll(platform, await Promise.all(built.lots.map((lot, group) => lotWrite(keys, lotPosition(hour, group), lot))));
+
+    for (const { source, externalId, itemId, position } of built.waiting) {
+      await enqueueUpdate(platform.coordinator, keys, { kind: 'lot', source, externalId, itemId, position });
+    }
+  } else {
+    deferred.push(...lotted.map(({ key }) => key));
+
+    for (const ref of placedNow) {
+      await enqueueUpdate(platform.coordinator, keys, { kind: 'lot', ...ref });
+    }
+  }
 
   // A channel entering has no delta: the device that added it got it in the answer.
   const { batch, waiting: overflow } = await stream.build(keys, () => platform.random());

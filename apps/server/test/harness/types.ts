@@ -1,3 +1,4 @@
+import type { ThumbnailEncoder, ThumbnailModules } from '../../src/catalog/thumbnails';
 import type { Config } from '../../src/config';
 import type { Db } from '../../src/db/db';
 import type { Mailer, Platform } from '../../src/platform';
@@ -34,6 +35,11 @@ export interface HarnessOptions {
   country?: string;
   /** How the contact form sends: none by default, so the form is off. */
   mailer?: Mailer;
+  /** How new thumbnails are re-encoded: kept as read by default. */
+  thumbnails?: ThumbnailEncoder;
 }
+
+/** Loads the thumbnail encoder's WASM modules the way this runtime's entry point does. */
+export type ThumbnailModulesLoader = () => Promise<ThumbnailModules>;
 
 export const START = Date.UTC(2026, 9, 20, 12);

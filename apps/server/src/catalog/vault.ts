@@ -5,6 +5,10 @@ import {
   catalogStateCodec,
   handleBoundsCodec,
   handleChunkCodec,
+  LOT_FRAGMENT_SIZE,
+  lotCodec,
+  lotCount,
+  type StoredLot,
   type SeedCandidate,
   seedPoolCodec,
   type SlotPayload,
@@ -130,7 +134,7 @@ export async function slotWrite(keys: ServerKeys, slot: Slot): Promise<Statement
 
 /** Before the table is first filled: whatever a start that failed halfway left, slots and ring. */
 export function clearSlots(): Statement[] {
-  return [compile(query.deleteFrom('slots')), compile(query.deleteFrom('thumbnails')), compile(query.deleteFrom('stream')), compile(query.deleteFrom('handles')), compile(query.deleteFrom('vault').where('id', '!=', STATE_ROW))];
+  return [compile(query.deleteFrom('slots')), compile(query.deleteFrom('thumbnails')), compile(query.deleteFrom('stream')), compile(query.deleteFrom('handles')), compile(query.deleteFrom('lots')), compile(query.deleteFrom('vault').where('id', '!=', STATE_ROW))];
 }
 
 /** New decoys, each under a random id: the table grows only by these. */
@@ -249,6 +253,24 @@ export async function caseWrite(keys: ServerKeys, position: number, payload: Thu
   const blob = await seal(keys, thumbnailCodec, casePositionId(position), payload);
 
   return compile(query.insertInto('thumbnails').values({ position, blob }).onConflict((oc) => oc.column('position').doUpdateSet({ blob })));
+}
+
+/** The thumbnail lots at these positions, by position. One not written yet is absent. */
+export async function readLots(db: Db, keys: ServerKeys, positions: readonly number[]): Promise<Map<number, StoredLot>> {
+  const unique = [...new Set(positions)];
+  // D1 binds at most 100 parameters a statement.
+  const chunks = Array.from({ length: Math.ceil(unique.length / 100) }, (_, i) => unique.slice(i * 100, (i + 1) * 100));
+  const rows = (await Promise.all(chunks.map((chunk) => db.all(compile(query.selectFrom('lots').select(['position', 'blob']).where('position', 'in', chunk)))))).flat();
+  const overhead = sealedSize(lotCodec(0)) - lotCodec(0).size;
+
+  return new Map(await Promise.all(rows.map(async (row) => [row.position, await opened(open(keys, lotCodec(lotCount(row.blob.length, overhead)), casePositionId(row.position), row.blob))] as const)));
+}
+
+/** A group's lot of the hour, at its position: overwrites the one of the same hour a week earlier. */
+export async function lotWrite(keys: ServerKeys, position: number, lot: StoredLot): Promise<Statement> {
+  const blob = await seal(keys, lotCodec(lot.fragments.length / LOT_FRAGMENT_SIZE), casePositionId(position), lot);
+
+  return compile(query.insertInto('lots').values({ position, blob }).onConflict((oc) => oc.column('position').doUpdateSet({ blob })));
 }
 
 function casePositionId(position: number): Uint8Array {

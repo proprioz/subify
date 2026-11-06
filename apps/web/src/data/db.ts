@@ -72,12 +72,23 @@ export type StoredItem = Omit<ApiItem, 'upcoming'> & {
   upcoming?: 1;
   /** The stream's pass that last changed it: a change from an earlier pass, read later, is older. */
   pass?: number;
+  /** Its thumbnail's ThumbHash, from the stream: a blurred preview until the thumbnail comes (docs/FEATURES.md, D3). */
+  preview?: Uint8Array;
 };
 
-/** Writes items from the server, replacing the copies already there; `pass` is the stream's pass they come from. */
-export async function putItems(db: SubifyDb, items: readonly ApiItem[], pass?: number): Promise<void> {
+/**
+ * Writes items from the server, replacing the copies already there; `pass` is the stream's pass
+ * they come from. An item's preview stays when the new copy has none: only its first entry carries it.
+ */
+export async function putItems(db: SubifyDb, items: readonly (ApiItem & { preview?: Uint8Array })[], pass?: number): Promise<void> {
+  const kept = await db.items.bulkGet(items.map((item) => item.key));
+
   await db.items.bulkPut(
-    items.map(({ upcoming, ...item }): StoredItem => ({ ...item, ...(upcoming === true ? { upcoming: 1 as const } : {}), ...(pass === undefined ? {} : { pass }) })),
+    items.map(({ upcoming, ...item }, i): StoredItem => {
+      const preview = item.preview ?? kept[i]?.preview;
+
+      return { ...item, ...(upcoming === true ? { upcoming: 1 as const } : {}), ...(pass === undefined ? {} : { pass }), ...(preview === undefined ? {} : { preview }) };
+    }),
   );
 }
 

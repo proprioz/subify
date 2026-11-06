@@ -24,7 +24,7 @@ describe('server source', () => {
   // Only the store can seal and open blobs: code that read a blob column itself could store a payload in clear, or bound to the wrong row.
   it('reads and writes the encrypted catalog’s tables in src/catalog/vault.ts only', () => {
     const offending = files(src).filter(
-      (file) => !file.endsWith('/catalog/vault.ts') && /(selectFrom|updateTable|insertInto|deleteFrom|replaceInto)\(\s*['"](slots|vault|thumbnails|stream|handles)['"]/.test(readFileSync(file, 'utf8')),
+      (file) => !file.endsWith('/catalog/vault.ts') && /(selectFrom|updateTable|insertInto|deleteFrom|replaceInto)\(\s*['"](slots|vault|thumbnails|stream|handles|lots)['"]/.test(readFileSync(file, 'utf8')),
     );
 
     expect(offending).toEqual([]);

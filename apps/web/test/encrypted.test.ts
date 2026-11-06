@@ -200,8 +200,8 @@ describe('the encrypted catalog', () => {
     const api = server.api();
     await subscribe(db, api, `https://www.youtube.com/channel/${A}`, NOW);
     catalog.passWith(
-      { key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'new1', title: 'New video', published: NOW, type: 'video', deleted: false, upcoming: false }, { kind: 'channel', title: 'Renamed', handle: 'renamed' }] },
-      { key: `youtube:${B}`, deltas: [{ kind: 'item', id: 'other', title: 'Not mine', published: NOW, type: 'video', deleted: false, upcoming: false }] },
+      { key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'new1', title: 'New video', published: NOW, type: 'video', deleted: false, upcoming: false, preview: null }, { kind: 'channel', title: 'Renamed', handle: 'renamed' }] },
+      { key: `youtube:${B}`, deltas: [{ kind: 'item', id: 'other', title: 'Not mine', published: NOW, type: 'video', deleted: false, upcoming: false, preview: null }] },
     );
     catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'gone' }] });
 
@@ -229,7 +229,7 @@ describe('the encrypted catalog', () => {
     await syncUpdates(db, api, NOW);
     expect(await db.subscriptions.get(`youtube:${A}`)).toMatchObject({ retryAt: NOW + 2 * HOUR });
 
-    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: null }, { kind: 'item', id: 'first', title: 'First video', published: NOW, type: 'video', deleted: false, upcoming: false }] });
+    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: null }, { kind: 'item', id: 'first', title: 'First video', published: NOW, type: 'video', deleted: false, upcoming: false, preview: null }] });
     await syncUpdates(db, api, NOW);
     expect((await db.subscriptions.get(`youtube:${A}`))?.retryAt).toBeUndefined();
     expect(await itemsOf(db, A)).toEqual(['First video']);
@@ -242,7 +242,7 @@ describe('the encrypted catalog', () => {
     const db = freshDb();
     const api = server.api();
     await subscribe(db, api, `https://www.youtube.com/channel/${A}`, NOW);
-    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'missed', title: 'Missed video', published: NOW, type: 'video', deleted: false, upcoming: false }] });
+    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'missed', title: 'Missed video', published: NOW, type: 'video', deleted: false, upcoming: false, preview: null }] });
     catalog.passWith();
     catalog.keptFrom = catalog.pass;
 
@@ -299,7 +299,7 @@ describe('the encrypted catalog', () => {
     const api = server.api();
     await subscribe(db, api, `https://www.youtube.com/channel/${A}`, NOW);
     const cursor = await getMeta<number>(db, 'streamPass');
-    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'between', title: 'Between', published: NOW, type: 'video', deleted: false, upcoming: false }] });
+    catalog.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'item', id: 'between', title: 'Between', published: NOW, type: 'video', deleted: false, upcoming: false, preview: null }] });
 
     const found = await findChannel(db, api, `https://www.youtube.com/channel/${B}`);
     await follow(db, 'submitted' in found ? found.submitted : (undefined as never), NOW);

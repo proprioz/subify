@@ -4,6 +4,7 @@ import {
   fromBase64Url,
   openEntries,
   openHandleEntry,
+  openLot,
   openSnapshotEntry,
   openSnapshotThumbnails,
   type SlotImage,
@@ -17,6 +18,7 @@ import { type Api, ServerError } from './api';
 import { itemUrl } from './channel-link';
 import type { OnStep } from './subscriptions';
 import { getMeta, putItems, setRetryAt, type Slot, type StoredThumbnail, type Subscription, type SubifyDb, setMeta } from './db';
+import { keepsThumbnail } from './thumbnails';
 
 /**
  * The app on a server with the encrypted catalog (docs/FEATURES.md, D16). It finds its channels
@@ -289,7 +291,7 @@ interface StreamRun {
 
 /** Whether a sync started before was cut short, the app closed meanwhile: the user may resume it. */
 export async function unfinishedSync(db: SubifyDb): Promise<boolean> {
-  return (await getMeta<StreamRun>(db, 'streamRun')) !== undefined;
+  return (await getMeta<StreamRun>(db, 'streamRun')) !== undefined || (await getMeta<boolean>(db, 'lotsRun')) === true;
 }
 
 /**
@@ -410,12 +412,12 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
 
 /** Applies one pass's changes of a channel, but not over a change from a later pass, read before. */
 async function apply(db: SubifyDb, subscription: Subscription, pass: number, deltas: readonly StreamDelta[]): Promise<number> {
-  const items: ApiItem[] = [];
+  const items: (ApiItem & { preview?: Uint8Array })[] = [];
 
   for (const delta of deltas) {
     switch (delta.kind) {
       case 'item': {
-        const item = toApiItem(subscription.key, delta);
+        const item = { ...toApiItem(subscription.key, delta), ...(delta.preview === null ? {} : { preview: delta.preview }) };
 
         if (((await db.items.get(item.key))?.pass ?? -1) < pass) {
           items.push(item);
@@ -441,6 +443,97 @@ async function apply(db: SubifyDb, subscription: Subscription, pass: number, del
   await putItems(db, items, pass);
 
   return items.length;
+}
+
+/** Hours of thumbnail lots the server keeps: a device catches up on a week at most (docs/FEATURES.md, D3). */
+const LOT_HOURS = 7 * 24;
+
+/** Which hours' lots the device has read, for the stream's grouping it read them with. */
+interface LotsRead {
+  groups: number;
+  /** By group: the hours read, within the last week. */
+  hours: Record<number, number[]>;
+}
+
+/**
+ * Downloads the thumbnails of the followed channels' new videos from their groups' hourly lots
+ * (docs/FEATURES.md, D3), after the stream: whole lots of the groups the stream reads, the most
+ * recent hour first, back a week, skipping the hours read before. Each answer is written in one
+ * transaction with the hours it covered, so one cut short resumes where it stopped. A thumbnail
+ * goes in only for an item the device has, keeps a thumbnail for and doesn't have one of.
+ * `onProgress` gets the share of the hours read, from 0 to 1.
+ */
+export async function syncThumbnails(db: SubifyDb, api: Api, now = Date.now(), onProgress: (share: number) => void = () => {}): Promise<{ written: number }> {
+  const { groupOf } = await oprf();
+  const subscriptions = (await db.subscriptions.toArray()).filter((subscription) => subscription.slot !== undefined && subscription.status !== 'gone');
+  const groups = (await getMeta<number>(db, 'streamGroups')) ?? 1;
+  const wanted = [...new Set(subscriptions.map((subscription) => groupOf(subscription.slot!.id, groups)))];
+  let written = 0;
+
+  if (wanted.length === 0) {
+    onProgress(1);
+
+    return { written };
+  }
+
+  await setMeta(db, 'lotsRun', true);
+  const kept = await getMeta<LotsRead>(db, 'lotsRead');
+  const read: LotsRead = kept?.groups === groups ? kept : { groups, hours: {} };
+  const firsts = await inParallel(wanted, PARALLEL, (group) => api.lots(group));
+  const { latest, page } = firsts[0]!;
+  const oldest = latest - LOT_HOURS + 1;
+  const missing = (group: number, from: number, to: number) => {
+    const had = new Set(read.hours[group] ?? []);
+
+    return Array.from({ length: to - from + 1 }, (_, i) => to - i).filter((hour) => hour >= oldest && !had.has(hour));
+  };
+  const total = wanted.reduce((sum, group) => sum + missing(group, oldest, latest).length, 0);
+  let done = 0;
+
+  for (let until = latest; until >= oldest; until -= page) {
+    const from = until - page + 1;
+    const asked = wanted.filter((group) => missing(group, from, until).length > 0);
+    const answers = await inParallel(asked, PARALLEL, async (group) => ({ group, answer: until === latest ? firsts[wanted.indexOf(group)]! : await api.lots(group, until) }));
+    const images = new Map<string, SlotImage>();
+
+    for (const { group, answer } of answers) {
+      for (const lot of answer.lots.filter((candidate) => candidate.hour >= from && candidate.hour <= until)) {
+        const fragments = fromBase64Url(lot.fragments);
+
+        for (const subscription of subscriptions.filter((candidate) => groupOf(candidate.slot!.id, groups) === group)) {
+          for (const [id, image] of await openLot(subscription.slot!.key, lot.hour, fragments)) {
+            images.set(`${subscription.source}:${id}`, image);
+          }
+        }
+      }
+
+      // An hour without a lot before the current one never gets one: no pass ran then.
+      const returned = new Set(answer.lots.map((lot) => lot.hour));
+      const covered = missing(group, from, until).filter((hour) => returned.has(hour) || hour < latest);
+      read.hours[group] = [...(read.hours[group] ?? []).filter((hour) => hour >= oldest), ...covered];
+      done += covered.length;
+    }
+
+    await db.transaction('rw', db.items, db.thumbnails, db.meta, async () => {
+      const keys = [...images.keys()];
+      const [items, thumbnails] = await Promise.all([db.items.bulkGet(keys), db.thumbnails.bulkGet(keys)]);
+      const fresh = keys.flatMap((key, i) => {
+        const item = items[i];
+
+        return item === undefined || (thumbnails[i]?.data ?? null) !== null || !keepsThumbnail(item, now) ? [] : [{ key, channel: item.channel, type: images.get(key)!.type, data: images.get(key)!.bytes.slice().buffer }];
+      });
+      await db.thumbnails.bulkPut(fresh);
+      written += fresh.length;
+      await setMeta(db, 'lotsRead', read);
+    });
+
+    onProgress(total === 0 ? 1 : Math.min(1, done / total));
+  }
+
+  await db.meta.delete('lotsRun');
+  onProgress(1);
+
+  return { written };
 }
 
 /** Runs `run` on every value, at most `limit` at a time, and gives the results in order. */

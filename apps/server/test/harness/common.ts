@@ -73,6 +73,8 @@ export async function buildHarness(
     keys: deriveKeys(TEST_SECRET),
     coordinator: new MemoryCoordinator(() => now),
     mailer: options.mailer ?? null,
+    // Kept as read, unless a test asks for the runtime's encoder (test/shared/thumbnails.test.ts).
+    thumbnails: options.thumbnails ?? null,
   };
   let countryReads = 0;
   const { country } = options;
@@ -122,6 +124,7 @@ async function resetCatalog(db: Db): Promise<void> {
     { sql: 'DELETE FROM thumbnails', params: [] },
     { sql: 'DELETE FROM stream', params: [] },
     { sql: 'DELETE FROM handles', params: [] },
+    { sql: 'DELETE FROM lots', params: [] },
     { sql: 'DELETE FROM dictionary', params: [] },
     { sql: 'DELETE FROM dictionary_state', params: [] },
   ]);

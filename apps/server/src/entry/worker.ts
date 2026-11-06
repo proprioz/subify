@@ -3,6 +3,8 @@ import { deriveKeys, type ServerKeys } from '../crypto/keys';
 import { loadConfig } from '../config';
 import { CoordinatorObject, coordinatorOf } from '../workers/coordinator';
 import { D1Adapter } from '../workers/d1';
+import { workersThumbnailModules } from '../workers/thumbnails';
+import { thumbnailEncoder } from '../catalog/thumbnails';
 
 // Durable Object classes are exported by the Worker's entry module.
 export { CoordinatorObject };
@@ -52,6 +54,9 @@ function base64(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 }
 
+/** One per isolate: its WASM modules are set up at the first thumbnail. */
+const thumbnails = thumbnailEncoder(workersThumbnailModules);
+
 function platformFor(env: Env, ctx: ExecutionContext): Platform {
   const config = loadConfig({ ...env });
 
@@ -66,6 +71,7 @@ function platformFor(env: Env, ctx: ExecutionContext): Platform {
     keys: keysFor(env.MASTER_SECRET!),
     coordinator: coordinatorOf(env.COORDINATOR),
     mailer: env.MESSAGES === undefined ? null : async ({ to, from, replyTo, subject, text }) => void (await env.MESSAGES!.send({ to, from, replyTo, subject, text })),
+    thumbnails,
   };
 }
 

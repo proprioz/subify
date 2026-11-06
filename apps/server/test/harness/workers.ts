@@ -5,6 +5,7 @@ import { buildHarness } from './common';
 import type { Harness, HarnessOptions } from './types';
 
 export type { Harness } from './types';
+export { workersThumbnailModules as thumbnailModules } from '../../src/workers/thumbnails';
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   let ctx = createExecutionContext();

@@ -24,6 +24,8 @@ export type Update =
   | { kind: 'websub'; source: string; externalId: string; status: WebSubStatus; expiresAt: number | null }
   /** A thumbnail the last pass had no case for in the ring. */
   | { kind: 'thumbnail'; source: string; externalId: string; itemId: string; image: SlotImage }
+  /** A thumbnail the ring holds and no lot carried yet: its channel, its item and its case. */
+  | { kind: 'lot'; source: string; externalId: string; itemId: string; position: number }
   /** A seed candidate that leads to no channel, or to one the catalog has. */
   | { kind: 'forget'; source: string; input: ParsedInput }
   /** A user added a channel new to the catalog then: counted in the hours seeding follows. Names no channel. */

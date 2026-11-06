@@ -98,7 +98,7 @@ export class FakeServer {
         this.encrypted.publish(snapshotOf(channel(newItem.channel.slice(newItem.channel.indexOf(':') + 1)), []));
       }
 
-      change(newItem.channel, { kind: 'item', id: idOf(newItem.key), title: newItem.title, published: newItem.published, type: newItem.type, deleted: newItem.deleted === true, upcoming: newItem.upcoming === true });
+      change(newItem.channel, { kind: 'item', id: idOf(newItem.key), title: newItem.title, published: newItem.published, type: newItem.type, deleted: newItem.deleted === true, upcoming: newItem.upcoming === true, preview: null });
     }
 
     for (let at = 0; [...changes.values()].some((deltas) => deltas.length > at); at += STREAM_MAX_PER_CHANNEL) {

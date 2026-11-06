@@ -5,6 +5,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { MemoryCoordinator } from '../catalog/coordinator';
+import { thumbnailEncoder } from '../catalog/thumbnails';
 import { loadConfig } from '../config';
 import { deriveKeys } from '../crypto/keys';
 import { DetachedWork } from '../node/detached-work';
@@ -12,6 +13,7 @@ import { smtpMailer } from '../node/mail';
 import { startScheduler } from '../node/scheduler';
 import { loadMasterSecret } from '../node/secret';
 import { migrate, openSqlite, SqliteAdapter } from '../node/sqlite';
+import { nodeThumbnailModules } from '../node/thumbnails';
 import { serveWeb } from '../node/web';
 import { systemClock, type Platform } from '../platform';
 import { sources } from '../sources';
@@ -75,6 +77,7 @@ const platform: Platform = {
   coordinator: new MemoryCoordinator(),
   // The contact form's messages go out through the admin's mail account (docs/SELF-HOSTING.md).
   mailer: process.env.SMTP_URL?.trim() ? smtpMailer(process.env.SMTP_URL.trim()) : null,
+  thumbnails: thumbnailEncoder(nodeThumbnailModules),
 };
 
 const api = createApp({ sources });

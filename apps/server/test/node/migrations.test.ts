@@ -22,7 +22,7 @@ describe('migrations on Node', () => {
     const path = join(dir, 'catalog.sqlite');
 
     const fresh = openSqlite(path);
-    expect(migrate(fresh, migrations)).toEqual(['0001_slots.sql', '0002_thumbnail_cases.sql']);
+    expect(migrate(fresh, migrations)).toEqual(['0001_slots.sql', '0002_thumbnail_cases.sql', '0003_thumbnail_lots.sql']);
     fresh.prepare('INSERT INTO vault (id, blob) VALUES (1, ?)').run(Buffer.from([1, 2, 3]));
     fresh.close();
 

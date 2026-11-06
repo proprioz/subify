@@ -26,6 +26,8 @@ export class PassRing {
   readonly next: number;
   /** Thumbnails this pass had no case for, to queue for the next one. */
   readonly waiting: WaitingThumbnail[] = [];
+  /** Thumbnails this pass put in a case, in order, for the hour's thumbnail lots. */
+  readonly placed: (WaitingThumbnail & { position: number })[] = [];
   private readonly overwriting: Set<number>;
   private readonly written = new Map<number, ThumbnailPayload>();
   private used = 0;
@@ -61,6 +63,7 @@ export class PassRing {
 
     const position = this.positions[this.used++]!;
     this.written.set(position, { kind: 'thumbnail', itemId: thumbnail.itemId, image: thumbnail.image });
+    this.placed.push({ ...thumbnail, position });
 
     return position;
   }

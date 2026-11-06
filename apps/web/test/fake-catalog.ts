@@ -1,5 +1,8 @@
 import {
   decoyEntry,
+  decoyFragment,
+  sealFragment,
+  splitThumbnail,
   decoyHandleEntry,
   decoySnapshotEntry,
   decoySnapshotThumbnail,
@@ -80,6 +83,22 @@ export class FakeCatalog {
   /** Batches per stream answer: the rest waits for the next page. */
   streamPage = 144;
 
+  /** The current hour, as /lots counts them. */
+  hour = 500_000;
+  /** Lots per /lots answer. */
+  lotPage = 6;
+  /** Fragments per lot. */
+  private readonly perLot = 12;
+  /** The thumbnails each hour's lot carries; an hour absent had no pass, hence no lot. */
+  private readonly lots = new Map<number, { key: string; itemId: string; image: SlotImage }[]>();
+
+  /** The lot of `hour`, with these thumbnails, by channel key and item id. */
+  lotAt(hour: number, ...thumbnails: { key: string; itemId: string; image: SlotImage }[]): this {
+    this.lots.set(hour, thumbnails);
+
+    return this;
+  }
+
   /** Puts a channel in the catalog, as a pass would. */
   publish(channel: SnapshotChannel, thumbnails: Record<string, SlotImage> = {}): this {
     const key = `${channel.source}:${channel.externalId}`;
@@ -156,6 +175,39 @@ export class FakeCatalog {
       const withThumbnails = url.searchParams.get('thumbnails') === '1';
 
       return { v: 4, pass: this.pass, groups: 1, entries: toBase64Url(concat(entries)), thumbnails: withThumbnails ? toBase64Url(concat(thumbnails)) : '' };
+    }
+
+    if (path === '/api/lots' && method === 'GET') {
+      const until = url.searchParams.has('until') ? Number(url.searchParams.get('until')) : this.hour;
+      const lots = [];
+
+      for (let hour = Math.min(until, this.hour); hour > until - this.lotPage && hour > this.hour - 168; hour--) {
+        const thumbnails = this.lots.get(hour);
+
+        if (thumbnails === undefined) {
+          continue;
+        }
+
+        const fragments: Uint8Array[] = [];
+        const sealed = new Map<string, number>();
+
+        for (const { key, itemId, image } of thumbnails) {
+          const secrets = await this.secrets(key);
+
+          for (const fragment of splitThumbnail(itemId, image)) {
+            fragments.push(await sealFragment(secrets.transitKey, hour, sealed.get(key) ?? 0, fragment));
+            sealed.set(key, (sealed.get(key) ?? 0) + 1);
+          }
+        }
+
+        while (fragments.length < this.perLot) {
+          fragments.push(decoyFragment());
+        }
+
+        lots.push({ hour, fragments: toBase64Url(concat(fragments)) });
+      }
+
+      return { v: 3, latest: this.hour, groups: 1, page: this.lotPage, lots };
     }
 
     if (path === '/api/stream' && method === 'GET') {

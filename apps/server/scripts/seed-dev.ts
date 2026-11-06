@@ -55,7 +55,9 @@ const platform: Platform = {
   config: loadConfig(process.env),
   keys,
   coordinator: new MemoryCoordinator(),
-    mailer: null,
+  mailer: null,
+  // The recorded thumbnails are kept as they are.
+  thumbnails: null,
 };
 const resolved = await keys;
 

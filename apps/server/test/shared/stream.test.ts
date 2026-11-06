@@ -86,7 +86,7 @@ describe('the sync stream', () => {
     const { answer, deltas } = await follow(s, ['a', 'b'], since);
 
     expect(answer).toMatchObject({ v: 4, latest: since + 1, groups: 2, expired: false, more: false });
-    expect(deltas.a).toEqual([{ kind: 'item', id: 'a1', title: 'Video a1', published: START + 15 * MINUTE, type: 'video', deleted: false, upcoming: false }]);
+    expect(deltas.a).toEqual([{ kind: 'item', id: 'a1', title: 'Video a1', published: START + 15 * MINUTE, type: 'video', deleted: false, upcoming: false, preview: null }]);
     expect(deltas.b).toEqual([]);
   });
 

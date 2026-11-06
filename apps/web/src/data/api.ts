@@ -97,6 +97,11 @@ export class Api {
     return this.read(this.call(() => this.client.api.stream.$get({ query: { since: String(since), group: String(group) } })));
   }
 
+  /** A whole group's thumbnail lots of the hours up to `until`, the newest first; the latest hours when absent. */
+  lots(group: number, until?: number) {
+    return this.read(this.call(() => this.client.api.lots.$get({ query: { group: String(group), ...(until === undefined ? {} : { until: String(until) }) } })));
+  }
+
   /** Every slot of a snapshot group, with its thumbnails of the last 7 days when asked. */
   snapshot(group: number, thumbnails: boolean) {
     return this.read(this.call(() => this.client.api.snapshot.$get({ query: { group: String(group), thumbnails: thumbnails ? '1' : '0' } })));
