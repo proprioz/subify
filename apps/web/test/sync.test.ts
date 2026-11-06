@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ServerError } from '../src/data/api';
-import { getMeta } from '../src/data/db';
-import { unfinishedSync } from '../src/data/encrypted';
+import { groupOf } from '@subify/shared/oprf';
+import { getMeta, setMeta } from '../src/data/db';
+import { syncThumbnails, unfinishedSync } from '../src/data/encrypted';
 import { unsubscribe } from '../src/data/subscriptions';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../src/data/sync';
 import { channel, FakeServer, freshDb, many, NOW, subscribe } from './fake-server';
@@ -273,6 +274,27 @@ describe('thumbnails from the lots', () => {
     expect(await unfinishedSync(db)).toBe(false);
     // The two pages read before the cut aren't asked for again.
     expect(calls).toBe(3 + 1 + 26);
+  });
+
+  // A growth step splits every group in two: the hours read for a group hold the lots of its parts, and asking for a week of them again would cost each device up to 100 MB for nothing.
+  it('keeps the hours read when the groups split, and starts over only when they merge', async () => {
+    const server = new FakeServer().publish(channel(A));
+    const { db, api } = await followedA(server);
+    const lots = server.encrypted;
+    const week = Array.from({ length: 168 }, (_, i) => lots.hour - i);
+    const asked = () => server.paths.filter((path) => path.startsWith('GET /api/lots'));
+    const group = groupOf((await db.subscriptions.get(`youtube:${A}`))!.slot!.id, 2);
+
+    await setMeta(db, 'lotsRead', { groups: 1, hours: { 0: week } });
+    await setMeta(db, 'streamGroups', 2);
+    await syncThumbnails(db, api, NOW);
+    // The first page only, which every refresh asks for to learn the current hour.
+    expect(asked()).toEqual([`GET /api/lots?group=${group}`]);
+    expect(await getMeta(db, 'lotsRead')).toEqual({ groups: 2, hours: { [group]: week } });
+
+    await setMeta(db, 'streamGroups', 1);
+    await syncThumbnails(db, api, NOW);
+    expect(asked()).toHaveLength(1 + 28);
   });
 
   // The blurred preview shows only while the item keeps its ThumbHash: a later change of its title carries none.

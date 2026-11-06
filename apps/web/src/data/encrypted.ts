@@ -597,7 +597,7 @@ async function syncLots(db: SubifyDb, api: Api, now: number, onProgress: (share:
 
   await setMeta(db, 'lotsRun', true);
   const kept = await getMeta<LotsRead>(db, 'lotsRead');
-  const read: LotsRead = kept?.groups === groups ? kept : { groups, hours: {} };
+  const read: LotsRead = kept === undefined ? { groups, hours: {} } : inGrouping(kept, groups, wanted);
   const firsts = await inParallel(wanted, PARALLEL, (group) => api.lots(group));
   const { latest, page } = firsts[0]!;
   // Hours a catch-up's thumbnails covered hold nothing the device lacks.
@@ -646,6 +646,27 @@ async function syncLots(db: SubifyDb, api: Api, now: number, onProgress: (share:
   onProgress(1);
 
   return { written };
+}
+
+/**
+ * The hours read, for these groups of another grouping. Groups only split as the table grows
+ * (their ids' first bits, groupOf), and a group's lot of an hour held every channel of the groups
+ * it split into: the server gives that same lot again for each of them. So an hour read for a
+ * group is read for each of its parts, and a growth step costs no week of lots again. A coarser
+ * grouping, which the table never takes, starts over.
+ */
+function inGrouping(read: LotsRead, groups: number, wanted: readonly number[]): LotsRead {
+  if (read.groups === groups) {
+    return read;
+  }
+
+  if (groups < read.groups) {
+    return { groups, hours: {} };
+  }
+
+  const shift = Math.log2(groups / read.groups);
+
+  return { groups, hours: Object.fromEntries(wanted.map((group) => [group, [...(read.hours[group >>> shift] ?? [])]])) };
 }
 
 /** Keeps these thumbnails, by item key, for the items the device has, keeps a thumbnail for and has none of; gives how many. */
