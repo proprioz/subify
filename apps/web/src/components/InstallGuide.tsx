@@ -95,15 +95,9 @@ function InstallGuideModal({ guide, onClose, onBackup }: { guide: InstallGuide |
   const mac = browser === 'mac-safari';
   const steps = carriesBackup
     ? [
-        mac ? (
-          <>
-            <strong>Save a backup</strong>.
-          </>
-        ) : (
-          <>
-            <strong>Save a backup</strong> to Files.
-          </>
-        ),
+        <>
+          <strong>Save a backup</strong> to {mac ? 'Downloads' : 'Files'}.
+        </>,
         ...GUIDES[browser].steps,
         `In the app, ${mac ? 'click' : 'tap'} “I already have a backup”.`,
       ]

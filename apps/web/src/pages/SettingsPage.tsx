@@ -56,7 +56,7 @@ import { ageLabel } from '../data/format';
 import { loadTheme, type Theme } from '../data/settings';
 import { canUnlock, changePassword, isAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter, setPassword as setAppPassword } from '../data/vault';
 import { SHARE_ICON } from '../ui/icons';
-import { canInstall } from '../ui/install';
+import { canInstall, isIos } from '../ui/install';
 import { resetEverything } from '../ui/reset';
 import { useToast } from '../ui/toast';
 
@@ -551,13 +551,15 @@ async function takeFile(event: ChangeEvent<HTMLInputElement>): Promise<string | 
 }
 
 /**
- * The share sheet where it can carry a file (iOS, Android), a download elsewhere. False when the
- * user cancelled the sheet.
+ * The share sheet on a phone or tablet (iOS, Android), where it saves to Files or Drive; a download
+ * elsewhere. A computer's share sheet (Safari on a Mac) sends the file to a person or an app rather
+ * than keeping it, while restoring needs it on the disk. False when the user cancelled the sheet.
  */
 async function saveFile(contents: string, name: string): Promise<boolean> {
   const file = new File([contents], name, { type: 'application/json' });
+  const mobile = isIos(navigator.userAgent, navigator.maxTouchPoints) || /Android/.test(navigator.userAgent);
 
-  if (navigator.canShare?.({ files: [file] })) {
+  if (mobile && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
 
