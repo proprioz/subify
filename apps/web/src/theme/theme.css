@@ -960,6 +960,56 @@ ion-item.secrets-banner ion-button {
   font-weight: 600;
 }
 
+/* The tour after the first channel made secret (SecretTour): a bubble in the text's colours, like
+   the welcome tour's tips, its arrow pointing up at the page's ⋯ button (`tip-end`) or at “All”,
+   whose centre the strip measures (`--tip-at`, from the strip's left edge). */
+.tip {
+  position: relative;
+  margin: 14px 16px 8px;
+  padding: 12px 16px 2px;
+  border-radius: 12px;
+  background: var(--ion-text-color);
+  color: var(--ion-background-color);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.tip p {
+  margin: 0;
+}
+
+.tip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-inline-start: -12px;
+}
+
+.tip ion-button {
+  --color: var(--ion-background-color);
+  font-weight: 600;
+}
+
+.tip ion-button.tip-quiet {
+  font-weight: 400;
+}
+
+.tip-end::after,
+.tip-at::after {
+  position: absolute;
+  bottom: 100%;
+  border: 8px solid transparent;
+  border-bottom-color: var(--ion-text-color);
+  content: '';
+}
+
+.tip-end::after {
+  inset-inline-end: 4px;
+}
+
+.tip-at::after {
+  left: calc(var(--tip-at, 48px) - 16px - 8px);
+}
+
 /* On a secret video's thumbnail, the way the platform marks a video's length: a dark pill in a
    corner, readable on any image. */
 .secret-tag {

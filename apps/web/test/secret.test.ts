@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadFeed } from '../src/data/feed';
-import { checkSecretCode, forgetSecretChannels, setSecretCode } from '../src/data/secret';
+import { beginSecretTour, checkSecretCode, dismissSecretCard, forgetSecretChannels, secretCardDue, setSecretCode } from '../src/data/secret';
 import { channel, FakeServer, freshDb, item, NOW, subscribe } from './fake-server';
 
 const A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -64,5 +64,44 @@ describe('the secret code', () => {
   it('refuses codes that are not 4 to 8 digits', async () => {
     await expect(setSecretCode(freshDb(), '12a4')).rejects.toThrow();
     await expect(setSecretCode(freshDb(), '123')).rejects.toThrow();
+  });
+});
+
+// The owner wants secret channels introduced from the second channel and their tour shown once, never to someone who already uses them (a lock chosen, or a backup that brings one).
+describe('the introduction to secret channels', () => {
+  it('shows the card from the second channel until one is made secret, then the tour only the first time', async () => {
+    const server = new FakeServer().publish(channel(A), item(A, 'a1', 1)).publish(channel(B), item(B, 'b1', 2));
+    const db = freshDb();
+    await subscribe(db, server.api(), A, NOW);
+    expect(await secretCardDue(db)).toBe(false);
+    await subscribe(db, server.api(), B, NOW);
+    expect(await secretCardDue(db)).toBe(true);
+
+    expect(await beginSecretTour(db)).toBe(true);
+    await db.subscriptions.update(`youtube:${B}`, { secret: true });
+    expect(await secretCardDue(db)).toBe(false);
+
+    // Back to no secret channel: neither comes back.
+    await db.subscriptions.update(`youtube:${B}`, { secret: false });
+    expect(await secretCardDue(db)).toBe(false);
+    expect(await beginSecretTour(db)).toBe(false);
+  });
+
+  it('stays away from a device whose secret channels already have a PIN, and goes with “Got it”', async () => {
+    const server = new FakeServer().publish(channel(A), item(A, 'a1', 1)).publish(channel(B), item(B, 'b1', 2));
+    const known = freshDb();
+    await subscribe(known, server.api(), A, NOW);
+    await subscribe(known, server.api(), B, NOW);
+    await setSecretCode(known, '2468');
+    expect(await secretCardDue(known)).toBe(false);
+    expect(await beginSecretTour(known)).toBe(false);
+
+    const db = freshDb();
+    await subscribe(db, server.api(), A, NOW);
+    await subscribe(db, server.api(), B, NOW);
+    await dismissSecretCard(db);
+    expect(await secretCardDue(db)).toBe(false);
+    // “Got it” is no tour: the first channel made secret still gets it.
+    expect(await beginSecretTour(db)).toBe(true);
   });
 });

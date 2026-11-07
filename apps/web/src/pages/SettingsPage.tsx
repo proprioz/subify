@@ -24,6 +24,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   downloadOutline,
+  eyeOffOutline,
   fingerPrintOutline,
   keyOutline,
   mapOutline,
@@ -42,6 +43,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useBiometricsFlow } from '../app/BiometricsFlow';
+import { type SecretLock, useSecretFlow } from '../app/SecretFlow';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
@@ -77,6 +79,7 @@ export function SettingsPage() {
   // A backup opens with the app's password, when it has one, unless the user picks another one.
   const [appPassword, setUseAppPassword] = useState(true);
   const biometrics = useBiometricsFlow();
+  const { chooseLock, secretLock } = useSecretFlow();
   // Redraws a choice the user cancelled or the device refused, so it shows the one still in force.
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -478,6 +481,17 @@ export function SettingsPage() {
         )}
       </Section>
 
+      {/* Always there, secret channels or not: its presence must not tell that some are hidden. */}
+      <Section heading="Secret channels">
+        <IonItem button detail={false} lines="none" onClick={chooseLock}>
+          <IonIcon slot="start" icon={eyeOffOutline} aria-hidden="true" />
+          <IonLabel className="ion-text-wrap">
+            <h2>{SECRET_LOCK_LABELS[secretLock ?? 'none']}</h2>
+            <p>{secretLock === 'none' || secretLock === undefined ? 'Anyone using the open app can show them' : 'Change how they unlock'}</p>
+          </IonLabel>
+        </IonItem>
+      </Section>
+
       <Section
         heading="Backup"
         footer="Your channels live only on this device. A backup holds them and your settings, locked with a password; videos come back from the server. Keep it outside the app, in Files or Google Drive."
@@ -581,6 +595,13 @@ async function saveFile(contents: string, name: string): Promise<boolean> {
 
   return true;
 }
+
+const SECRET_LOCK_LABELS: Record<SecretLock, string> = {
+  none: 'Lock secret channels',
+  passkey: 'Locked with your passkey',
+  password: 'Locked with the app’s password',
+  pin: 'Locked with a PIN',
+};
 
 /** What already guards the app's data when Subify doesn't lock itself. */
 function platformLock(): string {

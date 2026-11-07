@@ -26,6 +26,7 @@ import { EmptyState } from '../components/EmptyState';
 import { NotFetchedInfo, refreshHint, retrySentence } from '../components/InfoButton';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
+import { AllTip, SecretTour } from '../components/SecretTour';
 import { SecretsBanner } from '../components/SecretsBanner';
 import { VideoCard } from '../components/VideoCard';
 import { ALL_TYPES, getMeta, setMeta } from '../data/db';
@@ -49,7 +50,7 @@ const PAGE = 15;
 
 export function FeedPage() {
   const { db, sync, syncing, syncError, secretsShown, secretOpened, install } = useAppData();
-  const { toggleSecrets } = useSecretFlow();
+  const { toggleSecrets, tour } = useSecretFlow();
   const installCard = useLiveQuery(() => loadInstallCard(db), [db]);
   const navigate = useNavigate();
   const installFlow = useInstallFlow(() => navigate('/settings?backup=install'));
@@ -145,6 +146,7 @@ export function FeedPage() {
             narrowed={showUpcoming !== DEFAULT_SHOW_UPCOMING || ALL_TYPES.some((type) => typeFilter[type] !== DEFAULT_TYPE_FILTER[type])}
             sort={sort}
             onSort={(next) => void setMeta(db, 'channelSort', next)}
+            hint={tour === 'reveal' ? <AllTip /> : undefined}
           />
         ) : undefined
       }
@@ -161,6 +163,7 @@ export function FeedPage() {
       }
     >
       <SecretsBanner opened={opened} />
+      <SecretTour place="feed" />
 
       {hasChannels && searching && (
         <IonSearchbar

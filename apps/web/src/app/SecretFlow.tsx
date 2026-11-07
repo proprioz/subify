@@ -13,9 +13,9 @@ import {
   useIonAlert,
 } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useState } from 'react';
+import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { getMeta, setMeta } from '../data/db';
-import { checkSecretCode, forgetSecretChannels, SECRET_CODE, secretUnlock, setSecretCode } from '../data/secret';
+import { beginSecretTour, checkSecretCode, forgetSecretChannels, SECRET_CODE, secretUnlock, setSecretCode } from '../data/secret';
 import { isAppPassword, readKeyring } from '../data/vault';
 import { verifyBiometrics } from '../ui/biometrics';
 import { useToast } from '../ui/toast';
@@ -26,14 +26,31 @@ import { useBiometricsFlow } from './BiometricsFlow';
 type Step = 'choose' | 'create' | 'unlock' | 'unlockApp' | 'change';
 
 /** What to do once the code is chosen or entered. */
-type Then = { show: true } | { secret: string } | null;
+type Then = { show: true } | null;
+
+/**
+ * What guards the secret channels: nothing (they are only out of sight), the device's passkey,
+ * the app's password, or a PIN of their own. Undefined until read.
+ */
+export type SecretLock = 'none' | 'passkey' | 'password' | 'pin';
+
+/**
+ * The short tour after the first channel made secret: where they show again (`reveal`: the
+ * Channels tab's menu, a double tap on “All”), then, once shown without a lock, that one can be
+ * added (`lock`).
+ */
+export type SecretTour = 'reveal' | 'lock' | null;
 
 interface SecretFlow {
-  /** Shows secret channels, after the code or biometrics. Hides them if they are shown. */
+  /** Shows secret channels, after the lock if they have one. Hides them if they are shown. */
   toggleSecrets(): void;
-  /** Makes a channel secret, choosing a code first if there is none yet, or shows it like the others again. */
+  /** Makes a channel secret, without asking for anything, or shows it like the others again. */
   setChannelSecret(key: string, secret: boolean): void;
-  changeCode(): void;
+  /** Chooses, or changes, what secret channels unlock with. */
+  chooseLock(): void;
+  secretLock: SecretLock | undefined;
+  tour: SecretTour;
+  endTour(): void;
   /** On once the device's passkey is on (Settings, Lock); unavailable when the device has no Face ID or fingerprint to offer. */
   biometrics: 'on' | 'off' | 'unavailable';
   turnOnBiometrics(): void;
@@ -65,8 +82,29 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
   const credential = keyring?.biometrics?.credential ?? legacyCredential ?? null;
   const hasPassword = (keyring?.password ?? null) !== null;
   const chosen = useLiveQuery(() => secretUnlock(db), [db]);
-  // “The app's lock” with nothing left to unlock it (Face ID turned off, no password): choose again.
+  // “The app's lock” with nothing left to unlock it (Face ID turned off, no password): no lock.
   const unlockWith = chosen === 'app' && !hasPassword && credential === null ? null : chosen;
+  // Nothing may show without a lock before what guards them has been read.
+  const secretLock: SecretLock | undefined =
+    keyring === undefined || legacyCredential === undefined || unlockWith === undefined
+      ? undefined
+      : unlockWith === 'pin'
+        ? 'pin'
+        : credential !== null
+          ? 'passkey'
+          : unlockWith === 'app'
+            ? 'password'
+            : 'none';
+  const [tour, setTour] = useState<SecretTour>(null);
+
+  // Shown during the tour: without a lock, its last step offers one; leaving them hides that offer too.
+  useEffect(() => {
+    if (secretsShown && tour === 'reveal') {
+      setTour(secretLock === 'none' ? 'lock' : null);
+    } else if (!secretsShown && tour === 'lock') {
+      setTour(null);
+    }
+  }, [secretsShown, tour, secretLock]);
 
   const open = (next: Step, after: Then) => {
     setCode('');
@@ -84,14 +122,11 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     async (after: Then) => {
-      if (after !== null && 'secret' in after) {
-        await db.subscriptions.update(after.secret, { secret: true });
-        await toast('Channel kept secret.', 1500);
-      } else if (after !== null) {
+      if (after !== null) {
         setSecretsShown(true);
       }
     },
-    [db, toast, setSecretsShown],
+    [setSecretsShown],
   );
 
   // Face ID is one setting for the whole app (Settings, Lock): turned on here, it is on there too.
@@ -114,20 +149,26 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (secretLock === undefined) {
+      return;
+    }
+
+    if (secretLock === 'none') {
+      setSecretsShown(true);
+
+      return;
+    }
+
     if (unlockWith === null || unlockWith === undefined) {
       // A passkey already on is the way: no choice to make, the device asks for it.
-      if (credential !== null) {
-        void verifyBiometrics(credential).then(async (verified) => {
-          if (verified) {
-            await setMeta(db, 'secretUnlock', 'app');
-            setSecretsShown(true);
-          } else {
-            await toast('The passkey didn’t confirm it’s you.');
-          }
-        });
-      } else {
-        open('choose', { show: true });
-      }
+      void verifyBiometrics(credential!).then(async (verified) => {
+        if (verified) {
+          await setMeta(db, 'secretUnlock', 'app');
+          setSecretsShown(true);
+        } else {
+          await toast('The passkey didn’t confirm it’s you.');
+        }
+      });
 
       return;
     }
@@ -142,25 +183,36 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
 
     fallBack();
-  }, [db, credential, unlockWith, hasPassword, secretsShown, setSecretsShown, toast]);
+  }, [db, credential, unlockWith, hasPassword, secretLock, secretsShown, setSecretsShown, toast]);
 
   const setChannelSecret = useCallback(
     (key: string, secret: boolean) => {
       void (async () => {
         if (!secret) {
           await db.subscriptions.update(key, { secret: false });
-        } else if (unlockWith !== null && unlockWith !== undefined) {
-          await finish({ secret: key });
-        } else if (credential !== null) {
+
+          return;
+        }
+
+        // Read before the passkey becomes their lock below: a lock already chosen means they're known.
+        const touring = await beginSecretTour(db);
+
+        if ((unlockWith === null || unlockWith === undefined) && credential !== null) {
           // Hiding a channel shows nothing: the passkey already on guards it, without asking.
           await setMeta(db, 'secretUnlock', 'app');
-          await finish({ secret: key });
+        }
+
+        // Without a lock, the channel is only out of sight: one can be added now or later (chooseLock).
+        await db.subscriptions.update(key, { secret: true });
+
+        if (touring) {
+          setTour('reveal');
         } else {
-          open('choose', { secret: key });
+          await toast('Channel kept secret.', 1500);
         }
       })();
     },
-    [db, finish, unlockWith, credential],
+    [db, toast, unlockWith, credential],
   );
 
   const submit = async (event: FormEvent) => {
@@ -293,7 +345,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const title = step === 'choose' ? 'Unlock secret channels' : step === 'create' ? 'Choose a PIN' : step === 'change' ? 'Change the PIN' : 'Secret channels';
+  const title = step === 'choose' ? (secretLock === 'none' ? 'Add a lock' : 'Change the lock') : step === 'create' ? 'Choose a PIN' : step === 'change' ? 'Change the PIN' : 'Secret channels';
   const field = (label: string, value: string, onChange: (value: string) => void, autofocus = false, pin = true) => (
     <IonItem>
       <IonInput
@@ -315,7 +367,13 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       value={{
         toggleSecrets,
         setChannelSecret,
-        changeCode: () => open('choose', null),
+        chooseLock: () => {
+          setTour(null);
+          open('choose', null);
+        },
+        secretLock,
+        tour,
+        endTour: () => setTour(null),
         biometrics: credential !== null ? 'on' : biometricsFlow.available ? 'off' : 'unavailable',
         turnOnBiometrics,
       }}
@@ -341,7 +399,7 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
           {step === 'choose' ? (
             <div className="ion-padding">
               <IonNote color="medium" className="ion-display-block ion-padding-bottom">
-                Secret channels and their videos only show once you unlock them, and hide again when you leave the app.
+                Choose what showing your secret channels asks for. They still hide again when you leave the screen.
               </IonNote>
               {(credential !== null || biometricsFlow.available) && (
                 <IonButton expand="block" onClick={() => void chooseAppLock()}>
