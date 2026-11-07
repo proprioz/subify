@@ -1,6 +1,6 @@
 import { IonCheckbox, IonChip, IonIcon, IonItem, IonLabel } from '@ionic/react';
 import { close, funnelOutline, optionsOutline, people, searchOutline, swapVerticalOutline } from 'ionicons/icons';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ALL_TYPES, type ShownType, type Subscription } from '../data/db';
 import type { ChannelSort, TypeFilter } from '../data/feed';
 import { ChannelAvatar } from './ChannelAvatar';
@@ -31,6 +31,8 @@ interface Props {
   narrowed: boolean;
   sort: ChannelSort;
   onSort(sort: ChannelSort): void;
+  /** A tip under the strip whose arrow points at “All” (SecretTour). */
+  hint?: ReactNode;
 }
 
 /**
@@ -57,11 +59,14 @@ export function ChannelStrip(props: Props) {
     narrowed,
     sort,
     onSort,
+    hint,
   } = props;
   const [kindsFrom, setKindsFrom] = useState<Event | null>(null);
   const [sortFrom, setSortFrom] = useState<Event | null>(null);
   const lastAllTap = useRef(0);
   const strip = useRef<HTMLDivElement>(null);
+  const hintBox = useRef<HTMLDivElement>(null);
+  const hinted = hint !== undefined && hint !== null;
   const kindsOn = ALL_TYPES.filter((type) => typeFilter[type]).length;
 
   useEffect(() => {
@@ -128,6 +133,32 @@ export function ChannelStrip(props: Props) {
     };
   }, [selected]);
 
+  // The hint's arrow follows “All”, wherever the strip is scrolled and however wide the chips draw.
+  useLayoutEffect(() => {
+    const box = hintBox.current;
+    const all = strip.current?.querySelector('.strip-all');
+
+    if (!box || !all) {
+      return;
+    }
+
+    const place = () => {
+      const { left, width } = all.getBoundingClientRect();
+      box.style.setProperty('--tip-at', `${left + width / 2 - box.getBoundingClientRect().left}px`);
+    };
+    const resized = new ResizeObserver(place);
+    resized.observe(all);
+    resized.observe(box);
+    const scrolled = strip.current;
+    scrolled?.addEventListener('scroll', place, { passive: true });
+    place();
+
+    return () => {
+      resized.disconnect();
+      scrolled?.removeEventListener('scroll', place);
+    };
+  }, [hinted, optionsOpen]);
+
   const tapAll = () => {
     const now = Date.now();
 
@@ -160,7 +191,9 @@ export function ChannelStrip(props: Props) {
           />
         )}
 
-        {channels.length > 1 && <StripChip on={selected === null} onClick={tapAll} label="All" start={<IonIcon icon={people} />} />}
+        {/* “All” shows even beside one channel, or none: otherwise it would come and go with the
+            secret channels, which it shows on a double tap, and tell that some are hidden. */}
+        <StripChip on={selected === null} onClick={tapAll} label="All" start={<IonIcon icon={people} />} className="strip-all" />
         {channels.length > 1 &&
           channels.map((channel) => (
             <StripChip
@@ -174,6 +207,7 @@ export function ChannelStrip(props: Props) {
             />
           ))}
       </div>
+      {hinted && <div ref={hintBox}>{hint}</div>}
 
       <Menu from={kindsFrom} onClose={() => setKindsFrom(null)} heading="Show in feed">
         {ALL_TYPES.map((type, i) => (
@@ -207,9 +241,10 @@ interface StripChipProps {
   /** Shows only `start`; the label is then the chip's accessible name. */
   hideLabel?: boolean;
   secret?: boolean;
+  className?: string;
 }
 
-function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, secret = false }: StripChipProps) {
+function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, secret = false, className }: StripChipProps) {
   // The avatar's badge is hidden from screen readers: the name says it instead.
   const name = ariaLabel ?? (hideLabel || secret ? `${label}${secret ? ', secret' : ''}` : undefined);
 
@@ -217,6 +252,7 @@ function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, se
     <IonChip
       outline={!on}
       color={on ? 'primary' : 'medium'}
+      {...(className === undefined ? {} : { className })}
       role="button"
       // As a string: React gives `true` to a custom element as an empty attribute, which isn't “pressed”.
       aria-pressed={on ? 'true' : 'false'}

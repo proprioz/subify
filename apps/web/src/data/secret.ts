@@ -1,9 +1,10 @@
 import { getMeta, setMeta, type SubifyDb } from './db';
 
 /**
- * Secret channels stay out of sight until the user unlocks them: with the app's password (or
- * Face ID / a fingerprint), or with a shorter PIN of their own. This hides them from someone
- * looking at the unlocked app; the database itself is sealed by the app's password (vault.ts).
+ * Secret channels stay out of sight until the user shows them. A lock is optional: with the app's
+ * password (or Face ID / a fingerprint), or with a shorter PIN of their own, showing them asks for
+ * it. This hides them from someone looking at the unlocked app; the database itself is sealed by
+ * the app's password (vault.ts).
  */
 
 /** How secret channels unlock: the app's password, or a PIN of their own (`secretCodeHash`). */
@@ -93,6 +94,41 @@ export async function forgetSecretChannels(db: SubifyDb): Promise<void> {
     await db.subscriptions.bulkDelete(secret);
     await db.meta.bulkDelete(['secretCodeHash', 'secretCredential', 'secretLock', 'secretUnlock']);
   });
+}
+
+/**
+ * The card in the Channels tab that says channels can be kept secret: from the second channel,
+ * until the user says “Got it” or makes one secret. Someone who already chose how they unlock, on
+ * this device or in the backup they restored, knows them.
+ */
+export async function secretCardDue(db: SubifyDb): Promise<boolean> {
+  // Read together: a live query (useLiveQuery) only watches what it reads before its first wait on
+  // the vault's decryption, and the card must follow both the channels and its dismissal.
+  const [done, unlock, channels] = await Promise.all([getMeta(db, 'secretCardDone'), secretUnlock(db), db.subscriptions.toArray()]);
+
+  return done !== true && unlock === null && channels.length >= 2 && !channels.some((channel) => channel.secret);
+}
+
+export async function dismissSecretCard(db: SubifyDb): Promise<void> {
+  await setMeta(db, 'secretCardDone', true);
+}
+
+/**
+ * Called as a channel is about to become secret: whether this is the first one ever on this device,
+ * which starts the short tour of where secret channels show again (SecretFlow). Once only; the
+ * card has nothing left to say after it.
+ */
+export async function beginSecretTour(db: SubifyDb): Promise<boolean> {
+  if ((await getMeta(db, 'secretTourDone')) === true || (await secretUnlock(db)) !== null || (await db.subscriptions.filter((channel) => channel.secret).count()) > 0) {
+    return false;
+  }
+
+  await db.meta.bulkPut([
+    { key: 'secretTourDone', value: true },
+    { key: 'secretCardDone', value: true },
+  ]);
+
+  return true;
 }
 
 /** Whether a secret code hash, such as one a backup brings, is one the app agrees to compute. */

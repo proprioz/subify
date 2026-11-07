@@ -24,6 +24,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   downloadOutline,
+  eyeOffOutline,
   fingerPrintOutline,
   keyOutline,
   mapOutline,
@@ -42,7 +43,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useBiometricsFlow } from '../app/BiometricsFlow';
-import { useSecretFlow } from '../app/SecretFlow';
+import { type SecretLock, useSecretFlow } from '../app/SecretFlow';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
@@ -78,6 +79,7 @@ export function SettingsPage() {
   // A backup opens with the app's password, when it has one, unless the user picks another one.
   const [appPassword, setUseAppPassword] = useState(true);
   const biometrics = useBiometricsFlow();
+  const { chooseLock, confirmSecrets, secretLock } = useSecretFlow();
   // Redraws a choice the user cancelled or the device refused, so it shows the one still in force.
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -89,6 +91,8 @@ export function SettingsPage() {
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
   const checksConnection = useLiveQuery(() => connectionCheckOn(db), [db]) ?? false;
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
+  // Unknown for passkeys made before it was kept.
+  const passkeyName = useLiveQuery(() => getMeta<string>(db, 'passkeyName'), [db]);
   const hasPassword = (keyring?.password ?? null) !== null;
   const biometricsOn = (keyring?.biometrics ?? null) !== null;
   const locks = canUnlock(keyring);
@@ -111,7 +115,6 @@ export function SettingsPage() {
   const passkeyGuardsSecrets = useLiveQuery(async () => (await getMeta(db, 'secretUnlock')) === 'app' && (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]) ?? false;
 
   const hasSecrets = useLiveQuery(async () => (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]);
-  const secretFlow = useSecretFlow();
 
   const toast = (message: string) => showToast(message, 2500);
 
@@ -119,13 +122,14 @@ export function SettingsPage() {
     // A backup opens with a password its maker picks, and shows everything in it: saving one asks
     // first for what shows the secret channels, or the backup would show them to anyone holding the app.
     // The alert says why, and gives the tap the passkey needs to be asked for (Safari).
-    if (step.kind === 'export' && hasSecrets !== false) {
+    // Without a lock there is nothing to ask: anyone holding the app can already show them.
+    if (step.kind === 'export' && hasSecrets !== false && secretLock !== 'none') {
       void presentAlert({
         header: 'Unlock your secret channels',
         message: `The backup holds your secret channels too, and anyone with the file and its password can see them. Unlock them first, as you do to show them, so that no one else using your unlocked ${platformDevice()} can take them away in a backup.`,
         buttons: [
           { text: 'Cancel', role: 'cancel' },
-          { text: 'Unlock', handler: () => void secretFlow.confirmSecrets().then((confirmed) => confirmed && askPassword(step)) },
+          { text: 'Unlock', handler: () => void confirmSecrets().then((confirmed) => confirmed && askPassword(step)) },
         ],
       });
 
@@ -175,7 +179,7 @@ export function SettingsPage() {
       ? ''
       : backup.secretCodeHash !== null
         ? ' Its secret channels stay hidden, behind the same PIN as on the device that saved it.'
-        : ' Its secret channels stay hidden. Their passkey or password stayed on the device that saved them: here, they unlock with this device’s passkey, or a lock you choose the first time you show them.';
+        : ' Its secret channels stay hidden. Their passkey or password stayed on the device that saved them: here, they unlock with this device’s passkey, or show without asking until you lock them again.';
 
   const confirmRestore = (backup: Backup) => {
     void presentAlert({
@@ -473,9 +477,11 @@ export function SettingsPage() {
           <IonItem>
             <IonIcon slot="start" icon={fingerPrintOutline} aria-hidden="true" />
             <IonToggle key={lockChoiceDrawn} checked={biometricsOn} onIonChange={(event) => void toggleBiometrics(event.detail.checked)}>
-              <IonLabel>
+              <IonLabel className="ion-text-wrap">
                 <h2>Passkey</h2>
                 <p>With {biometrics.verifiedBy}</p>
+                {/* Another install of Subify on this device saved its own: the name tells which is this one's. */}
+                {biometricsOn && passkeyName !== undefined && <p>Saved as “{passkeyName}”</p>}
               </IonLabel>
             </IonToggle>
           </IonItem>
@@ -509,6 +515,17 @@ export function SettingsPage() {
             </IonItem>
           </>
         )}
+      </Section>
+
+      {/* Always there, secret channels or not: its presence must not tell that some are hidden. */}
+      <Section heading="Secret channels">
+        <IonItem button detail={false} lines="none" onClick={chooseLock}>
+          <IonIcon slot="start" icon={eyeOffOutline} aria-hidden="true" />
+          <IonLabel className="ion-text-wrap">
+            <h2>{SECRET_LOCK_LABELS[secretLock ?? 'none']}</h2>
+            <p>{secretLock === 'none' || secretLock === undefined ? 'Anyone using the open app can show them' : 'Change how they unlock'}</p>
+          </IonLabel>
+        </IonItem>
       </Section>
 
       <Section
@@ -614,6 +631,13 @@ async function saveFile(contents: string, name: string): Promise<boolean> {
 
   return true;
 }
+
+const SECRET_LOCK_LABELS: Record<SecretLock, string> = {
+  none: 'Lock secret channels',
+  passkey: 'Locked with your passkey',
+  password: 'Locked with the app’s password',
+  pin: 'Locked with a PIN',
+};
 
 /** What already guards the app's data when Subify doesn't lock itself. */
 function platformLock(): string {

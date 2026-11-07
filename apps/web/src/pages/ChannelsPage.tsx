@@ -1,5 +1,7 @@
 import {
   IonButton,
+  IonCard,
+  IonCardContent,
   IonIcon,
   IonItem,
   IonItemOption,
@@ -18,6 +20,7 @@ import {
   eyeOutline,
   fingerPrintOutline,
   keyOutline,
+  lockClosedOutline,
   optionsOutline,
   people,
   playOutline,
@@ -37,9 +40,11 @@ import { NotFetchedInfo, refreshHint, RetryInfo } from '../components/InfoButton
 import { Menu, type MenuAction } from '../components/Menu';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
+import { SecretTour } from '../components/SecretTour';
 import { Section } from '../components/Section';
 import { SortMenu } from '../components/SortMenu';
 import { getMeta, setMeta, type Subscription } from '../data/db';
+import { dismissSecretCard, secretCardDue } from '../data/secret';
 import { refreshDictionary } from '../data/dictionary';
 import { type ChannelSort, sortChannels } from '../data/feed';
 import { ageLabel } from '../data/format';
@@ -48,7 +53,7 @@ import { MORE_ICON } from '../ui/icons';
 
 export function ChannelsPage() {
   const { db, api, gate, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
-  const { toggleSecrets, setChannelSecret, changeCode, biometrics, turnOnBiometrics } = useSecretFlow();
+  const { toggleSecrets, setChannelSecret, chooseLock, secretLock, biometrics, turnOnBiometrics } = useSecretFlow();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -61,6 +66,7 @@ export function ChannelsPage() {
   const [channelMenu, setChannelMenu] = useState<{ from: Event; channel: Subscription } | null>(null);
 
   const subscriptions = useLiveQuery(() => db.subscriptions.toArray(), [db]);
+  const secretCard = useLiveQuery(() => secretCardDue(db), [db]) ?? false;
   const sort = useLiveQuery(() => getMeta<ChannelSort>(db, 'channelSort'), [db]) ?? 'recent';
   const lastUploads = useLiveQuery(
     async () =>
@@ -105,9 +111,14 @@ export function ChannelsPage() {
   const optionActions: MenuAction[] = secretsShown
     ? [
         { text: 'Hide secret channels', icon: eyeOffOutline, handler: toggleSecrets },
-        { text: 'Change secret code', icon: keyOutline, handler: changeCode },
-        // One setting for the whole app: it is turned off in Settings, Lock.
-        ...(biometrics === 'off' ? [{ text: 'Use a passkey', icon: fingerPrintOutline, handler: turnOnBiometrics }] : []),
+        // A lock is optional: added here or in Settings, at any time after the first secret channel.
+        ...(secretLock === 'none'
+          ? [{ text: 'Lock secret channels…', icon: lockClosedOutline, handler: chooseLock }]
+          : [
+              { text: 'Change secret code', icon: keyOutline, handler: chooseLock },
+              // One setting for the whole app: it is turned off in Settings, Lock.
+              ...(biometrics === 'off' ? [{ text: 'Use a passkey', icon: fingerPrintOutline, handler: turnOnBiometrics }] : []),
+            ]),
       ]
     : [{ text: 'Show secret channels', icon: eyeOutline, handler: toggleSecrets }];
 
@@ -167,6 +178,7 @@ export function ChannelsPage() {
       }
     >
       <SecretsBanner />
+      <SecretTour place="channels" />
 
       <IonSearchbar
         ref={searchbar}
@@ -189,6 +201,18 @@ export function ChannelsPage() {
           }
         }}
       />
+
+      {/* From the second channel, once: the tour takes over when the first one is made secret. */}
+      {secretCard && term === '' && (
+        <IonCard>
+          <IonCardContent>
+            <strong>Keep a channel to yourself.</strong> Tap ⋯ next to it, then “Make secret”: it stays out of your feed and this list until you show it.
+          </IonCardContent>
+          <IonButton fill="clear" onClick={() => void dismissSecretCard(db)}>
+            Got it
+          </IonButton>
+        </IonCard>
+      )}
 
       {subscriptions !== undefined && count === 0 && term === '' && (
         <EmptyState icon={people} heading="No channels yet">

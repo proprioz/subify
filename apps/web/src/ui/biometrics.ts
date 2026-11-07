@@ -75,6 +75,23 @@ export function deviceName(userAgent: string, maxTouchPoints: number): string {
   return /CrOS/.test(userAgent) ? 'Chromebook' : 'Computer';
 }
 
+const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * The passkey's name in the password manager. Each install of the app keeps its own storage, so
+ * its own user id: an install made again, on the same device and the same day, adds a second
+ * passkey that “Subify on iPhone” alone wouldn't tell apart. A short code drawn from the user id,
+ * the same for every passkey of an install, and the time it was made tell which one to keep;
+ * Settings shows the name of this install's one.
+ */
+export function passkeyName(device: string, userId: Uint8Array, at: Date): string {
+  const bits = ((userId[0] ?? 0) << 12) | ((userId[1] ?? 0) << 4) | ((userId[2] ?? 0) >> 4);
+  const code = [15, 10, 5, 0].map((shift) => CODE_ALPHABET[(bits >> shift) & 31]).join('');
+  const time = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+
+  return `Subify on ${device} (${code}), ${time}`;
+}
+
 /**
  * Every iPhone and iPad can make the credential (iOS sets up what it lacks), but since iOS 26.2
  * the detection can answer no there, Face ID or not: iOS is not asked.
@@ -98,14 +115,15 @@ type PrfResults = { prf?: { enabled?: boolean; results?: { first?: BufferSource 
  */
 export type PasskeyFailure = 'cancelled' | 'unavailable';
 
-export type Enrolled = { credential: string; salt: Uint8Array; output: Uint8Array | null };
+/** `name`: the one it was saved under, when it was just made. */
+export type Enrolled = { credential: string; salt: Uint8Array; output: Uint8Array | null; name?: string };
 
 /**
  * Made, but not used yet: the device asks for the passkey again to give its key, and the user
  * closed that sheet. On an iPhone it lists only Passwords' passkeys: one kept in another password
  * manager hides behind “More from…”. The passkey exists, so it is kept, to be used next time.
  */
-export type Unconfirmed = { credential: string; salt: Uint8Array; unconfirmed: true };
+export type Unconfirmed = { credential: string; salt: Uint8Array; unconfirmed: true; name: string };
 
 /**
  * A refusal this fast came before the user could see a sheet: the device had nowhere to keep the
@@ -117,9 +135,13 @@ const NO_SHEET_MS = 1000;
  * Makes the device's passkey, after the user verified with it. `output` is the key it gives for
  * `salt` (WebAuthn PRF), null when it gives none: it then only guards secret channels.
  */
-export async function createPasskey(userId: Uint8Array, now: () => number = () => performance.now()): Promise<Enrolled | Unconfirmed | PasskeyFailure> {
+export async function createPasskey(
+  userId: Uint8Array,
+  now: () => number = () => performance.now(),
+  at: Date = new Date(),
+): Promise<Enrolled | Unconfirmed | PasskeyFailure> {
   const salt = randomBytes(32);
-  const name = deviceName(navigator.userAgent, navigator.maxTouchPoints);
+  const name = passkeyName(deviceName(navigator.userAgent, navigator.maxTouchPoints), userId, at);
   const started = now();
   let created: PublicKeyCredential | null;
 
@@ -128,7 +150,7 @@ export async function createPasskey(userId: Uint8Array, now: () => number = () =
       publicKey: {
         rp: { name: 'Subify' },
         // Password managers show `name` under the site (Bitwarden), others `displayName`.
-        user: { id: userId as Uint8Array<ArrayBuffer>, name: `Subify on ${name}`, displayName: `Subify on ${name}` },
+        user: { id: userId as Uint8Array<ArrayBuffer>, name, displayName: name },
         challenge: randomBytes(32),
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 },
@@ -155,19 +177,19 @@ export async function createPasskey(userId: Uint8Array, now: () => number = () =
   const first = prf?.results?.first;
 
   if (first !== undefined) {
-    return { credential, salt, output: toBytes(first) };
+    return { credential, salt, output: toBytes(first), name };
   }
 
   // A passkey that didn't say it gives keys gives none: asking for it again would only add a
   // sheet, and one that iOS can't fill yet for a passkey another password manager just saved.
   if (prf?.enabled !== true) {
-    return { credential, salt, output: null };
+    return { credential, salt, output: null, name };
   }
 
   // Most devices only give the key when the passkey is used, not when it is made.
   const used = await askPasskey(credential, salt);
 
-  return used === null ? { credential, salt, unconfirmed: true } : { credential, salt, output: used.output };
+  return used === null ? { credential, salt, unconfirmed: true, name } : { credential, salt, output: used.output, name };
 }
 
 /**

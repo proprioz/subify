@@ -85,6 +85,11 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
 
     const created = await createPasskey(passkeyUser ?? crypto.getRandomValues(new Uint8Array(16)));
 
+    // Saved in the password manager from now on, used or not: Settings names it.
+    if (typeof created === 'object' && created.name !== undefined) {
+      await setMeta(db, 'passkeyName', created.name);
+    }
+
     if (typeof created === 'object' && 'unconfirmed' in created) {
       await rememberPasskey(db, created.credential, created.salt);
 
@@ -98,12 +103,15 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
     (done: (on: boolean) => void, fresh = false) => {
       void (async () => {
         const result = await enroll(fresh);
+        const name = await getMeta<string>(db, 'passkeyName');
 
         // Never a dead end: the same passkey again, through its password manager, or a new one.
         if (result === 'unconfirmed') {
           void presentAlert({
             header: 'The passkey didn’t answer',
-            message: `If the list said no passkey is saved for this website, Subify’s passkey is in another password manager: tap Try again, then “More from…” at the bottom, and pick it. If you deleted it, make a new one.`,
+            message: `If the list said no passkey is saved for this website, Subify’s passkey is in another password manager: tap Try again, then “More from…” at the bottom, and pick ${
+              name === undefined ? 'it' : `“${name}”`
+            }. If you deleted it, make a new one.`,
             buttons: [
               { text: 'Try again', handler: () => attempt(done) },
               { text: 'Make a new passkey', handler: () => attempt(done, true) },
