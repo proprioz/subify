@@ -1114,6 +1114,76 @@ ion-progress-bar.refresh-bar {
   border-radius: 0;
 }
 
+/* The liquid refresh bar (Settings): where it fills the status bar, its front is blurred then cut
+   at an opacity, which merges it with the drops that leave it and fall back (Lucas Bebber's gooey
+   effect). A line alone, 3px high, would vanish in a 6px blur: it stays flat. */
+div.refresh-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  height: calc(var(--ion-safe-area-top, 0px) + 3px);
+  container-type: size;
+  pointer-events: none;
+}
+
+div.refresh-bar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.refresh-liquid {
+  fill: var(--ion-color-red);
+}
+
+.refresh-drop {
+  display: none;
+}
+
+@container (min-height: 20px) {
+  .refresh-liquid {
+    filter: url(#refresh-goo);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .refresh-drop {
+      display: inline;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: refresh-drop 1.4s linear infinite;
+    }
+
+    .refresh-drop:nth-child(2) {
+      animation-delay: -0.93s;
+    }
+
+    .refresh-drop:nth-child(3) {
+      animation-delay: -0.47s;
+    }
+  }
+}
+
+/* A drop leaves the front, shrinking as it goes, and falls back into it. */
+@keyframes refresh-drop {
+  0% {
+    transform: translate(4px, 0) scale(1);
+  }
+  25% {
+    transform: translate(19.6px, 4px) scale(0.89);
+  }
+  50% {
+    transform: translate(26px, 0) scale(0.78);
+  }
+  75% {
+    transform: translate(19.6px, -4px) scale(0.67);
+  }
+  100% {
+    transform: translate(4px, 0) scale(0.56);
+  }
+}
+
 /* iOS draws the status bar's time and battery in white over the page: in light mode, a dark
    gradient behind them keeps them legible. Under the refresh bar, whose red needs none. */
 :root:not(.ion-palette-dark) ion-app::after {

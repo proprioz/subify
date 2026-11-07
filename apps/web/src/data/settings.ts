@@ -6,6 +6,11 @@ export async function loadTheme(db: SubifyDb): Promise<Theme> {
   return (await getMeta<Theme>(db, 'theme')) ?? 'system';
 }
 
+/** Whether the refresh bar looks like liquid where it fills the status bar (RefreshBar). Off at first. */
+export async function loadLiquidRefreshBar(db: SubifyDb): Promise<boolean> {
+  return (await getMeta<boolean>(db, 'liquidRefreshBar')) ?? false;
+}
+
 /** How long “Not now” hides the invitation to install on the feed. */
 export const INSTALL_CARD_PAUSE = 7 * 24 * 60 * 60 * 1000;
 
