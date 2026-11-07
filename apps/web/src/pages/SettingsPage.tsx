@@ -38,7 +38,6 @@ import {
   sunnyOutline,
   timerOutline,
   trashOutline,
-  waterOutline,
 } from 'ionicons/icons';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -56,7 +55,7 @@ import { connectionCheckOn, setConnectionCheck } from '../data/connection-check'
 import { getMeta, setMeta } from '../data/db';
 import { forgetSecretChannels } from '../data/secret';
 import { ageLabel } from '../data/format';
-import { loadLiquidRefreshBar, loadTheme, type Theme } from '../data/settings';
+import { loadTheme, type Theme } from '../data/settings';
 import { canUnlock, changePassword, isAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter, setPassword as setAppPassword } from '../data/vault';
 import { SHARE_ICON } from '../ui/icons';
 import { canInstall, isIos } from '../ui/install';
@@ -89,7 +88,6 @@ export function SettingsPage() {
   const reopenGuide = useRef(false);
 
   const theme = useLiveQuery(() => loadTheme(db), [db]) ?? 'system';
-  const liquidRefreshBar = useLiveQuery(() => loadLiquidRefreshBar(db), [db]) ?? false;
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
   const checksConnection = useLiveQuery(() => connectionCheckOn(db), [db]) ?? false;
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
@@ -461,15 +459,6 @@ export function SettingsPage() {
               <IonLabel>System</IonLabel>
             </IonSegmentButton>
           </IonSegment>
-        </IonItem>
-        <IonItem lines="none">
-          <IonIcon slot="start" icon={waterOutline} aria-hidden="true" />
-          <IonToggle checked={liquidRefreshBar} onIonChange={(event) => void setMeta(db, 'liquidRefreshBar', event.detail.checked)}>
-            <IonLabel className="ion-text-wrap">
-              <h2>Liquid loading bar</h2>
-              <p>Drops at the front of the bar, where it fills the top of the screen</p>
-            </IonLabel>
-          </IonToggle>
         </IonItem>
       </Section>
 

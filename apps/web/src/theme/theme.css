@@ -1098,104 +1098,18 @@ ion-avatar.avatar-secret {
   display: none;
 }
 
-/* The refresh bar (RefreshBar): the platform's red filling the status bar from left to right, and a
-   thin line below it, at the very top of the screen; only the line where there is no status bar to
-   draw under. Laid over every page, so that a refresh shows wherever the user goes or scrolls.
-   Above the pages and the tab bar, under the overlays (toasts, popovers). */
+/* The refresh bar (RefreshBar): a thin line of the platform's red at the very top of the screen,
+   under the status bar, laid over every page, so that a refresh shows wherever the user goes or
+   scrolls. Above the pages and the tab bar, under the overlays (toasts, popovers). */
 ion-progress-bar.refresh-bar {
   --background: transparent;
   --progress-background: var(--ion-color-red);
   position: fixed;
-  top: 0;
+  top: var(--ion-safe-area-top, 0);
   left: 0;
   right: 0;
   z-index: 1000;
-  height: calc(var(--ion-safe-area-top, 0px) + 3px);
-  border-radius: 0;
-}
-
-/* The liquid refresh bar (Settings): where it fills the status bar, its front is blurred then cut
-   at an opacity, which merges it with the drops that leave it and fall back (Lucas Bebber's gooey
-   effect). A line alone, 3px high, would vanish in a 6px blur: it stays flat. */
-div.refresh-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  height: calc(var(--ion-safe-area-top, 0px) + 3px);
-  container-type: size;
-  pointer-events: none;
-}
-
-div.refresh-bar svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.refresh-liquid {
-  fill: var(--ion-color-red);
-}
-
-.refresh-drop {
-  display: none;
-}
-
-@container (min-height: 20px) {
-  .refresh-liquid {
-    filter: url(#refresh-goo);
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .refresh-drop {
-      display: inline;
-      transform-box: fill-box;
-      transform-origin: center;
-      animation: refresh-drop 1.4s linear infinite;
-    }
-
-    .refresh-drop:nth-child(2) {
-      animation-delay: -0.93s;
-    }
-
-    .refresh-drop:nth-child(3) {
-      animation-delay: -0.47s;
-    }
-  }
-}
-
-/* A drop leaves the front, shrinking as it goes, and falls back into it. */
-@keyframes refresh-drop {
-  0% {
-    transform: translate(4px, 0) scale(1);
-  }
-  25% {
-    transform: translate(19.6px, 4px) scale(0.89);
-  }
-  50% {
-    transform: translate(26px, 0) scale(0.78);
-  }
-  75% {
-    transform: translate(19.6px, -4px) scale(0.67);
-  }
-  100% {
-    transform: translate(4px, 0) scale(0.56);
-  }
-}
-
-/* iOS draws the status bar's time and battery in white over the page: in light mode, a dark
-   gradient behind them keeps them legible. Under the refresh bar, whose red needs none. */
-:root:not(.ion-palette-dark) ion-app::after {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 999;
-  height: var(--ion-safe-area-top, 0px);
-  background: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.2) 70%, transparent);
-  pointer-events: none;
+  height: 3px;
 }
 
 /* The refresh button's icon turns while a refresh runs (Page), unless motion is reduced. */
