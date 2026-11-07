@@ -15,7 +15,8 @@ import '@ionic/react/css/display.css';
 import '@ionic/react/css/palettes/dark.class.css';
 import './theme/theme.css';
 
-setupIonicReact();
+// No swipe from the screen's edge to go back, in iOS mode: the back button alone does it.
+setupIonicReact({ swipeBackEnabled: false });
 // Follows the device until the saved theme is read from the database.
 applyTheme('system');
 
