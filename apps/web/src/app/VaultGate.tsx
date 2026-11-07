@@ -33,7 +33,8 @@ export function VaultGate({ children }: { children: ReactNode }) {
 function Screen({ children }: { children: ReactNode }) {
   return (
     <IonPage>
-      <IonContent>
+      <IonContent className="headerless">
+        <div slot="fixed" className="status-backdrop" />
         <Column>{children}</Column>
       </IonContent>
     </IonPage>

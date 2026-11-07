@@ -55,6 +55,8 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
   const hasSubtitle = subtitle !== undefined && subtitle !== null;
   // A small toolbar over the bar would only repeat the title: the bar heads the page instead.
   const barOnTop = ios && !wideScreen && bar !== undefined;
+  // Without a header to make room for the status bar, the content does (theme.css).
+  const headerless = barOnTop || wideScreen;
   const backButton = back !== undefined && (
     <IonButtons slot="start">
       <IonBackButton defaultHref={back} />
@@ -73,6 +75,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
         </IonHeader>
       )}
       <IonContent
+        className={headerless ? 'headerless' : undefined}
         fullscreen
         scrollEvents={fab !== undefined}
         onIonScroll={(event) => {
@@ -85,6 +88,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
           }
         }}
       >
+        {headerless && <div slot="fixed" className="status-backdrop" />}
         {fixed}
         {fab !== undefined && (
           <IonFab slot="fixed" vertical="bottom" horizontal="end" className={fabHidden ? 'fab-hidden' : ''}>

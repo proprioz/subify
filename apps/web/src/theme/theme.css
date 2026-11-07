@@ -188,10 +188,31 @@ ion-toolbar.page-subtitle {
   --padding-end: 0;
 }
 
-/* A page's bar on iOS phones (Page), stuck to the top of the screen in place of the toolbar. Opaque,
-   so the cards' text never shows through under the chips. The status bar never covers the page
-   (`apple-mobile-web-app-status-bar-style` is “default”), so the top of the screen is the top of
-   the page. */
+/* The installed app draws under iOS's status bar (`apple-mobile-web-app-status-bar-style` is
+   “black-translucent”), whose height is the top safe area. Ionic's headers make room for it; a
+   page without one (Page, VaultGate, Welcome) starts its content below it, and an opaque strip
+   (`status-backdrop`) keeps the content scrolling up from showing under the clock. */
+ion-content.headerless {
+  --padding-top: var(--ion-safe-area-top, 0px);
+}
+
+ion-content.headerless ion-refresher {
+  top: var(--ion-safe-area-top, 0px);
+}
+
+.status-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--ion-safe-area-top, 0px);
+  z-index: 11;
+  background: var(--ion-background-color);
+}
+
+/* A page's bar on iOS phones (Page), stuck to the top of the screen in place of the toolbar, under
+   the status bar: sticky positions keep within the content's top padding. Opaque, so the cards'
+   text never shows through under the chips. */
 .page-bar {
   position: sticky;
   top: 0;
@@ -1077,18 +1098,34 @@ ion-avatar.avatar-secret {
   display: none;
 }
 
-/* The refresh bar (RefreshBar): a thin line of the platform's red at the very top of the screen,
-   under the status bar, laid over every page, so that a refresh shows wherever the user goes or
-   scrolls. Above the pages and the tab bar, under the overlays (toasts, popovers). */
+/* The refresh bar (RefreshBar): the platform's red filling the status bar from left to right, and a
+   thin line below it, at the very top of the screen; only the line where there is no status bar to
+   draw under. Laid over every page, so that a refresh shows wherever the user goes or scrolls.
+   Above the pages and the tab bar, under the overlays (toasts, popovers). */
 ion-progress-bar.refresh-bar {
   --background: transparent;
   --progress-background: var(--ion-color-red);
   position: fixed;
-  top: var(--ion-safe-area-top, 0);
+  top: 0;
   left: 0;
   right: 0;
   z-index: 1000;
-  height: 3px;
+  height: calc(var(--ion-safe-area-top, 0px) + 3px);
+  border-radius: 0;
+}
+
+/* iOS draws the status bar's time and battery in white over the page: in light mode, a dark
+   gradient behind them keeps them legible. Under the refresh bar, whose red needs none. */
+:root:not(.ion-palette-dark) ion-app::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  height: var(--ion-safe-area-top, 0px);
+  background: linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.2) 70%, transparent);
+  pointer-events: none;
 }
 
 /* The refresh button's icon turns while a refresh runs (Page), unless motion is reduced. */

@@ -29,7 +29,8 @@ export function Welcome({ onDone }: { onDone: (restore: boolean) => void }) {
   if (!touring) {
     return (
       <IonPage>
-        <IonContent>
+        <IonContent className="headerless">
+          <div slot="fixed" className="status-backdrop" />
           <Column>
             <div className="welcome ion-padding ion-text-center">
               <img src="/api/icons/pwa-192.png" alt="" width={88} height={88} className="welcome-icon" />
