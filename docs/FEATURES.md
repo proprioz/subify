@@ -56,7 +56,8 @@ Subify lets you follow your favourite video creators without an account, without
 - A secret channel can be opened on its own from the list, without revealing the others; it hides again in the same way.
 - While they show, or one of them opened on its own, a banner at the top of the Feed and Channels tabs says so, with “Hide”. Each secret video carries a “Secret” tag on its thumbnail, and each secret channel an eye-off badge on its avatar; their text stays as any other's.
 - A forgotten PIN can't be recovered: the secret channels are deleted, with their videos, and the PIN.
-- The backup holds the secret status and the PIN's hash: a restored device asks for the same PIN.
+- The backup holds the secret status and the PIN's hash: a restored device asks for the same PIN. Secret channels that unlocked with the app's lock come back without one (the passkey and the app's password stay on their device): the restored device has the user choose one. “Restore this backup?” says which of the two the backup's secret channels come back with.
+- Saving a backup while there are secret channels first asks for what shows them, as showing them does, after an alert that says why: a backup opens with the password its maker picks, and anyone holding it and its password can read everything in it.
 - Error messages never name a hidden secret channel.
 
 ## 4. Settings (Settings tab)

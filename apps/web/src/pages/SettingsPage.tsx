@@ -42,6 +42,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useBiometricsFlow } from '../app/BiometricsFlow';
+import { useSecretFlow } from '../app/SecretFlow';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
@@ -109,9 +110,32 @@ export function SettingsPage() {
   // Whether the passkey is the secret channels' lock, with secret channels to guard.
   const passkeyGuardsSecrets = useLiveQuery(async () => (await getMeta(db, 'secretUnlock')) === 'app' && (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]) ?? false;
 
+  const hasSecrets = useLiveQuery(async () => (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]);
+  const secretFlow = useSecretFlow();
+
   const toast = (message: string) => showToast(message, 2500);
 
   const openPassword = (step: PasswordStep) => {
+    // A backup opens with a password its maker picks, and shows everything in it: saving one asks
+    // first for what shows the secret channels, or the backup would show them to anyone holding the app.
+    // The alert says why, and gives the tap the passkey needs to be asked for (Safari).
+    if (step.kind === 'export' && hasSecrets !== false) {
+      void presentAlert({
+        header: 'Unlock your secret channels',
+        message: `The backup holds your secret channels too, and anyone with the file and its password can see them. Unlock them first, as you do to show them, so that no one else using your unlocked ${platformDevice()} can take them away in a backup.`,
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          { text: 'Unlock', handler: () => void secretFlow.confirmSecrets().then((confirmed) => confirmed && askPassword(step)) },
+        ],
+      });
+
+      return;
+    }
+
+    askPassword(step);
+  };
+
+  const askPassword = (step: PasswordStep) => {
     setPassword('');
     setRepeat('');
     setCurrent('');
@@ -125,7 +149,8 @@ export function SettingsPage() {
   // The install guide on the feed links here to save a backup before installing on iOS or a Mac, then
   // reopens; the storage warning links here to save one.
   useEffect(() => {
-    if (searchParams.get('backup') !== null) {
+    // Waits to know whether there are secret channels to unlock first.
+    if (searchParams.get('backup') !== null && hasSecrets !== undefined) {
       setSearchParams({}, { replace: true });
       openPassword({ kind: 'export', thenInstall: searchParams.get('backup') === 'install' });
     }
@@ -142,12 +167,20 @@ export function SettingsPage() {
         ],
       });
     }
-  }, [searchParams, setSearchParams, presentAlert]);
+  }, [searchParams, setSearchParams, presentAlert, hasSecrets]);
+
+  // How the backup's secret channels come back: a passkey or an app's password stays on its device, a PIN travels.
+  const restoredSecrets = (backup: Backup) =>
+    !backup.channels.some((channel) => channel.secret)
+      ? ''
+      : backup.secretCodeHash !== null
+        ? ' Its secret channels stay hidden, behind the same PIN as on the device that saved it.'
+        : ' Its secret channels stay hidden. Their passkey or password stayed on the device that saved them: here, they unlock with this device’s passkey, or a lock you choose the first time you show them.';
 
   const confirmRestore = (backup: Backup) => {
     void presentAlert({
       header: 'Restore this backup?',
-      message: `Your channels and settings on this device will be replaced by the ${backup.channels.length} channels of the backup.`,
+      message: `Your channels and settings on this device will be replaced by the ${backup.channels.length} channels of the backup.${restoredSecrets(backup)}`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
