@@ -934,12 +934,6 @@ ion-card.video-card {
   color: var(--ion-color-medium);
 }
 
-.secret-mark {
-  margin-inline-end: 3px;
-  vertical-align: -2px;
-  color: var(--ion-color-medium);
-}
-
 /* Shown secret channels (D5). The banner while they show: in the accent's colours, as a passing
    state stands out from the page, with its button in the banner's text colour. */
 ion-item.secrets-banner {
@@ -1011,7 +1005,8 @@ ion-item.secrets-banner ion-button {
 
 /* A shown secret channel's chip in the strip, and its videos' cards, drawn as a dashed outline, like
    a silhouette not quite there, in a halo of smoke that drifts slowly around them: a badge on the
-   strip's avatars would be cut by the round chip. The chip shown is filled, without an outline. */
+   strip's avatars would be cut by the round chip. In the Channels tab, the avatar has them,
+   its ring a little away from the picture. */
 ion-card.video-secret {
   border: 1.5px dashed rgba(var(--ion-text-color-rgb), 0.5);
 }
@@ -1022,11 +1017,17 @@ ion-card.video-secret {
   border-color: rgba(var(--ion-text-color-rgb), 0.6);
 }
 
+ion-avatar.avatar-secret {
+  outline: 1.5px dashed rgba(var(--ion-text-color-rgb), 0.6);
+  outline-offset: 2px;
+}
+
 /* The halo is the element's own shadow, which neither the card's containment nor the chip's
    overflow clips; the chip's is smaller, to stay within the strip, which clips what goes past its
    edges. */
 ion-card.video-secret,
-.channel-strip ion-chip.strip-secret {
+.channel-strip ion-chip.strip-secret,
+ion-avatar.avatar-secret {
   --smoke: 1px;
   box-shadow:
     calc(-6 * var(--smoke)) calc(-3 * var(--smoke)) calc(16 * var(--smoke)) calc(-2 * var(--smoke)) var(--app-smoke),
@@ -1035,7 +1036,8 @@ ion-card.video-secret,
   animation: secret-smoke 8s ease-in-out infinite;
 }
 
-.channel-strip ion-chip.strip-secret {
+.channel-strip ion-chip.strip-secret,
+ion-avatar.avatar-secret {
   --smoke: 0.5px;
 }
 
@@ -1057,26 +1059,10 @@ ion-card.video-secret,
 
 @media (prefers-reduced-motion: reduce) {
   ion-card.video-secret,
-  .channel-strip ion-chip.strip-secret {
+  .channel-strip ion-chip.strip-secret,
+  ion-avatar.avatar-secret {
     animation: none;
   }
-}
-
-/* On a secret channel's avatar in the Channels tab, a badge in the corner, as a status on a
-   profile picture. */
-ion-avatar {
-  position: relative;
-}
-
-.secret-badge {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  padding: 2px;
-  border-radius: 50%;
-  background: var(--ion-color-primary);
-  color: var(--ion-color-primary-contrast);
-  font-size: 11px;
 }
 
 /* The fallback for copying a link: off screen, never seen. */
