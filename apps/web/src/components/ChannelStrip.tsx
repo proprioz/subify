@@ -9,6 +9,9 @@ import { SortMenu } from './SortMenu';
 
 const TYPE_LABELS: Record<ShownType, string> = { video: 'Videos', short: 'Shorts', live: 'Lives' };
 
+/** How long the strip takes to glide to the channel shown. */
+const GLIDE_MS = 300;
+
 interface Props {
   channels: readonly Subscription[];
   selected: string | null;
@@ -76,21 +79,53 @@ export function ChannelStrip(props: Props) {
       return;
     }
 
-    // The last channels go as far as the strip scrolls: the browser stops it at its end.
-    const center = () => {
+    // Where the strip shows the chip in its middle; the last channels go only as far as it scrolls.
+    const target = () => {
       const box = element.getBoundingClientRect();
       const { left, width } = chip.getBoundingClientRect();
-      element.scrollTo({ left: element.scrollLeft + left - box.left + width / 2 - box.width / 2 });
+      const middle = element.scrollLeft + left - box.left + width / 2 - box.width / 2;
+
+      return Math.min(Math.max(0, middle), element.scrollWidth - element.clientWidth);
     };
 
-    center();
+    // The glide is the app's own rather than the browser's `smooth` scrolling: Safari drops that
+    // one when the feed redraws for the channel just after. The target is measured again at each
+    // frame, so a chip that changes size meanwhile still ends in the middle.
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let frame = 0;
 
-    // The chip's name takes its final size once Ionic has drawn its label, a frame later: centred
-    // again then. Only the chip's own changes scroll: the user's own scrolling is left alone.
-    const observer = new ResizeObserver(center);
+    const glide = () => {
+      const from = element.scrollLeft;
+      let start: number | null = null;
+
+      const step = (now: number) => {
+        start ??= now;
+        const progress = reduced ? 1 : Math.min(1, (now - start) / GLIDE_MS);
+        element.scrollLeft = from + (target() - from) * (1 - (1 - progress) ** 3);
+
+        if (progress < 1) {
+          frame = requestAnimationFrame(step);
+        }
+      };
+
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(step);
+    };
+
+    // Glides once the chip is laid out, and again when it changes size: its name drawn by Ionic a
+    // frame later, or the page shown from another tab. The user's own scrolling stops it.
+    const observer = new ResizeObserver(glide);
+    const stop = () => cancelAnimationFrame(frame);
     observer.observe(chip);
+    element.addEventListener('touchstart', stop, { passive: true });
+    element.addEventListener('wheel', stop, { passive: true });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stop();
+      element.removeEventListener('touchstart', stop);
+      element.removeEventListener('wheel', stop);
+    };
   }, [selected]);
 
   const tapAll = () => {

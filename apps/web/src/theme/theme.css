@@ -258,13 +258,6 @@ ion-fab-button.ion-color-red ion-icon {
   display: none;
 }
 
-/* The strip glides to the channel shown (ChannelStrip), unless motion is reduced. */
-@media (prefers-reduced-motion: no-preference) {
-  .channel-strip {
-    scroll-behavior: smooth;
-  }
-}
-
 /* Larger than Ionic's chips, which are made for tags rather than the main way to pick a channel:
    44px high with 36px avatars instead of 32px and 24px, and 16px at their ends instead of 12px.
    Sizes are in em of the chip's text (14px by default), as Ionic's own, so they follow the
