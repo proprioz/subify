@@ -1,5 +1,5 @@
 import { getConfig, IonBackButton, IonButtons, IonCol, IonContent, IonFab, IonGrid, IonHeader, IonNote, IonPage, IonRow, IonTitle, IonToolbar } from '@ionic/react';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useWideScreen } from '../ui/wide-screen';
 
 interface Props {
@@ -57,6 +57,38 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
   const barOnTop = ios && !wideScreen && bar !== undefined;
   // Without a header to make room for the status bar, the content does (theme.css).
   const headerless = barOnTop || wideScreen;
+  const barBox = useRef<HTMLDivElement>(null);
+
+  // Once stuck under the status bar, the bar's glass grows over it, so that the two read as one.
+  useEffect(() => {
+    const box = barBox.current;
+
+    if (box === null) {
+      return;
+    }
+
+    let observer: IntersectionObserver | undefined;
+    // The status bar's height changes as the phone turns: the bar is stuck once it reaches it.
+    const observe = () => {
+      const statusBar = parseFloat(getComputedStyle(box).getPropertyValue('--ion-safe-area-top')) || 0;
+
+      observer?.disconnect();
+      observer = new IntersectionObserver((entries) => entries.forEach(({ intersectionRatio }) => box.classList.toggle('page-bar-stuck', intersectionRatio > 0 && intersectionRatio < 1)), {
+        rootMargin: `-${statusBar + 1}px 0px 0px 0px`,
+        threshold: 1,
+      });
+      observer.observe(box);
+    };
+
+    observe();
+    window.addEventListener('resize', observe);
+
+    return () => {
+      window.removeEventListener('resize', observe);
+      observer?.disconnect();
+    };
+  }, [barOnTop]);
+
   const backButton = back !== undefined && (
     <IonButtons slot="start">
       <IonBackButton defaultHref={back} />
@@ -125,7 +157,9 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
             </IonNote>
           )}
           {barOnTop ? (
-            <div className="page-bar">{bar}</div>
+            <div ref={barBox} className="page-bar">
+              {bar}
+            </div>
           ) : (
             bar
           )}

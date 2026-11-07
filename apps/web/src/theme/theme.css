@@ -190,8 +190,8 @@ ion-toolbar.page-subtitle {
 
 /* The installed app draws under iOS's status bar (`apple-mobile-web-app-status-bar-style` is
    “black-translucent”), whose height is the top safe area. Ionic's headers make room for it; a
-   page without one (Page, VaultGate, Welcome) starts its content below it, and an opaque strip
-   (`status-backdrop`) keeps the content scrolling up from showing under the clock. */
+   page without one (Page, VaultGate, Welcome) starts its content below it, under a strip
+   (`status-backdrop`) behind the clock. */
 ion-content.headerless {
   --padding-top: var(--ion-safe-area-top, 0px);
 }
@@ -207,16 +207,57 @@ ion-content.headerless ion-refresher {
   right: 0;
   height: var(--ion-safe-area-top, 0px);
   z-index: 11;
-  background: var(--ion-background-color);
 }
 
 /* A page's bar on iOS phones (Page), stuck to the top of the screen in place of the toolbar, under
-   the status bar: sticky positions keep within the content's top padding. Opaque, so the cards'
-   text never shows through under the chips. */
+   the status bar: sticky positions keep within the content's top padding. Its glass is a layer
+   of its own, which grows over the status bar once the bar is stuck there (`page-bar-stuck`), in
+   place of the strip: one glass, without a seam. */
 .page-bar {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+.page-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.page-bar.page-bar-stuck::before {
+  top: calc(-1 * var(--ion-safe-area-top, 0px));
+}
+
+ion-content:has(.page-bar-stuck) .status-backdrop {
+  visibility: hidden;
+}
+
+/* The glass behind the clock and the bar is that of iOS's translucent tab bar (Ionic's
+   `translucent`), the content scrolling blurred behind it; opaque where the browser cannot
+   blur. */
+.status-backdrop,
+.page-bar::before {
+  background: var(--ion-background-color);
+}
+
+@supports (backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0)) {
+  .status-backdrop,
+  .page-bar::before {
+    background: rgba(var(--ion-background-color-rgb), 0.8);
+    -webkit-backdrop-filter: saturate(210%) blur(20px);
+    backdrop-filter: saturate(210%) blur(20px);
+  }
+}
+
+/* The chips on the glass stay solid, so that they stand out from what blurs behind them: the
+   same colours as on the page, without their transparency. */
+.page-bar ion-chip {
+  --background: color-mix(in srgb, var(--ion-text-color) 12%, var(--ion-background-color));
+}
+
+.page-bar ion-chip.chip-outline {
   background: var(--ion-background-color);
 }
 
