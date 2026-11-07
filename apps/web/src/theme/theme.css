@@ -1009,23 +1009,6 @@ ion-item.secrets-banner ion-button {
   left: calc(var(--tip-at, 48px) - 16px - 8px);
 }
 
-/* On a secret video's thumbnail, the way the platform marks a video's length: a dark pill in a
-   corner, readable on any image. */
-.secret-tag {
-  position: absolute;
-  bottom: 6px;
-  left: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.75);
-  color: #ffffff;
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
 /* A shown secret channel's chip in the strip, and its videos' cards, drawn as a dashed outline, like
    a silhouette not quite there, in a halo of smoke that drifts slowly around them: a badge on the
    strip's avatars would be cut by the round chip. The chip shown is filled, without an outline. */

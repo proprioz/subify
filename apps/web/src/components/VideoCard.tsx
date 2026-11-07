@@ -1,5 +1,5 @@
 import { IonBadge, IonButton, IonCard, IonContent, IonIcon, IonItem, IonLabel, IonPopover, IonText, IonThumbnail } from '@ionic/react';
-import { cloudDownloadOutline, eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
+import { cloudDownloadOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
@@ -86,7 +86,8 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
           lines="none"
           className={unavailable ? 'video-unavailable' : ''}
           onClick={unavailable ? undefined : () => void copy()}
-          aria-label={unavailable ? undefined : `Copy link to ${kind === undefined ? '' : `${kind.text}: `}${item.title}`}
+          // A secret channel's card only shows it by its outline: the name says it to screen readers.
+          aria-label={unavailable ? undefined : `Copy link to ${kind === undefined ? '' : `${kind.text}: `}${item.title}${channel.secret ? ', secret channel' : ''}`}
         >
           <IonThumbnail
             slot="start"
@@ -99,13 +100,6 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
                   : undefined
             }
           >
-            {/* Said by the channel's mark below; this one is for the eye, while scrolling. */}
-            {channel.secret && (
-              <span className="secret-tag" aria-hidden="true">
-                <IonIcon icon={eyeOffOutline} />
-                Secret
-              </span>
-            )}
             {image !== null ? (
               <img src={image} alt="" {...(fadeIn ? { className: 'fade-in' } : {})} />
             ) : (
@@ -139,7 +133,6 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
               ) : (
                 <>
                   <span className="video-channel">
-                    {channel.secret && <IonIcon icon={eyeOffOutline} className="secret-mark" aria-label="Secret channel" />}
                     {channel.title}
                   </span>
                   {/* Its date is when it was scheduled, which says nothing of when it starts. */}
