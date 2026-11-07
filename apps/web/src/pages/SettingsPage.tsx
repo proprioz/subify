@@ -29,7 +29,6 @@ import {
   keyOutline,
   mapOutline,
   lockClosedOutline,
-  lockOpenOutline,
   globeOutline,
   moonOutline,
   phonePortraitOutline,
@@ -43,7 +42,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useBiometricsFlow } from '../app/BiometricsFlow';
-import { type SecretLock, useSecretFlow } from '../app/SecretFlow';
+import { useSecretFlow } from '../app/SecretFlow';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
@@ -53,16 +52,16 @@ import { type Backup, exportBackup, isBackupFile, readBackup, restoreBackup } fr
 import { BackupError, MINIMUM_PASSWORD_LENGTH } from '../data/backup-cipher';
 import { connectionCheckOn, setConnectionCheck } from '../data/connection-check';
 import { getMeta, setMeta } from '../data/db';
-import { forgetSecretChannels } from '../data/secret';
 import { ageLabel } from '../data/format';
 import { loadTheme, type Theme } from '../data/settings';
-import { canUnlock, changePassword, isAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter, setPassword as setAppPassword } from '../data/vault';
+import { checkAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter } from '../data/vault';
+import { midSentence } from '../ui/biometrics';
 import { SHARE_ICON } from '../ui/icons';
 import { canInstall, isIos } from '../ui/install';
 import { resetEverything } from '../ui/reset';
 import { useToast } from '../ui/toast';
 
-type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string } | { kind: 'change' } | { kind: 'set' };
+type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string };
 
 export function SettingsPage() {
   const { db, api, gate, install, lock, sync } = useAppData();
@@ -75,11 +74,10 @@ export function SettingsPage() {
   const [passwordStep, setPasswordStep] = useState<PasswordStep | null>(null);
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
-  const [current, setCurrent] = useState('');
   // A backup opens with the app's password, when it has one, unless the user picks another one.
   const [appPassword, setUseAppPassword] = useState(true);
   const biometrics = useBiometricsFlow();
-  const { chooseLock, confirmSecrets, secretLock } = useSecretFlow();
+  const { confirmSecrets, secretLock, lockSecrets, lockApp, choosePassword } = useSecretFlow();
   // Redraws a choice the user cancelled or the device refused, so it shows the one still in force.
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -91,28 +89,23 @@ export function SettingsPage() {
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
   const checksConnection = useLiveQuery(() => connectionCheckOn(db), [db]) ?? false;
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
-  // Unknown for passkeys made before it was kept.
-  const passkeyName = useLiveQuery(() => getMeta<string>(db, 'passkeyName'), [db]);
   const hasPassword = (keyring?.password ?? null) !== null;
   const biometricsOn = (keyring?.biometrics ?? null) !== null;
-  const locks = canUnlock(keyring);
-  // Locked for real only when the key isn't kept on the device (“never”).
-  const protectedByLock = locks && keyring?.lockAfter !== 'never';
-  const passkeyLocks = (keyring?.biometrics?.sealed ?? null) !== null;
-  const lockedWith = passkeyLocks && hasPassword ? 'passkey or password' : passkeyLocks ? 'passkey' : 'password';
-  // What locking adds to the encryption every device has, said plainly: it is the question people ask.
-  const lockExplained = protectedByLock
-    ? `Someone using your unlocked ${platformDevice()}, or holding a copy of its data, can’t read your channels. If you lose your ${lockedWith}, nothing can open them again: only a backup brings them back.`
-    : [
-        `Subify’s data is encrypted, and safe on a lost or stolen ${platformDevice()} that is locked. But its key stays on this device: anyone using your unlocked ${platformDevice()} can open Subify, and a copy of the device’s data can be read.`,
-        locks
-          ? 'To close both, choose when Subify asks to unlock.'
-          : biometricsOn
-            ? 'Your passkey’s password manager can’t lock Subify: the passkey only shows secret channels. To close both, set a password.'
-            : 'To close both, lock Subify with a passkey or a password.',
-      ].join(' ');
-  // Whether the passkey is the secret channels' lock, with secret channels to guard.
-  const passkeyGuardsSecrets = useLiveQuery(async () => (await getMeta(db, 'secretUnlock')) === 'app' && (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]) ?? false;
+  // Locked when it asks; “never” opens without asking.
+  const appLocked = keyring !== undefined && keyring.lockAfter !== 'never' && (hasPassword || biometricsOn);
+  const secretsLocked = secretLock === 'app' || secretLock === 'pin';
+  const how = biometricsOn && hasPassword ? `${midSentence(biometrics.verifiedBy)}, or your password` : biometricsOn ? midSentence(biometrics.verifiedBy) : 'your password';
+  // Face ID that can't seal the data on this device only guards the door (vault.ts): said, with what closes it.
+  const doorOnly = (keyring?.biometrics ?? null) !== null && keyring?.biometrics?.sealed === null;
+  // One sentence, what is true now: who can open Subify, and what losing the lock costs.
+  const lockExplained =
+    biometricsOn && !hasPassword
+      ? `Choose a password, in case ${midSentence(biometrics.verifiedBy)} stops working. Without either, only a backup brings your channels back.`
+      : appLocked && doorOnly
+        ? `Only ${how} opens Subify. But on this ${platformDevice()}, ${midSentence(biometrics.verifiedBy)} can’t encrypt it: a copy of the ${platformDevice()}’s data could still be read. Turn ${midSentence(biometrics.verifiedBy)} off, and your password protects that too.`
+        : appLocked
+        ? `Only ${how} opens Subify. If you forget the password, only a backup brings your channels back.`
+        : `Subify’s data is encrypted, but anyone using your unlocked ${platformDevice()} can open it.`;
 
   const hasSecrets = useLiveQuery(async () => (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]);
 
@@ -142,7 +135,6 @@ export function SettingsPage() {
   const askPassword = (step: PasswordStep) => {
     setPassword('');
     setRepeat('');
-    setCurrent('');
     setUseAppPassword(hasPassword);
     setError(null);
     setPasswordStep(step);
@@ -173,13 +165,13 @@ export function SettingsPage() {
     }
   }, [searchParams, setSearchParams, presentAlert, hasSecrets]);
 
-  // How the backup's secret channels come back: a passkey or an app's password stays on its device, a PIN travels.
+  // How the backup's secret channels come back: the app's lock stays on its device, a PIN of their own travels.
   const restoredSecrets = (backup: Backup) =>
     !backup.channels.some((channel) => channel.secret)
       ? ''
       : backup.secretCodeHash !== null
         ? ' Its secret channels stay hidden, behind the same PIN as on the device that saved it.'
-        : ' Its secret channels stay hidden. Their passkey or password stayed on the device that saved them: here, they unlock with this device’s passkey, or show without asking until you lock them again.';
+        : ' Its secret channels stay hidden, and lock like Subify on this device, if you lock it.';
 
   const confirmRestore = (backup: Backup) => {
     void presentAlert({
@@ -215,26 +207,20 @@ export function SettingsPage() {
     setError(null);
 
     try {
-      if (passwordStep.kind === 'change' || passwordStep.kind === 'set') {
-        if (password !== repeat) {
+      if (passwordStep.kind === 'export') {
+        if (appPassword) {
+          const check = await checkAppPassword(db, password);
+
+          if (!check.ok) {
+            throw new BackupError(check.waitUntil === null ? 'That’s not the app’s password.' : `Too many tries. Wait ${Math.ceil((check.waitUntil - Date.now()) / 1000)} seconds.`);
+          }
+
+          // A backup leaves the device, where nothing makes a guesser wait: a PIN would fall at once.
+          if (password.length < MINIMUM_PASSWORD_LENGTH) {
+            throw new BackupError(`A backup leaves this device, so it needs a password of at least ${MINIMUM_PASSWORD_LENGTH} characters. Turn off “Use the app’s password” and choose one.`);
+          }
+        } else if (password !== repeat) {
           throw new BackupError('The two passwords are different.');
-        }
-
-        if (password.length < MINIMUM_PASSWORD_LENGTH) {
-          throw new BackupError(`The password needs at least ${MINIMUM_PASSWORD_LENGTH} characters.`);
-        }
-
-        if (passwordStep.kind === 'set') {
-          await setAppPassword(db, password);
-        } else if (!(await changePassword(db, current, password))) {
-          throw new BackupError('That’s not the current password.');
-        }
-
-        setPasswordStep(null);
-        void toast(passwordStep.kind === 'set' ? 'Password set.' : 'Password changed.');
-      } else if (passwordStep.kind === 'export') {
-        if (appPassword ? !(await isAppPassword(db, password)) : password !== repeat) {
-          throw new BackupError(appPassword ? 'That’s not the app’s password.' : 'The two passwords are different.');
         }
 
         const saved = await saveFile(await exportBackup(db, password), `subify-backup-${new Date().toISOString().slice(0, 10)}.json`);
@@ -266,24 +252,14 @@ export function SettingsPage() {
     }
   };
 
-  const chooseLockAfter = (lockAfter: LockAfter) => {
-    if (lockAfter !== 'never') {
-      void setLockAfter(db, lockAfter);
+  const toggleBiometrics = async (on: boolean) => {
+    // The password comes first: it opens Subify when Face ID can't.
+    if (!hasPassword && !(await choosePassword())) {
+      setLockChoiceDrawn((drawn) => drawn + 1);
 
       return;
     }
 
-    void presentAlert({
-      header: 'Never ask to unlock?',
-      message: 'The app then keeps its key on this device, so your channels and settings can be read there by anyone who gets at the app’s data. You can change this at any time.',
-      buttons: [
-        { text: 'Cancel', role: 'cancel', handler: () => setLockChoiceDrawn((drawn) => drawn + 1) },
-        { text: 'Never ask', role: 'destructive', handler: () => void setLockAfter(db, 'never') },
-      ],
-    });
-  };
-
-  const toggleBiometrics = async (on: boolean) => {
     if (on) {
       if (!(await biometrics.turnOn())) {
         setLockChoiceDrawn((drawn) => drawn + 1);
@@ -292,40 +268,13 @@ export function SettingsPage() {
       return;
     }
 
-    // Without a password, the passkey alone keeps secret channels out of sight: turned off, it
-    // would leave them with no lock, and anyone holding the open app could choose a PIN for them.
-    if (passkeyGuardsSecrets && !hasPassword) {
-      setLockChoiceDrawn((drawn) => drawn + 1);
-      void presentAlert({
-        header: 'Your secret channels need another lock',
-        message:
-          'The passkey is all that keeps them out of sight. Choose a PIN for them first (Channels, ⋯, Change secret code) or set a password, then turn the passkey off. If you no longer have the passkey, turning it off removes your secret channels, with their videos. Your other channels stay.',
-        buttons: [
-          { text: 'OK', role: 'cancel' },
-          {
-            text: 'Remove secret channels',
-            role: 'destructive',
-            handler: () =>
-              void forgetSecretChannels(db)
-                .then(() => turnOff())
-                .catch(() => toast('Something went wrong. Try again.')),
-          },
-        ],
-      });
-
-      return;
-    }
-
-    await turnOff();
-  };
-
-  const turnOff = async () => {
-    const opensWithoutAsking = !hasPassword && keyring?.lockAfter !== 'never';
     await removeBiometrics(db);
     await db.meta.delete('secretCredential');
     // The passkey stays in the password manager, to be used again: nothing to delete there.
-    await toast(`Passkey off.${opensWithoutAsking ? ' Subify now opens without asking.' : ''} Turning it on again saves nothing new.`);
+    await toast(`${biometrics.verifiedBy} off. Your password still works.`);
   };
+
+  const toggle = (change: Promise<void>) => void change.finally(() => setLockChoiceDrawn((drawn) => drawn + 1));
 
   const confirmReset = () => {
     void presentAlert({
@@ -358,7 +307,7 @@ export function SettingsPage() {
             <IonButton onClick={() => setPasswordStep(null)}>Cancel</IonButton>
           </IonButtons>
           <IonTitle>
-            {passwordStep?.kind === 'export' ? 'Backup password' : passwordStep?.kind === 'change' ? 'Change the password' : passwordStep?.kind === 'set' ? 'Set a password' : 'Open the backup'}
+            {passwordStep?.kind === 'export' ? 'Backup password' : 'Open the backup'}
           </IonTitle>
           <IonButtons slot="end">
             <IonButton strong type="submit" form="backup-password" disabled={busy}>
@@ -377,21 +326,9 @@ export function SettingsPage() {
                 </IonToggle>
               </IonItem>
             )}
-            {passwordStep?.kind === 'change' && (
-              <IonItem>
-                <IonInput
-                  label="Current password"
-                  labelPlacement="stacked"
-                  type="password"
-                  autocomplete="current-password"
-                  value={current}
-                  onIonInput={(event) => setCurrent(String(event.detail.value ?? ''))}
-                />
-              </IonItem>
-            )}
             <IonItem>
               <IonInput
-                label={passwordStep?.kind === 'change' ? 'New password' : passwordStep?.kind === 'export' && appPassword ? 'App password' : 'Password'}
+                label={passwordStep?.kind === 'export' && appPassword ? 'App password' : 'Password'}
                 labelPlacement="stacked"
                 type="password"
                 autocomplete={passwordStep?.kind === 'restore' || appPassword ? 'current-password' : 'new-password'}
@@ -399,7 +336,7 @@ export function SettingsPage() {
                 onIonInput={(event) => setPassword(String(event.detail.value ?? ''))}
               />
             </IonItem>
-            {(passwordStep?.kind === 'change' || passwordStep?.kind === 'set' || (passwordStep?.kind === 'export' && !appPassword)) && (
+            {passwordStep?.kind === 'export' && !appPassword && (
               <IonItem>
                 <IonInput
                   label="Repeat the password"
@@ -420,9 +357,7 @@ export function SettingsPage() {
         ) : (
           passwordStep?.kind !== 'restore' && (
             <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-              {passwordStep?.kind === 'change' || passwordStep?.kind === 'set'
-                ? `At least ${MINIMUM_PASSWORD_LENGTH} characters. Once the app asks for it, losing it means the app’s data can’t be opened again: only a backup lets you start over.`
-                : appPassword
+              {appPassword
                   ? 'The backup opens with the app’s password, on any device. Without it, the backup can’t be opened.'
                   : `At least ${MINIMUM_PASSWORD_LENGTH} characters. It isn’t saved anywhere: without it, the backup can’t be opened.`}
             </IonNote>
@@ -462,70 +397,69 @@ export function SettingsPage() {
         </IonItem>
       </Section>
 
-      <Section
-        heading="Lock"
-        footer={lockExplained}
-      >
+      {/* The same rows whatever keeps the passkey, and whether there are secret channels: the screen tells nothing. */}
+      <Section heading="Lock" footer={lockExplained}>
         <IonItem>
-          <IonIcon slot="start" icon={protectedByLock ? lockClosedOutline : lockOpenOutline} aria-hidden="true" />
-          <IonLabel className="ion-text-wrap">
-            <h2>{protectedByLock ? `Locked with your ${lockedWith}` : 'Encrypted, opens without asking'}</h2>
-            <p>{protectedByLock ? `Only your ${lockedWith} opens Subify’s data` : `Its key stays on this device, behind your ${platformLock()}`}</p>
-          </IonLabel>
+          <IonIcon slot="start" icon={lockClosedOutline} aria-hidden="true" />
+          <IonToggle key={`app-${lockChoiceDrawn}`} checked={appLocked} onIonChange={(event) => toggle(lockApp(event.detail.checked))}>
+            <IonLabel className="ion-text-wrap">
+              <h2>Lock Subify</h2>
+              <p>{appLocked ? `Asks for ${how}` : `Anyone using your unlocked ${platformDevice()} can open it`}</p>
+            </IonLabel>
+          </IonToggle>
+        </IonItem>
+        {appLocked && (
+          <IonItem>
+            <IonIcon slot="start" icon={timerOutline} aria-hidden="true" />
+            <IonSelect
+              key={lockChoiceDrawn}
+              label="Ask to unlock"
+              labelPlacement="stacked"
+              interface="action-sheet"
+              value={keyring?.lockAfter ?? 'open'}
+              onIonChange={(event) => void setLockAfter(db, event.detail.value as LockAfter)}
+            >
+              {LOCK_AFTER_CHOICES.map(({ value, label }) => (
+                <IonSelectOption key={String(value)} value={value}>
+                  {label}
+                </IonSelectOption>
+              ))}
+            </IonSelect>
+          </IonItem>
+        )}
+        <IonItem>
+          <IonIcon slot="start" icon={eyeOffOutline} aria-hidden="true" />
+          <IonToggle key={`secrets-${lockChoiceDrawn}`} checked={secretsLocked} disabled={secretLock === undefined} onIonChange={(event) => toggle(lockSecrets(event.detail.checked))}>
+            <IonLabel className="ion-text-wrap">
+              <h2>Lock secret channels</h2>
+              <p>{secretLock === 'pin' ? 'With their PIN, until you choose a password' : secretsLocked ? 'Asked each time you show them' : 'Hidden, but anyone using the open app can show them'}</p>
+            </IonLabel>
+          </IonToggle>
         </IonItem>
         {(biometrics.available || biometricsOn) && (
           <IonItem>
             <IonIcon slot="start" icon={fingerPrintOutline} aria-hidden="true" />
-            <IonToggle key={lockChoiceDrawn} checked={biometricsOn} onIonChange={(event) => void toggleBiometrics(event.detail.checked)}>
+            <IonToggle key={`bio-${lockChoiceDrawn}`} checked={biometricsOn} onIonChange={(event) => void toggleBiometrics(event.detail.checked)}>
               <IonLabel className="ion-text-wrap">
-                <h2>Passkey</h2>
-                <p>With {biometrics.verifiedBy}</p>
-                {/* Another install of Subify on this device saved its own: the name tells which is this one's. */}
-                {biometricsOn && passkeyName !== undefined && <p>Saved as “{passkeyName}”</p>}
+                <h2>{biometrics.verifiedBy}</h2>
+                <p>Instead of typing your password</p>
               </IonLabel>
             </IonToggle>
           </IonItem>
         )}
-        <IonItem button detail={false} {...(locks ? {} : { lines: 'none' as const })} onClick={() => openPassword({ kind: hasPassword ? 'change' : 'set' })}>
+        <IonItem button detail={false} {...(appLocked ? {} : { lines: 'none' as const })} onClick={() => void choosePassword()}>
           <IonIcon slot="start" icon={keyOutline} aria-hidden="true" />
-          <IonLabel>{hasPassword ? 'Change the password' : 'Set a password'}</IonLabel>
-        </IonItem>
-        {locks && (
-          <>
-            <IonItem>
-              <IonIcon slot="start" icon={timerOutline} aria-hidden="true" />
-              <IonSelect
-                key={lockChoiceDrawn}
-                label="Ask to unlock"
-                labelPlacement="stacked"
-                interface="action-sheet"
-                value={keyring?.lockAfter ?? 'open'}
-                onIonChange={(event) => chooseLockAfter(event.detail.value as LockAfter)}
-              >
-                {LOCK_AFTER_CHOICES.map(({ value, label }) => (
-                  <IonSelectOption key={String(value)} value={value}>
-                    {label}
-                  </IonSelectOption>
-                ))}
-              </IonSelect>
-            </IonItem>
-            <IonItem button detail={false} lines="none" onClick={() => void lock()}>
-              <IonIcon slot="start" icon={lockClosedOutline} aria-hidden="true" />
-              <IonLabel>Lock now</IonLabel>
-            </IonItem>
-          </>
-        )}
-      </Section>
-
-      {/* Always there, secret channels or not: its presence must not tell that some are hidden. */}
-      <Section heading="Secret channels">
-        <IonItem button detail={false} lines="none" onClick={chooseLock}>
-          <IonIcon slot="start" icon={eyeOffOutline} aria-hidden="true" />
           <IonLabel className="ion-text-wrap">
-            <h2>{SECRET_LOCK_LABELS[secretLock ?? 'none']}</h2>
-            <p>{secretLock === 'none' || secretLock === undefined ? 'Anyone using the open app can show them' : 'Change how they unlock'}</p>
+            <h2>{hasPassword ? 'Change the password' : 'Choose a password'}</h2>
+            <p>{hasPassword ? 'A PIN or a password' : 'Needed to lock: a PIN or a password'}</p>
           </IonLabel>
         </IonItem>
+        {appLocked && (
+          <IonItem button detail={false} lines="none" onClick={() => void lock()}>
+            <IonIcon slot="start" icon={lockClosedOutline} aria-hidden="true" />
+            <IonLabel>Lock now</IonLabel>
+          </IonItem>
+        )}
       </Section>
 
       <Section
@@ -630,18 +564,6 @@ async function saveFile(contents: string, name: string): Promise<boolean> {
   setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
 
   return true;
-}
-
-const SECRET_LOCK_LABELS: Record<SecretLock, string> = {
-  none: 'Lock secret channels',
-  passkey: 'Locked with your passkey',
-  password: 'Locked with the app’s password',
-  pin: 'Locked with a PIN',
-};
-
-/** What already guards the app's data when Subify doesn't lock itself. */
-function platformLock(): string {
-  return `${platformDevice()}’s lock`;
 }
 
 function platformDevice(): 'phone' | 'computer' {

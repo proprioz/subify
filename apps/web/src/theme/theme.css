@@ -1281,3 +1281,8 @@ ion-popover.info-popover ion-content {
   font-size: 14px;
   line-height: 1.4;
 }
+
+/* How long the app's password would hold (SecretFlow): a weak one in the text's colour, not a faint warning hue. */
+ion-note.strength-weak {
+  --color: var(--ion-text-color);
+}

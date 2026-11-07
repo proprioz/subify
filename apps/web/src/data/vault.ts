@@ -6,7 +6,9 @@ import type { SubifyDb } from './db';
 /**
  * Everything the app keeps about the user is sealed on the device with a random key, made at the
  * first launch. The key stays on the device until the user asks the app to lock: it is then sealed
- * by Face ID / a fingerprint (WebAuthn PRF), by a password, or both. The sealing sits under Dexie,
+ * by Face ID / a fingerprint (WebAuthn PRF), by a password, or both. A passkey whose password manager
+ * gives no key (no PRF) still locks the app, as a door: the key stays on the device, and the app opens
+ * it only once the passkey has confirmed it's the user. The sealing sits under Dexie,
  * so the rest of the app reads and writes plain values: each row is stored as its sealed value,
  * plus the fields its indexes need. Dates, order of addition and status stay readable; channel and video ids become
  * keyed hashes, so a copy of the database names no channel and no video.
@@ -15,8 +17,8 @@ import type { SubifyDb } from './db';
  * IndexedDB commit it half-way.
  */
 
-/** The password's minimum length: letters allowed. */
-export const MINIMUM_PASSWORD_LENGTH = 8;
+/** The password's minimum length: a PIN of 6 digits is one too, and the sheet says how fast it would fall (strength.ts). */
+export const MINIMUM_PASSWORD_LENGTH = 6;
 
 /** When the app asks to be unlocked again: at each opening, at each return, after some minutes unused, or never (the key is then kept on the device). */
 export type LockAfter = 'open' | 'foreground' | 5 | 15 | 60 | 'never';
@@ -27,7 +29,6 @@ export const LOCK_AFTER_CHOICES: readonly { value: LockAfter; label: string }[] 
   { value: 5, label: 'After 5 minutes unused' },
   { value: 15, label: 'After 15 minutes unused' },
   { value: 60, label: 'After 60 minutes unused' },
-  { value: 'never', label: 'Never' },
 ];
 
 /** What the keyring table holds: the key, sealed by each way of unlocking it. Never sealed itself. */
@@ -39,17 +40,31 @@ export interface Keyring {
   password: Uint8Array | null;
   /**
    * Face ID / a fingerprint, on: the key sealed with what the device's passkey gives for `salt`
-   * (WebAuthn PRF), or null when the passkey gives nothing (it then only shows secret channels).
+   * (WebAuthn PRF), or null when the passkey gives nothing: the key then stays on the device
+   * (`key`), opened once the passkey confirms it's the user.
    */
   biometrics: { credential: string; salt: Uint8Array; sealed: Uint8Array | null } | null;
   /**
    * The device's passkey, kept once Face ID is off, so that turning it on again makes no new one.
-   * `noKey`: it gives no key (no PRF, as Bitwarden on iOS), so it can't lock the app.
    */
-  passkey?: { credential: string; salt: Uint8Array; noKey?: true };
-  /** The key itself, only when the user chose never to be asked. */
+  passkey?: { credential: string; salt: Uint8Array };
+  /** The key itself: when the app never asks, or when its passkey gives no key (`keepsKey`). */
   key: Uint8Array | null;
   lockAfter: LockAfter;
+  /** Wrong passwords in a row, and until when the next one has to wait. */
+  attempts?: { failures: number; until: number };
+}
+
+/** The answer to a password: wrong ones make the next wait after a few (`waitUntil`). */
+export type PasswordCheck = { ok: true } | { ok: false; waitUntil: number | null };
+
+/** Wrong passwords or PINs allowed before the app makes the user wait, then twice as long each time. */
+const FREE_ATTEMPTS = 5;
+const FIRST_WAIT = 30_000;
+
+/** Until when the attempt after `failures` wrong ones in a row waits: 0 for no wait. */
+export function waitAfter(failures: number, now: number): number {
+  return failures >= FREE_ATTEMPTS ? now + FIRST_WAIT * 2 ** (failures - FREE_ATTEMPTS) : 0;
 }
 
 export class LockedError extends Error {
@@ -87,7 +102,10 @@ export async function readKeyring(db: SubifyDb): Promise<Keyring | undefined> {
   return db.keyring.get('local');
 }
 
-/** At launch: no keyring yet is a first visit; a kept key opens at once; otherwise locked. */
+/**
+ * At launch: no keyring yet is a first visit; a key kept because the app never asks opens at once;
+ * otherwise locked, a key kept for a passkey without one included.
+ */
 export async function startVault(db: SubifyDb): Promise<'setup' | 'locked' | 'open'> {
   const keyring = await readKeyring(db);
 
@@ -97,7 +115,7 @@ export async function startVault(db: SubifyDb): Promise<'setup' | 'locked' | 'op
     return 'setup';
   }
 
-  if (keyring.key !== null) {
+  if (keyring.key !== null && keyring.lockAfter === 'never') {
     db.cipher.state = { kind: 'open', keys: deriveKeys(keyring.key) };
 
     return 'open';
@@ -140,20 +158,46 @@ export async function createVault(db: SubifyDb, random: (bytes: number) => Uint8
   });
 }
 
-/** Whether the app can be locked: a password, or Face ID that gives the key. */
+/** Whether the app can be locked: a password, or Face ID, whether its passkey gives the key or not. */
 export function canUnlock(keyring: Keyring | undefined): boolean {
-  return (keyring?.password ?? null) !== null || (keyring?.biometrics?.sealed ?? null) !== null;
+  return (keyring?.password ?? null) !== null || (keyring?.biometrics ?? null) !== null;
 }
 
-/** Opens the database with the password. False when it isn't the right one. */
-export async function unlockWithPassword(db: SubifyDb, password: string): Promise<boolean> {
-  const master = await masterFromPassword(db, password);
+/**
+ * Whether the key stays on the device: when the app never asks, or when Face ID is on with a
+ * passkey that gives no key, which could not open it otherwise.
+ */
+function keepsKey(keyring: Pick<Keyring, 'lockAfter' | 'biometrics'>): boolean {
+  return keyring.lockAfter === 'never' || (keyring.biometrics !== null && keyring.biometrics.sealed === null);
+}
 
-  if (master !== null) {
-    await opened(db, master);
+/** Opens the database with the password. Wrong, it counts towards the wait. */
+export async function unlockWithPassword(db: SubifyDb, password: string, now = Date.now()): Promise<PasswordCheck> {
+  const result = await tryPassword(db, password, now);
+
+  if (result.master !== null) {
+    await opened(db, result.master);
+
+    return { ok: true };
   }
 
-  return master !== null;
+  return { ok: false, waitUntil: result.waitUntil };
+}
+
+/**
+ * Opens the database with the key kept for a passkey that gives none. Only once that passkey has
+ * confirmed it's the user (verifyBiometrics): this is the door it guards.
+ */
+export async function unlockWithKeptKey(db: SubifyDb): Promise<boolean> {
+  const keyring = await readKeyring(db);
+
+  if (keyring?.key == null || keyring.biometrics === null) {
+    return false;
+  }
+
+  db.cipher.state = { kind: 'open', keys: deriveKeys(keyring.key) };
+
+  return true;
 }
 
 /** Opens the database with what the passkey gave. False when it doesn't open the key. */
@@ -168,26 +212,14 @@ export async function unlockWithBiometrics(db: SubifyDb, output: Uint8Array): Pr
   return master !== null;
 }
 
-/** An unlock puts back the key “never” keeps, if the user locked the app by hand. */
+/** An unlock puts back a key the device should keep and doesn't (a passkey without one, turned on before this version). */
 async function opened(db: SubifyDb, master: Uint8Array): Promise<void> {
   db.cipher.state = { kind: 'open', keys: deriveKeys(master) };
   const keyring = await readKeyring(db);
 
-  if (keyring?.lockAfter === 'never' && keyring.key === null) {
+  if (keyring !== undefined && keepsKey(keyring) && keyring.key === null) {
     await db.keyring.update('local', { key: master });
   }
-}
-
-/**
- * The user locks the app by hand: a key kept on the device (“never”) goes too, until the next
- * unlock. Refused without a way to unlock, which would leave the data closed for good.
- */
-export async function forgetKeptKey(db: SubifyDb): Promise<void> {
-  if (!canUnlock(await readKeyring(db))) {
-    throw new Error('Nothing would unlock the app.');
-  }
-
-  await db.keyring.update('local', { key: null });
 }
 
 /** Forgets the key in memory. A key kept on the device (“never”) stays. */
@@ -197,9 +229,11 @@ export function lockVault(db: SubifyDb): void {
   }
 }
 
-/** Whether a password is the app's, without changing anything. */
-export async function isAppPassword(db: SubifyDb, password: string): Promise<boolean> {
-  return (await masterFromPassword(db, password)) !== null;
+/** Whether a password is the app's, without opening anything. Wrong, it counts towards the wait. */
+export async function checkAppPassword(db: SubifyDb, password: string, now = Date.now()): Promise<PasswordCheck> {
+  const result = await tryPassword(db, password, now);
+
+  return result.master !== null ? { ok: true } : { ok: false, waitUntil: result.waitUntil };
 }
 
 /** Only while unlocked: sets the password, or replaces it. */
@@ -211,30 +245,30 @@ export async function setPassword(db: SubifyDb, password: string, random: (bytes
   await db.keyring.update('local', { kdf: { salt, ...KDF }, password: sealBytes(passwordKey, keys.master, aad('password'), random) });
 }
 
-export async function changePassword(db: SubifyDb, current: string, next: string, random: (bytes: number) => Uint8Array = randomBytes): Promise<boolean> {
+export async function changePassword(db: SubifyDb, current: string, next: string, now = Date.now(), random: (bytes: number) => Uint8Array = randomBytes): Promise<PasswordCheck> {
   checkLength(next);
+  const check = await checkAppPassword(db, current, now);
 
-  if ((await masterFromPassword(db, current)) === null) {
-    return false;
+  if (check.ok) {
+    await setPassword(db, next, random);
   }
 
-  await setPassword(db, next, random);
-
-  return true;
+  return check;
 }
 
 /**
- * Only while unlocked: “never” keeps the key on the device, any other choice removes it, and needs
- * a way to unlock.
+ * Only while unlocked: “never” keeps the key on the device; any other choice needs a way to
+ * unlock, and removes the key unless a passkey without one needs it.
  */
 export async function setLockAfter(db: SubifyDb, lockAfter: LockAfter): Promise<void> {
   const keys = openKeys(db);
+  const keyring = await readKeyring(db);
 
-  if (lockAfter !== 'never' && !canUnlock(await readKeyring(db))) {
+  if (keyring === undefined || (lockAfter !== 'never' && !canUnlock(keyring))) {
     throw new Error('Nothing would unlock the app.');
   }
 
-  await db.keyring.update('local', { lockAfter, key: lockAfter === 'never' ? keys.master : null });
+  await db.keyring.update('local', { lockAfter, key: keepsKey({ ...keyring, lockAfter }) ? keys.master : null });
 }
 
 /** Turns Face ID on with the device's passkey. `output` is what it gives, null when it gives nothing. */
@@ -246,8 +280,14 @@ export async function addBiometrics(
   random: (bytes: number) => Uint8Array = randomBytes,
 ): Promise<void> {
   const keys = openKeys(db);
-  const sealed = output === null ? null : sealBytes(output, keys.master, aad('biometrics'), random);
-  await db.keyring.update('local', { biometrics: { credential, salt, sealed }, passkey: { credential, salt, ...(sealed === null ? { noKey: true as const } : {}) } });
+  const keyring = await readKeyring(db);
+
+  if (keyring === undefined) {
+    return;
+  }
+
+  const biometrics = { credential, salt, sealed: output === null ? null : sealBytes(output, keys.master, aad('biometrics'), random) };
+  await db.keyring.update('local', { biometrics, passkey: { credential, salt }, key: keepsKey({ ...keyring, biometrics }) ? keys.master : null });
 }
 
 /** Remembers the device's passkey, made but not used yet, so that the next try uses it rather than making another. */
@@ -257,7 +297,8 @@ export async function rememberPasskey(db: SubifyDb, credential: string, salt: Ui
 
 /**
  * Only while unlocked: Face ID off. The passkey is remembered, to be used again. Without a
- * password, nothing else unlocks the app: it then opens without asking.
+ * password, nothing else unlocks the app: it then opens without asking. With one, the key the
+ * passkey may have kept on the device goes.
  */
 export async function removeBiometrics(db: SubifyDb): Promise<void> {
   const keys = openKeys(db);
@@ -268,8 +309,34 @@ export async function removeBiometrics(db: SubifyDb): Promise<void> {
   }
 
   const passkey = keyring.passkey ?? (keyring.biometrics === null ? undefined : { credential: keyring.biometrics.credential, salt: keyring.biometrics.salt });
-  const unlocked = keyring.password === null ? { lockAfter: 'never' as const, key: keys.master } : {};
-  await db.keyring.update('local', { biometrics: null, ...(passkey === undefined ? {} : { passkey }), ...unlocked });
+  const lockAfter = keyring.password === null ? 'never' : keyring.lockAfter;
+  const key = keepsKey({ lockAfter, biometrics: null }) ? keys.master : null;
+  await db.keyring.update('local', { biometrics: null, ...(passkey === undefined ? {} : { passkey }), lockAfter, key });
+}
+
+/** The key, if the password opens it. Wrong, it counts towards the wait: a PIN is short. */
+async function tryPassword(db: SubifyDb, password: string, now: number): Promise<{ master: Uint8Array } | { master: null; waitUntil: number | null }> {
+  const attempts = (await readKeyring(db))?.attempts ?? { failures: 0, until: 0 };
+
+  if (now < attempts.until) {
+    return { master: null, waitUntil: attempts.until };
+  }
+
+  const master = await masterFromPassword(db, password);
+
+  if (master !== null) {
+    if (attempts.failures > 0) {
+      await db.keyring.update('local', { attempts: { failures: 0, until: 0 } });
+    }
+
+    return { master };
+  }
+
+  const failures = attempts.failures + 1;
+  const until = waitAfter(failures, now);
+  await db.keyring.update('local', { attempts: { failures, until } });
+
+  return { master: null, waitUntil: until === 0 ? null : until };
 }
 
 async function masterFromPassword(db: SubifyDb, password: string): Promise<Uint8Array | null> {

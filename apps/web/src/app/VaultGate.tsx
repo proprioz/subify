@@ -4,8 +4,8 @@ import { lockClosedOutline } from 'ionicons/icons';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { EmptyState } from '../components/EmptyState';
 import { Column } from '../components/Page';
-import { createVault, readKeyring, unlockWithBiometrics, unlockWithPassword } from '../data/vault';
-import { askPasskey } from '../ui/biometrics';
+import { createVault, readKeyring, unlockWithBiometrics, unlockWithKeptKey, unlockWithPassword } from '../data/vault';
+import { askPasskey, biometricsLabel, midSentence, thisPlatform, verifyBiometrics } from '../ui/biometrics';
 import { resetEverything } from '../ui/reset';
 import { useAppData } from './AppData';
 import { Tour, Welcome } from './Welcome';
@@ -109,8 +109,9 @@ function Unlock() {
     return null;
   }
 
-  const biometrics = keyring.biometrics?.sealed == null ? null : keyring.biometrics;
+  const biometrics = keyring.biometrics;
   const hasPassword = keyring.password !== null;
+  const verifiedBy = biometricsLabel(thisPlatform());
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -122,10 +123,12 @@ function Unlock() {
     setBusy(true);
     setError(null);
 
-    if (await unlockWithPassword(db, password)) {
+    const result = await unlockWithPassword(db, password);
+
+    if (result.ok) {
       vaultOpened();
     } else {
-      setError('That’s not the password.');
+      setError(result.waitUntil === null ? 'That’s not the password.' : `Too many tries. Wait ${Math.ceil((result.waitUntil - Date.now()) / 1000)} seconds.`);
       setBusy(false);
     }
   };
@@ -136,19 +139,27 @@ function Unlock() {
     }
 
     setError(null);
-    const output = (await askPasskey(biometrics.credential, biometrics.salt))?.output ?? null;
+    // A passkey that gives the key opens it; one that gives none opens the door to the key the device keeps.
+    const opened =
+      biometrics.sealed === null
+        ? (await verifyBiometrics(biometrics.credential)) && (await unlockWithKeptKey(db))
+        : await (async () => {
+            const output = (await askPasskey(biometrics.credential, biometrics.salt))?.output ?? null;
 
-    if (output !== null && (await unlockWithBiometrics(db, output))) {
+            return output !== null && (await unlockWithBiometrics(db, output));
+          })();
+
+    if (opened) {
       vaultOpened();
     } else {
-      setError('The passkey didn’t unlock the app.');
+      setError(`${verifiedBy} didn’t unlock the app.`);
     }
   };
 
   const forgot = () => {
     void presentAlert({
-      header: hasPassword ? 'Forgot the password?' : 'Passkey doesn’t work?',
-      message: `${hasPassword ? 'The password can’t be recovered' : 'Without the passkey, nothing can open the app’s data'}, not even whoever runs the server. You can only reset the app, which deletes everything on this device, then restore a backup.`,
+      header: hasPassword ? 'Forgot the password?' : `${verifiedBy} doesn’t work?`,
+      message: `${hasPassword ? 'The password can’t be recovered' : `Without ${midSentence(verifiedBy)}, nothing can open the app’s data`}, not even whoever runs the server. You can only reset the app, which deletes everything on this device, then restore a backup.`,
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
@@ -168,10 +179,10 @@ function Unlock() {
     <Screen>
       <EmptyState icon={lockClosedOutline} heading="Subify is locked">
         {hasPassword && biometrics !== null
-          ? 'Use your passkey or your password to open the app.'
+          ? `Use ${midSentence(verifiedBy)}, or your password, to open the app.`
           : hasPassword
             ? 'Enter your password to open the app.'
-            : 'Use your passkey to open the app.'}
+            : `Use ${midSentence(verifiedBy)} to open the app.`}
       </EmptyState>
       <form onSubmit={(event) => void submit(event)}>
         {hasPassword && (
@@ -192,7 +203,7 @@ function Unlock() {
         <div className="ion-padding">
           {biometrics !== null && (
             <IonButton expand="block" fill={hasPassword ? 'outline' : 'solid'} onClick={() => void useBiometrics()}>
-              Use your passkey
+              Use {midSentence(verifiedBy)}
             </IonButton>
           )}
           {hasPassword && (
@@ -201,7 +212,7 @@ function Unlock() {
             </IonButton>
           )}
           <IonButton expand="block" fill="clear" color="medium" onClick={forgot}>
-            {hasPassword ? 'Forgot the password?' : 'Passkey doesn’t work?'}
+            {hasPassword ? 'Forgot the password?' : `${verifiedBy} doesn’t work?`}
           </IonButton>
           <IonButton expand="block" fill="clear" color="medium" onClick={() => setTouring(true)}>
             Take the tour

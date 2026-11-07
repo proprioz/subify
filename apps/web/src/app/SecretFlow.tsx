@@ -15,24 +15,28 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createContext, type FormEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getMeta, setMeta } from '../data/db';
-import { beginSecretTour, checkSecretCode, forgetSecretChannels, SECRET_CODE, secretUnlock, setSecretCode } from '../data/secret';
-import { isAppPassword, readKeyring } from '../data/vault';
-import { verifyBiometrics } from '../ui/biometrics';
+import { beginSecretTour, checkSecretCode, forgetSecretChannels, secretUnlock } from '../data/secret';
+import { guessTimeSentence, secondsToGuess, WEAK_BELOW_SECONDS } from '../data/strength';
+import { changePassword, checkAppPassword, MINIMUM_PASSWORD_LENGTH, readKeyring, setLockAfter, setPassword } from '../data/vault';
+import { midSentence, verifyBiometrics } from '../ui/biometrics';
 import { useToast } from '../ui/toast';
 import { useAppData } from './AppData';
 import { useBiometricsFlow } from './BiometricsFlow';
 
-/** `choose`: the app's password or a PIN of their own; `unlockApp`: the app's password. */
-type Step = 'choose' | 'create' | 'unlock' | 'unlockApp' | 'change';
+/**
+ * `create`, `change`: the app's password (a PIN is one too); `unlockApp`: entering it; `unlock`: a
+ * PIN of secret channels' own, from earlier versions or a backup.
+ */
+type Step = 'create' | 'change' | 'unlock' | 'unlockApp';
 
-/** What to do once the code is chosen or entered; `confirm` hears whether the unlock went through. */
+/** What to do once the password is chosen or entered; `confirm` hears whether it went through. */
 type Then = { show: true } | { confirm: (ok: boolean) => void } | null;
 
 /**
- * What guards the secret channels: nothing (they are only out of sight), the device's passkey,
- * the app's password, or a PIN of their own. Undefined until read.
+ * What guards the secret channels: nothing (they are only out of sight), the app's lock (Face ID
+ * or the app's password), or a PIN of their own. Undefined until read.
  */
-export type SecretLock = 'none' | 'passkey' | 'password' | 'pin';
+export type SecretLock = 'none' | 'app' | 'pin';
 
 /**
  * The short tour after the first channel made secret: where they show again (`reveal`: the
@@ -48,22 +52,24 @@ interface SecretFlow {
   confirmSecrets(): Promise<boolean>;
   /** Makes a channel secret, without asking for anything, or shows it like the others again. */
   setChannelSecret(key: string, secret: boolean): void;
-  /** Chooses, or changes, what secret channels unlock with. */
-  chooseLock(): void;
+  /** Locks secret channels with the app's lock, choosing its password first if it has none; or, once confirmed, no longer. */
+  lockSecrets(on: boolean): Promise<void>;
+  /** Locks Subify itself the same way; or lets it open without asking. */
+  lockApp(on: boolean): Promise<void>;
+  /** Chooses the app's password, or changes it. True once saved. */
+  choosePassword(): Promise<boolean>;
   secretLock: SecretLock | undefined;
   tour: SecretTour;
   endTour(): void;
-  /** On once the device's passkey is on (Settings, Lock); unavailable when the device has no Face ID or fingerprint to offer. */
-  biometrics: 'on' | 'off' | 'unavailable';
-  turnOnBiometrics(): void;
 }
 
 const SecretFlowContext = createContext<SecretFlow | null>(null);
 
 /**
- * The secret code dialog and everything around it: choosing the code, entering it, offering
- * biometrics after the first unlock, changing it, and forgetting it (which removes the secret
- * channels). Secret channels hide again as soon as the app leaves the screen (AppData).
+ * One lock for the app and its secret channels: Face ID / a fingerprint when the device has it,
+ * and the app's password, required as soon as something locks, for when Face ID can't. This holds
+ * the dialog that chooses, changes and asks for it. Secret channels hide again as soon as the app
+ * leaves the screen (AppData).
  */
 export function SecretFlowProvider({ children }: { children: ReactNode }) {
   const { db, secretsShown, setSecretsShown } = useAppData();
@@ -84,19 +90,15 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
   const credential = keyring?.biometrics?.credential ?? legacyCredential ?? null;
   const hasPassword = (keyring?.password ?? null) !== null;
   const chosen = useLiveQuery(() => secretUnlock(db), [db]);
-  // “The app's lock” with nothing left to unlock it (Face ID turned off, no password): no lock.
-  const unlockWith = chosen === 'app' && !hasPassword && credential === null ? null : chosen;
   // Nothing may show without a lock before what guards them has been read.
   const secretLock: SecretLock | undefined =
-    keyring === undefined || legacyCredential === undefined || unlockWith === undefined
+    keyring === undefined || legacyCredential === undefined || chosen === undefined
       ? undefined
-      : unlockWith === 'pin'
+      : chosen === 'pin'
         ? 'pin'
-        : credential !== null
-          ? 'passkey'
-          : unlockWith === 'app'
-            ? 'password'
-            : 'none';
+        : chosen !== 'off' && (hasPassword || credential !== null)
+          ? 'app'
+          : 'none';
   const [tour, setTour] = useState<SecretTour>(null);
 
   // Shown during the tour: without a lock, its last step offers one; leaving them hides that offer too.
@@ -107,6 +109,9 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       setTour(null);
     }
   }, [secretsShown, tour, secretLock]);
+
+  // Resolved with false when the dialog closes without going through.
+  const pendingConfirm = useRef<((ok: boolean) => void) | null>(null);
 
   const open = (next: Step, after: Then) => {
     setCode('');
@@ -133,224 +138,256 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
     [setSecretsShown],
   );
 
-  // Face ID is one setting for the whole app (Settings, Lock): turned on here, it is on there too.
-  const turnOnBiometrics = useCallback(() => void biometricsFlow.turnOn(), [biometricsFlow]);
+  /** Opens a step and hears whether it went through. */
+  const ask = (next: Step) =>
+    new Promise<boolean>((resolve) => {
+      const confirm = (ok: boolean) => {
+        if (pendingConfirm.current === confirm) {
+          pendingConfirm.current = null;
+        }
 
-  /** Offers biometrics once, or again when a new code is chosen. */
-  const offerBiometrics = async (again = false) => {
-    if (credential !== null || (!again && (await getMeta(db, 'secretBiometricsOffered')) === true) || !biometricsFlow.available) {
+        resolve(ok);
+      };
+
+      pendingConfirm.current = confirm;
+      open(next, { confirm });
+    });
+
+  /** Asks for what shows secret channels, then does `after`: Face ID first, the password or the PIN if it doesn't confirm. */
+  const unlock = (after: NonNullable<Then>) => {
+    // Until the lock is read, nothing says what guards them: nothing shows, nothing is confirmed.
+    if (secretLock === undefined) {
+      if ('confirm' in after) {
+        after.confirm(false);
+      }
+
       return;
     }
 
-    await setMeta(db, 'secretBiometricsOffered', true);
-    turnOnBiometrics();
+    // Without a lock they are only out of sight: there is nothing to ask.
+    if (secretLock === 'none') {
+      void finish(after);
+
+      return;
+    }
+
+    const fallBack = () => {
+      if (secretLock === 'pin') {
+        open('unlock', after);
+      } else if (hasPassword) {
+        open('unlockApp', after);
+      } else {
+        // Face ID alone, from before the password was required: it didn't confirm.
+        if ('confirm' in after) {
+          after.confirm(false);
+        }
+
+        void toast(`${biometricsFlow.verifiedBy} didn’t confirm it’s you.`);
+      }
+    };
+
+    if (credential !== null) {
+      void verifyBiometrics(credential).then((verified) => (verified ? finish(after) : fallBack()));
+
+      return;
+    }
+
+    fallBack();
   };
 
-  /** Asks for what shows secret channels, then does `after`. */
-  const unlock = useCallback(
-    (after: NonNullable<Then>) => {
-      const refuse = () => {
-        if ('confirm' in after) {
-          after.confirm(false);
-        }
-
-        void toast('The passkey didn’t confirm it’s you.');
-      };
-
-      // Until the lock is read, nothing says what guards them: nothing shows, nothing is confirmed.
-      if (secretLock === undefined) {
-        if ('confirm' in after) {
-          after.confirm(false);
-        }
-
-        return;
-      }
-
-      // Without a lock they are only out of sight: there is nothing to ask.
-      if (secretLock === 'none') {
-        void finish(after);
-
-        return;
-      }
-
-      if (unlockWith === null || unlockWith === undefined) {
-        // A passkey already on is the way: no choice to make, the device asks for it.
-        void verifyBiometrics(credential!).then(async (verified) => {
-          if (verified) {
-            await setMeta(db, 'secretUnlock', 'app');
-            await finish(after);
-          } else {
-            refuse();
-          }
-        });
-
-        return;
-      }
-
-      // Face ID first, whichever way they unlock; the password or the PIN if it doesn't confirm.
-      const fallBack = () => (unlockWith === 'app' ? (hasPassword ? open('unlockApp', after) : refuse()) : open('unlock', after));
-
-      if (credential !== null) {
-        void verifyBiometrics(credential).then((verified) => (verified ? finish(after) : fallBack()));
-
-        return;
-      }
-
-      fallBack();
-    },
-    [db, credential, unlockWith, hasPassword, secretLock, finish, toast],
-  );
-
-  const toggleSecrets = useCallback(() => {
+  const toggleSecrets = () => {
     if (secretsShown) {
       setSecretsShown(false);
     } else {
       unlock({ show: true });
     }
-  }, [secretsShown, setSecretsShown, unlock]);
+  };
 
-  // Resolved with false when the dialog closes without the unlock going through.
-  const pendingConfirm = useRef<((ok: boolean) => void) | null>(null);
-
-  const confirmSecrets = useCallback(
-    () =>
-      new Promise<boolean>((resolve) => {
-        const confirm = (ok: boolean) => {
-          if (pendingConfirm.current === confirm) {
-            pendingConfirm.current = null;
-          }
-
-          resolve(ok);
-        };
-
-        pendingConfirm.current = confirm;
-        unlock({ confirm });
-      }),
-    [unlock],
-  );
-
-  const setChannelSecret = useCallback(
-    (key: string, secret: boolean) => {
-      void (async () => {
-        if (!secret) {
-          await db.subscriptions.update(key, { secret: false });
-
-          return;
+  const confirmSecrets = () =>
+    new Promise<boolean>((resolve) => {
+      const confirm = (ok: boolean) => {
+        if (pendingConfirm.current === confirm) {
+          pendingConfirm.current = null;
         }
 
-        // Read before the passkey becomes their lock below: a lock already chosen means they're known.
-        const touring = await beginSecretTour(db);
+        resolve(ok);
+      };
 
-        if ((unlockWith === null || unlockWith === undefined) && credential !== null) {
-          // Hiding a channel shows nothing: the passkey already on guards it, without asking.
-          await setMeta(db, 'secretUnlock', 'app');
-        }
+      pendingConfirm.current = confirm;
+      unlock({ confirm });
+    });
 
-        // Without a lock, the channel is only out of sight: one can be added now or later (chooseLock).
-        await db.subscriptions.update(key, { secret: true });
+  const choosePassword = () => ask(hasPassword ? 'change' : 'create');
 
-        if (touring) {
-          setTour('reveal');
-        } else {
-          await toast('Channel kept secret.', 1500);
-        }
-      })();
-    },
-    [db, toast, unlockWith, credential],
-  );
+  /**
+   * What any lock needs: the app's password, for when Face ID can't, then Face ID if the device
+   * has it (declined, the password alone locks).
+   */
+  const prepareLock = async (): Promise<boolean> => {
+    if (!hasPassword && !(await choosePassword())) {
+      return false;
+    }
+
+    if ((keyring?.biometrics ?? null) === null && biometricsFlow.available) {
+      await biometricsFlow.turnOn();
+    }
+
+    return true;
+  };
+
+  const lockSecrets = async (on: boolean) => {
+    if (on) {
+      if (await prepareLock()) {
+        await db.meta.bulkDelete(['secretCodeHash', 'secretLock']);
+        await setMeta(db, 'secretUnlock', 'app');
+        setTour(null);
+        await toast('Secret channels locked.', 2000);
+      }
+
+      return;
+    }
+
+    // Anyone holding the open app could otherwise take the lock away.
+    if (await confirmSecrets()) {
+      await db.meta.bulkDelete(['secretCodeHash', 'secretLock']);
+      await setMeta(db, 'secretUnlock', 'off');
+      await toast('Anyone using the open app can now show your secret channels.', 2500);
+    }
+  };
+
+  const lockApp = async (on: boolean) => {
+    if (on) {
+      if (await prepareLock()) {
+        await setLockAfter(db, 'open');
+        await toast('Subify now asks to unlock each time it opens.', 2500);
+      }
+
+      return;
+    }
+
+    await setLockAfter(db, 'never');
+    await toast('Subify now opens without asking.', 2500);
+  };
+
+  const setChannelSecret = (key: string, secret: boolean) => {
+    void (async () => {
+      if (!secret) {
+        await db.subscriptions.update(key, { secret: false });
+
+        return;
+      }
+
+      const touring = await beginSecretTour(db);
+      // The app's lock guards it at once, if it has one; otherwise it is only out of sight.
+      await db.subscriptions.update(key, { secret: true });
+
+      if (touring) {
+        setTour('reveal');
+      } else {
+        await toast('Channel kept secret.', 1500);
+      }
+    })();
+  };
+
+  const tooMany = (waitUntil: number | null, wrong: string) => (waitUntil === null ? wrong : `Too many tries. Wait ${Math.ceil((waitUntil - Date.now()) / 1000)} seconds.`);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
 
     if (step === 'unlockApp') {
-      if (await isAppPassword(db, code)) {
+      const result = await checkAppPassword(db, code);
+
+      if (result.ok) {
         const after = then;
         close();
         await finish(after);
       } else {
-        setError('That’s not the app’s password.');
+        setError(tooMany(result.waitUntil, 'That’s not the password.'));
       }
 
       return;
     }
 
-    if (step === 'unlock' || step === 'change') {
-      const typed = step === 'unlock' ? code : current;
-      const result = await checkSecretCode(db, typed);
+    if (step === 'unlock') {
+      const result = await checkSecretCode(db, code);
 
-      if (!result.ok) {
-        setError(result.waitUntil === null ? 'That’s not the PIN.' : `Too many tries. Wait ${Math.ceil((result.waitUntil - Date.now()) / 1000)} seconds.`);
-
-        return;
-      }
-
-      if (step === 'unlock') {
+      if (result.ok) {
+        const after = then;
         close();
-        await finish(then);
-        await offerBiometrics();
-
-        return;
+        await finish(after);
+      } else {
+        setError(tooMany(result.waitUntil, 'That’s not the PIN.'));
       }
+
+      return;
     }
 
-    if (!SECRET_CODE.test(code)) {
-      setError('The PIN has 4 to 8 digits.');
+    if (code.length < MINIMUM_PASSWORD_LENGTH) {
+      setError(`The password needs at least ${MINIMUM_PASSWORD_LENGTH} characters or digits.`);
 
       return;
     }
 
     if (code !== repeat) {
-      setError('The two PINs are different.');
+      setError('The two passwords are different.');
 
       return;
     }
 
-    await setSecretCode(db, code);
-    await setMeta(db, 'secretUnlock', 'pin');
-    const after = then;
-    close();
-    await toast(step === 'change' ? 'PIN changed.' : 'PIN saved.', 1500);
-    await finish(after);
+    if (step === 'change') {
+      const result = await changePassword(db, current, code);
 
-    if (step === 'create') {
-      await offerBiometrics(true);
-    }
-  };
+      if (!result.ok) {
+        setError(tooMany(result.waitUntil, 'That’s not the current password.'));
 
-  /** Secret channels unlock like the app: Face ID / a fingerprint, or its password. */
-  const chooseAppLock = async () => {
-    // The device is asked first, while the tap is being handled; the database waits.
-    if (credential !== null) {
-      // Choosing it isn't proof: the device asks, like at every unlock.
-      if (await verifyBiometrics(credential)) {
-        await db.meta.bulkDelete(['secretCodeHash', 'secretLock']);
-        await setMeta(db, 'secretUnlock', 'app');
-        const after = then;
-        close();
-        await finish(after);
-      } else {
-        setError('The passkey didn’t confirm it’s you.');
+        return;
       }
-
-      return;
+    } else {
+      await setPassword(db, code);
     }
 
-    // Turning it on asks the device, which is proof enough.
-    if (await biometricsFlow.turnOn()) {
+    // The app's password replaces a PIN of secret channels' own.
+    if (chosen === 'pin') {
       await db.meta.bulkDelete(['secretCodeHash', 'secretLock']);
       await setMeta(db, 'secretUnlock', 'app');
-      const after = then;
-      close();
-      await finish(after);
     }
+
+    const after = then;
+    close();
+    await toast(step === 'change' ? 'Password changed.' : 'Password saved.', 1500);
+    await finish(after);
   };
 
-  const chooseAppPassword = async () => {
-    await setMeta(db, 'secretUnlock', 'app');
-    await db.meta.bulkDelete(['secretCodeHash', 'secretLock']);
-    // Choosing it isn't proof of knowing it: the password is asked like at every unlock.
-    open('unlockApp', then);
+  /**
+   * A forgotten password, asked while the app is open (secret channels, or changing it): as a
+   * forgotten PIN, it removes the secret channels it guards, then a new one is chosen. Anyone holding
+   * the open app could already reset it; this keeps the rest.
+   */
+  const forgetPassword = () => {
+    void presentAlert({
+      header: 'Forgot the password?',
+      message: 'It can’t be recovered. You can remove every secret channel, with its videos, then choose a new password. Your other channels stay.',
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Remove secret channels',
+          role: 'destructive',
+          handler: () => {
+            // Read now: `step` changes below. Changing it goes on, as choosing it; anything else was refused.
+            const changing = step === 'change';
+            void forgetSecretChannels(db).then(() => {
+              if (!changing) {
+                pendingConfirm.current?.(false);
+              }
+
+              setSecretsShown(false);
+              open('create', changing ? then : null);
+            });
+          },
+        },
+      ],
+    });
   };
 
   const forget = () => {
@@ -385,19 +422,20 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       close();
       await finish(after);
     } else {
-      setError('The passkey didn’t confirm it’s you.');
+      setError(`${biometricsFlow.verifiedBy} didn’t confirm it’s you.`);
     }
   };
 
-  const title = step === 'choose' ? (secretLock === 'none' ? 'Add a lock' : 'Change the lock') : step === 'create' ? 'Choose a PIN' : step === 'change' ? 'Change the PIN' : 'Secret channels';
-  const field = (label: string, value: string, onChange: (value: string) => void, autofocus = false, pin = true) => (
+  const choosing = step === 'create' || step === 'change';
+  const title = step === 'create' ? 'New password' : step === 'change' ? 'Password' : 'Secret channels';
+  const field = (label: string, value: string, onChange: (value: string) => void, { autofocus = false, pin = false, fresh = false } = {}) => (
     <IonItem>
       <IonInput
         label={label}
         labelPlacement="stacked"
         type="password"
         inputmode={pin ? 'numeric' : 'text'}
-        autocomplete={pin ? 'off' : 'current-password'}
+        autocomplete={pin ? 'off' : fresh ? 'new-password' : 'current-password'}
         {...(pin ? { maxlength: 8 } : {})}
         value={value}
         autofocus={autofocus}
@@ -405,24 +443,10 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
       />
     </IonItem>
   );
+  const weak = code.length > 0 && secondsToGuess(code) < WEAK_BELOW_SECONDS;
 
   return (
-    <SecretFlowContext.Provider
-      value={{
-        toggleSecrets,
-        confirmSecrets,
-        setChannelSecret,
-        chooseLock: () => {
-          setTour(null);
-          open('choose', null);
-        },
-        secretLock,
-        tour,
-        endTour: () => setTour(null),
-        biometrics: credential !== null ? 'on' : biometricsFlow.available ? 'off' : 'unavailable',
-        turnOnBiometrics,
-      }}
-    >
+    <SecretFlowContext.Provider value={{ toggleSecrets, confirmSecrets, setChannelSecret, lockSecrets, lockApp, choosePassword, secretLock, tour, endTour: () => setTour(null) }}>
       {children}
       <IonModal
         isOpen={step !== null}
@@ -430,78 +454,68 @@ export function SecretFlowProvider({ children }: { children: ReactNode }) {
           close();
           pendingConfirm.current?.(false);
         }}
-        initialBreakpoint={0.75} breakpoints={[0, 0.75]}>
+        initialBreakpoint={0.75}
+        breakpoints={[0, 0.75]}
+      >
         <IonHeader>
           <IonToolbar>
             <IonButtons slot="start">
               <IonButton onClick={close}>Cancel</IonButton>
             </IonButtons>
             <IonTitle>{title}</IonTitle>
-            {step !== 'choose' && (
-              <IonButtons slot="end">
-                <IonButton strong type="submit" form="secret-code">
-                  {step === 'unlock' || step === 'unlockApp' ? (then !== null && 'confirm' in then ? 'Unlock' : 'Show') : 'Save'}
-                </IonButton>
-              </IonButtons>
-            )}
+            <IonButtons slot="end">
+              <IonButton strong type="submit" form="secret-code">
+                {choosing ? 'Save' : then !== null && 'confirm' in then ? 'Unlock' : 'Show'}
+              </IonButton>
+            </IonButtons>
           </IonToolbar>
         </IonHeader>
         <IonContent>
-          {step === 'choose' ? (
-            <div className="ion-padding">
-              <IonNote color="medium" className="ion-display-block ion-padding-bottom">
-                Choose what showing your secret channels asks for. They still hide again when you leave the screen.
-              </IonNote>
-              {(credential !== null || biometricsFlow.available) && (
-                <IonButton expand="block" onClick={() => void chooseAppLock()}>
-                  Use your passkey
-                </IonButton>
-              )}
-              {hasPassword && (
-                <IonButton expand="block" fill={credential !== null || biometricsFlow.available ? 'outline' : 'solid'} onClick={() => void chooseAppPassword()}>
-                  Use the app’s password
-                </IonButton>
-              )}
-              <IonButton expand="block" fill="outline" onClick={() => open('create', then)}>
-                {hasPassword || credential !== null || biometricsFlow.available ? 'Choose a PIN instead' : 'Choose a PIN'}
-              </IonButton>
-            </div>
-          ) : (
-            <form id="secret-code" onSubmit={(event) => void submit(event)}>
-              <IonList inset>
-                {step === 'unlockApp' && field('App password', code, setCode, true, false)}
-                {step === 'change' && field('Current PIN', current, setCurrent, true)}
-                {step !== 'unlockApp' && field(step === 'unlock' ? 'PIN' : step === 'change' ? 'New PIN' : 'PIN', code, setCode, step !== 'change')}
-                {(step === 'create' || step === 'change') && field('Repeat the PIN', repeat, setRepeat)}
-              </IonList>
-            </form>
-          )}
+          <form id="secret-code" onSubmit={(event) => void submit(event)}>
+            <IonList inset>
+              {step === 'unlockApp' && field('Password', code, setCode, { autofocus: true })}
+              {step === 'unlock' && field('PIN', code, setCode, { autofocus: true, pin: true })}
+              {step === 'change' && field('Current password', current, setCurrent, { autofocus: true })}
+              {choosing && field(step === 'change' ? 'New password' : 'Password', code, setCode, { autofocus: step === 'create', fresh: true })}
+              {choosing && field('Repeat the password', repeat, setRepeat, { fresh: true })}
+            </IonList>
+          </form>
           {error !== null && (
             <IonNote color="danger" className="ion-display-block ion-padding-horizontal" role="alert">
               {error}
             </IonNote>
           )}
-          {step === 'create' && (
-            <IonNote color="medium" className="ion-display-block ion-padding-horizontal">
-              4 to 8 digits, apart from the app’s lock. A forgotten PIN can’t be recovered.
-            </IonNote>
+          {choosing && (
+            <div className="ion-padding-horizontal">
+              {code.length > 0 && (
+                <IonNote className={`ion-display-block ion-padding-bottom${weak ? ' strength-weak' : ''}`} aria-live="polite">
+                  {guessTimeSentence(code)}
+                  {weak ? ' A longer password, with letters, holds far longer.' : ''}
+                </IonNote>
+              )}
+              <IonNote color="medium" className="ion-display-block">
+                {`A PIN of ${MINIMUM_PASSWORD_LENGTH} digits or more, or any password. It opens Subify and your secret channels${
+                  biometricsFlow.available ? ` when ${midSentence(biometricsFlow.verifiedBy)} can’t` : ''
+                }. It can’t be recovered: forgotten, only a backup lets you start over.`}
+              </IonNote>
+            </div>
           )}
-          {step === 'unlockApp' && credential !== null && (
+          {step === 'change' && (
             <div className="ion-padding">
-              <IonButton expand="block" fill="outline" onClick={() => void useBiometrics()}>
-                Use your passkey
+              <IonButton expand="block" fill="clear" color="medium" onClick={forgetPassword}>
+                Forgot the password?
               </IonButton>
             </div>
           )}
-          {step === 'unlock' && (
+          {(step === 'unlock' || step === 'unlockApp') && (
             <div className="ion-padding">
               {credential !== null && (
                 <IonButton expand="block" fill="outline" onClick={() => void useBiometrics()}>
-                  Use your passkey
+                  Use {midSentence(biometricsFlow.verifiedBy)}
                 </IonButton>
               )}
-              <IonButton expand="block" fill="clear" color="medium" onClick={forget}>
-                Forgot the PIN?
+              <IonButton expand="block" fill="clear" color="medium" onClick={step === 'unlock' ? forget : forgetPassword}>
+                {step === 'unlock' ? 'Forgot the PIN?' : 'Forgot the password?'}
               </IonButton>
             </div>
           )}

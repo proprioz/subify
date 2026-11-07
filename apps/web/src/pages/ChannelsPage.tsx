@@ -18,8 +18,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   eyeOffOutline,
   eyeOutline,
-  fingerPrintOutline,
-  keyOutline,
   lockClosedOutline,
   optionsOutline,
   people,
@@ -53,7 +51,7 @@ import { MORE_ICON } from '../ui/icons';
 
 export function ChannelsPage() {
   const { db, api, gate, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
-  const { toggleSecrets, setChannelSecret, chooseLock, secretLock, biometrics, turnOnBiometrics } = useSecretFlow();
+  const { toggleSecrets, setChannelSecret, lockSecrets, secretLock } = useSecretFlow();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -111,14 +109,8 @@ export function ChannelsPage() {
   const optionActions: MenuAction[] = secretsShown
     ? [
         { text: 'Hide secret channels', icon: eyeOffOutline, handler: toggleSecrets },
-        // A lock is optional: added here or in Settings, at any time after the first secret channel.
-        ...(secretLock === 'none'
-          ? [{ text: 'Lock secret channels…', icon: lockClosedOutline, handler: chooseLock }]
-          : [
-              { text: 'Change secret code', icon: keyOutline, handler: chooseLock },
-              // One setting for the whole app: it is turned off in Settings, Lock.
-              ...(biometrics === 'off' ? [{ text: 'Use a passkey', icon: fingerPrintOutline, handler: turnOnBiometrics }] : []),
-            ]),
+        // A lock is optional: added here or in Settings, Lock, where it is also changed or turned off.
+        ...(secretLock === 'none' ? [{ text: 'Lock secret channels…', icon: lockClosedOutline, handler: () => void lockSecrets(true) }] : []),
       ]
     : [{ text: 'Show secret channels', icon: eyeOutline, handler: toggleSecrets }];
 

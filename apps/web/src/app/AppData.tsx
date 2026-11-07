@@ -12,7 +12,7 @@ import { loadTheme } from '../data/settings';
 import { unfinishedSync } from '../data/encrypted';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../data/sync';
 import { dropOldThumbnails } from '../data/thumbnails';
-import { forgetKeptKey, LockedError, lockVault, readKeyring, startVault } from '../data/vault';
+import { LockedError, lockVault, readKeyring, startVault } from '../data/vault';
 import { applyTheme } from '../theme/palette';
 import { appReplaced, onAppReplaced, updateApp } from '../ui/app-update';
 import { type InstallState, installState } from '../ui/install';
@@ -365,7 +365,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [installEvent]);
 
   return (
-    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: () => forgetKeptKey(db).then(() => setVault('locked')), api, gate, sync, syncing, syncDone, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
+    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: async () => setVault('locked'), api, gate, sync, syncing, syncDone, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
       {children}
     </AppDataContext.Provider>
   );

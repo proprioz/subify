@@ -24,10 +24,14 @@ export function PrivacyPage() {
           <li>The app’s data on this device is always encrypted, from the first launch.</li>
           <li>
             Until you lock Subify, the app keeps the key on this device and opens without asking: your phone’s or computer’s own lock guards it. To lock Subify itself, turn
-            on a passkey, which lets you use Face ID, a fingerprint or Windows Hello, or set a password, then choose when it asks.
+            on “Lock Subify” in Settings: it then asks for Face ID, a fingerprint or Windows Hello, or for your password, which may be a PIN.
           </li>
           <li>Subify makes one passkey per device, kept by your device’s password manager. It never reaches the server.</li>
-          <li>If you lose your password, or delete that key without a password, the app’s data can’t be opened again. A backup lets you start over.</li>
+          <li>
+            Some phones and password managers can’t give Subify a key with Face ID or a fingerprint. Subify then keeps its key on this device and opens it only after Face ID or your password: that
+            stops someone using your unlocked phone, not someone holding a copy of its data.
+          </li>
+          <li>If you forget your password, the app’s data can’t be opened again. A backup lets you start over.</li>
           <li>Hidden channels stay hidden until you unlock them.</li>
         </ul>
 

@@ -1,14 +1,18 @@
 import { getMeta, setMeta, type SubifyDb } from './db';
 
 /**
- * Secret channels stay out of sight until the user shows them. A lock is optional: with the app's
- * password (or Face ID / a fingerprint), or with a shorter PIN of their own, showing them asks for
- * it. This hides them from someone looking at the unlocked app; the database itself is sealed by
- * the app's password (vault.ts).
+ * Secret channels stay out of sight until the user shows them. They lock with the app's lock (Face
+ * ID / a fingerprint, or the app's password, which may be a PIN), as soon as it has one, unless the
+ * user turned that off. A PIN of their own, from earlier versions or a backup they made, still
+ * works until the app's password replaces it. This hides them from someone looking at the unlocked
+ * app; the database itself is sealed by the app's lock (vault.ts).
  */
 
-/** How secret channels unlock: the app's password, or a PIN of their own (`secretCodeHash`). */
-export type SecretUnlock = 'app' | 'pin';
+/**
+ * How secret channels unlock: the app's lock, a PIN of their own (`secretCodeHash`), or not at all
+ * (`off`, the user's choice). Never chosen: the app's lock, when it has one.
+ */
+export type SecretUnlock = 'app' | 'pin' | 'off';
 
 export async function secretUnlock(db: SubifyDb): Promise<SecretUnlock | null> {
   const chosen = await getMeta<SecretUnlock>(db, 'secretUnlock');

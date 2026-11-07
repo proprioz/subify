@@ -2,8 +2,8 @@ import { IonButton, IonContent, IonItem, IonLabel, IonList, IonModal, IonNote, u
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getMeta, setMeta } from '../data/db';
-import { addBiometrics, readKeyring, rememberPasskey, setLockAfter } from '../data/vault';
-import { askPasskey, biometricsAvailable, biometricsLabel, createPasskey, deviceName, type Enrolled, type Platform, thisPlatform } from '../ui/biometrics';
+import { addBiometrics, readKeyring, rememberPasskey } from '../data/vault';
+import { askPasskey, biometricsAvailable, biometricsLabel, createPasskey, deviceName, type Enrolled, midSentence, type Platform, thisPlatform } from '../ui/biometrics';
 import { useToast } from '../ui/toast';
 import { useAppData } from './AppData';
 
@@ -135,50 +135,33 @@ export function BiometricsFlowProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const { keyring } = latest.current;
+        // Whatever keeps the passkey, it does the same: with a key, it seals the app's; without, it
+        // guards the key the device keeps (vault.ts). What locks is chosen in Settings, Lock.
         await addBiometrics(db, result.credential, result.salt, result.output);
         // Secret channels' own passkey, from earlier versions: this one replaces it.
         await db.meta.delete('secretCredential');
-        const locks = result.output !== null && keyring?.password === null && keyring.lockAfter === 'never';
-
-        if (locks) {
-          await setLockAfter(db, 'open');
-        }
-
-        await toast(
-          result.output === null
-            ? 'Passkey on, for secret channels. Its password manager can’t lock Subify: to lock it, set a password.'
-            : keyring?.password === null
-              ? 'Passkey on. Subify asks for it each time it opens.'
-              : 'Passkey on. Your password still works.',
-          3000,
-        );
+        await toast(`${verifiedBy} on. Your password still works.`, 2500);
         done(true);
       })();
     },
-    [db, enroll, presentAlert, toast],
+    [db, enroll, presentAlert, toast, verifiedBy],
   );
 
   const turnOn = useCallback(
     () =>
       new Promise<boolean>((done) => {
         const reused = keyring?.passkey !== undefined;
-        // Known only for a passkey used before: a new one may lock the app, or not.
-        const noKey = keyring?.passkey?.noKey === true;
-        const noPassword = keyring?.password === null;
 
         void presentAlert({
-          header: 'Use a passkey?',
+          header: `Use ${midSentence(verifiedBy)}?`,
           message: [
-            noKey ? `A passkey lets you show secret channels with ${verifiedBy}.` : `A passkey lets you open Subify and its secret channels with ${verifiedBy}.`,
-            reused ? `Subify uses the one this ${device} already has: nothing new is saved.` : keeps(platform, device),
-            'Subify’s server never sees it.',
-            noKey
-              ? 'Its password manager can’t lock Subify with it: to lock Subify, set a password.'
-              : noPassword
-                ? 'Subify will ask for it each time it opens. If the passkey is ever deleted, only a backup brings your channels back.'
-                : 'Your password keeps working.',
-          ].join(' '),
+            // On Android it stays on the phone, in no password manager: there is nothing to explain.
+            platform === 'android' ? null : 'Subify saves a passkey for it.',
+            reused ? `It uses what this ${device} already has: nothing new is saved.` : keeps(platform, device),
+            'Subify’s server never sees it. Your password keeps working.',
+          ]
+            .filter((sentence) => sentence !== null)
+            .join(' '),
           buttons: [
             { text: 'Not now', role: 'cancel', handler: () => done(false) },
             { text: 'Continue', handler: () => attempt(done) },
@@ -270,7 +253,7 @@ function keeps(platform: Platform, device: string): string {
     case 'mac':
       return 'Your Mac keeps it in Passwords, built into macOS: there’s nothing to install.';
     case 'android':
-      return 'Your phone keeps it in Google Password Manager, built into Android: there’s nothing to install.';
+      return 'It stays on this phone: there’s nothing to install.';
     case 'windows':
       return 'Windows keeps it on this computer: there’s nothing to install.';
     case 'other':

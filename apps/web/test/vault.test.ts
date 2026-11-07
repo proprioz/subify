@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SubifyDb } from '../src/data/db';
 import { loadFeed } from '../src/data/feed';
 import { forgetSecretChannels } from '../src/data/secret';
-import { addBiometrics, createVault, forgetKeptKey, isAppPassword, LockedError, readKeyring, removeBiometrics, setLockAfter, setPassword, startVault, unlockWithBiometrics, unlockWithPassword } from '../src/data/vault';
+import { addBiometrics, checkAppPassword, createVault, LockedError, readKeyring, removeBiometrics, setLockAfter, setPassword, startVault, unlockWithBiometrics, unlockWithKeptKey, unlockWithPassword } from '../src/data/vault';
 import { channel, FakeServer, item, NOW, subscribe } from './fake-server';
 
 const A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -65,9 +65,9 @@ describe('local database encryption', () => {
 
     expect(await startVault(db)).toBe('locked');
     await expect(db.subscriptions.toArray()).rejects.toBeInstanceOf(LockedError);
-    expect(await unlockWithPassword(db, 'wrong password')).toBe(false);
-    expect(await isAppPassword(db, PASSWORD)).toBe(true);
-    expect(await unlockWithPassword(db, PASSWORD)).toBe(true);
+    expect(await unlockWithPassword(db, 'wrong password')).toEqual({ ok: false, waitUntil: null });
+    expect(await checkAppPassword(db, PASSWORD)).toEqual({ ok: true });
+    expect(await unlockWithPassword(db, PASSWORD)).toEqual({ ok: true });
 
     expect(await db.items.where('channel').equals(`youtube:${A}`).primaryKeys()).toEqual(['youtube:a1']);
     await forgetSecretChannels(db);
@@ -86,16 +86,25 @@ describe('local database encryption', () => {
     expect(await startVault(new SubifyDb(name))).toBe('locked');
   });
 
-  it('locked by hand with “never”, asks for the password until it is typed, then opens without it again', async () => {
-    const { name, db } = await sealedDb();
-    await setLockAfter(db, 'never');
-    await forgetKeptKey(db);
+  // A PIN is a password too: four digits fall in seconds without a wait between attempts.
+  it('makes the next password wait after five wrong ones, longer each time, even the right one', async () => {
+    const { name } = await sealedDb();
+    const db = new SubifyDb(name);
+    await startVault(db);
+    const now = 1_000_000;
 
-    const relaunched = new SubifyDb(name);
-    expect(await startVault(relaunched)).toBe('locked');
-    expect(await unlockWithPassword(relaunched, PASSWORD)).toBe(true);
+    for (let i = 0; i < 4; i++) {
+      expect(await unlockWithPassword(db, '0000', now)).toEqual({ ok: false, waitUntil: null });
+    }
 
-    expect(await startVault(new SubifyDb(name))).toBe('open');
+    expect(await unlockWithPassword(db, '0000', now)).toEqual({ ok: false, waitUntil: now + 30_000 });
+    // Counted across launches, and by every place that asks for it.
+    expect(await checkAppPassword(new SubifyDb(name), PASSWORD, now + 10_000)).toEqual({ ok: false, waitUntil: now + 30_000 });
+    expect(await unlockWithPassword(db, '0000', now + 30_000)).toEqual({ ok: false, waitUntil: now + 90_000 });
+    expect(await unlockWithPassword(db, PASSWORD, now + 90_000)).toEqual({ ok: true });
+    expect(await unlockWithPassword(db, '0000', now + 90_000)).toEqual({ ok: false, waitUntil: null });
+    // It guards the key itself: a PIN needs six digits at least.
+    await expect(setPassword(db, '24680')).rejects.toThrow();
   });
 });
 
@@ -116,7 +125,6 @@ describe('a device without a password', () => {
     expect(await startVault(db)).toBe('open');
     expect(await db.subscriptions.count()).toBe(2);
     await expect(setLockAfter(db, 15)).rejects.toThrow();
-    await expect(forgetKeptKey(db)).rejects.toThrow();
     expect(await startVault(new SubifyDb(name))).toBe('open');
   });
 
@@ -137,11 +145,26 @@ describe('a device without a password', () => {
     expect((await readKeyring(relaunched))?.passkey).toEqual({ credential: 'credential-1', salt });
   });
 
-  it('can’t lock with a passkey that gives no key: it only shows secret channels', async () => {
-    const { db } = await firstLaunch();
+  // Whatever password manager keeps the passkey, “Lock Subify” does what it says.
+  it('locks with a passkey that gives no key too, keeping the key behind it, and forgets that key once a password replaces it', async () => {
+    const { name, db } = await firstLaunch();
     await addBiometrics(db, 'credential-1', salt, null);
+    await setLockAfter(db, 'open');
 
-    await expect(setLockAfter(db, 'open')).rejects.toThrow();
+    const relaunched = new SubifyDb(name);
+    expect(await startVault(relaunched)).toBe('locked');
+    await expect(relaunched.subscriptions.count()).rejects.toBeInstanceOf(LockedError);
+    expect(await unlockWithKeptKey(relaunched)).toBe(true);
+    expect(await relaunched.subscriptions.count()).toBe(2);
+
+    // With a password, Face ID off: nothing kept on the device any more, the password alone opens it.
+    await setPassword(relaunched, PASSWORD);
+    await removeBiometrics(relaunched);
+    expect((await readKeyring(relaunched))?.key).toBeNull();
+    const last = new SubifyDb(name);
+    expect(await startVault(last)).toBe('locked');
+    expect(await unlockWithKeptKey(last)).toBe(false);
+    expect(await unlockWithPassword(last, PASSWORD)).toEqual({ ok: true });
   });
 
   it('keeps the password working after Face ID is turned off', async () => {
@@ -151,6 +174,6 @@ describe('a device without a password', () => {
 
     const relaunched = new SubifyDb(name);
     expect(await startVault(relaunched)).toBe('locked');
-    expect(await unlockWithPassword(relaunched, PASSWORD)).toBe(true);
+    expect(await unlockWithPassword(relaunched, PASSWORD)).toEqual({ ok: true });
   });
 });

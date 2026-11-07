@@ -50,6 +50,11 @@ export function biometricsLabel(platform: Platform): string {
   }
 }
 
+/** The label inside a sentence: “Face ID”, “Windows Hello” are names; “fingerprint or face” isn't. */
+export function midSentence(label: string): string {
+  return label.startsWith('Fingerprint') ? label.charAt(0).toLowerCase() + label.slice(1) : label;
+}
+
 /** The name the passkey carries in the password manager, so that each device's is told apart. */
 export function deviceName(userAgent: string, maxTouchPoints: number): string {
   if (/iPad/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) {
@@ -133,7 +138,11 @@ const NO_SHEET_MS = 1000;
 
 /**
  * Makes the device's passkey, after the user verified with it. `output` is the key it gives for
- * `salt` (WebAuthn PRF), null when it gives none: it then only guards secret channels.
+ * `salt` (WebAuthn PRF), null when it gives none: it then guards the key the device keeps.
+ *
+ * On Android it is asked not to be discoverable, which keeps it on the phone, out of any password
+ * manager: the user only sees their fingerprint or face. Other systems ignore this (an Apple device
+ * always saves a synced passkey), or keep it on the device already (Windows Hello).
  */
 export async function createPasskey(
   userId: Uint8Array,
@@ -156,7 +165,7 @@ export async function createPasskey(
           { type: 'public-key', alg: -7 },
           { type: 'public-key', alg: -257 },
         ],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: thisPlatform() === 'android' ? 'discouraged' : 'preferred' },
         attestation: 'none',
         timeout: 60_000,
         extensions: { prf: { eval: { first: salt } } },

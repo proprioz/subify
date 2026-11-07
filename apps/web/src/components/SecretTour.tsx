@@ -22,7 +22,7 @@ export function Tip({ arrow, actions, children }: { arrow: 'end' | 'at' | 'none'
  * shown, on either page, that a lock can be added. The step on “All” is the feed strip's (`AllTip`).
  */
 export function SecretTour({ place }: { place: 'channels' | 'feed' }) {
-  const { tour, endTour, chooseLock } = useSecretFlow();
+  const { tour, endTour, lockSecrets } = useSecretFlow();
   const navigate = useNavigate();
 
   if (tour === 'reveal' && place === 'channels') {
@@ -51,7 +51,7 @@ export function SecretTour({ place }: { place: 'channels' | 'feed' }) {
         arrow="none"
         actions={
           <>
-            <IonButton fill="clear" size="small" onClick={chooseLock}>
+            <IonButton fill="clear" size="small" onClick={() => void lockSecrets(true)}>
               Lock them…
             </IonButton>
             <IonButton fill="clear" size="small" className="tip-quiet" onClick={endTour}>

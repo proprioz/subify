@@ -102,6 +102,18 @@ describe('a passkey that wasn’t made', () => {
     expect(other.name).not.toBe(options.name);
   });
 
+  // Android keeps a passkey on the phone, out of Google Password Manager, only when it isn't discoverable.
+  it.each([
+    ['an Android phone', 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36', 'discouraged'],
+    ['an iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_1 like Mac OS X)', 'preferred'],
+  ])('stays on the device on %s when it can', async (_, userAgent, residentKey) => {
+    const create = vi.fn(() => Promise.reject(new DOMException('No.', 'NotAllowedError')));
+    vi.stubGlobal('navigator', { userAgent, maxTouchPoints: 5, credentials: { create } });
+    await createPasskey(new Uint8Array(16), clock(4000));
+
+    expect((create.mock.calls[0] as unknown as [{ publicKey: { authenticatorSelection: { residentKey: string } } }])[0].publicKey.authenticatorSelection.residentKey).toBe(residentKey);
+  });
+
   it('is kept when it was made but its sheet was then closed, so the next try uses it instead of adding one', async () => {
     const rawId = new Uint8Array([7, 7, 7]).buffer;
     const create = vi.fn(() => Promise.resolve({ rawId, getClientExtensionResults: () => ({ prf: { enabled: true } }) }));
