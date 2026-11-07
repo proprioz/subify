@@ -91,6 +91,8 @@ export function SettingsPage() {
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
   const checksConnection = useLiveQuery(() => connectionCheckOn(db), [db]) ?? false;
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
+  // Unknown for passkeys made before it was kept.
+  const passkeyName = useLiveQuery(() => getMeta<string>(db, 'passkeyName'), [db]);
   const hasPassword = (keyring?.password ?? null) !== null;
   const biometricsOn = (keyring?.biometrics ?? null) !== null;
   const locks = canUnlock(keyring);
@@ -443,9 +445,11 @@ export function SettingsPage() {
           <IonItem>
             <IonIcon slot="start" icon={fingerPrintOutline} aria-hidden="true" />
             <IonToggle key={lockChoiceDrawn} checked={biometricsOn} onIonChange={(event) => void toggleBiometrics(event.detail.checked)}>
-              <IonLabel>
+              <IonLabel className="ion-text-wrap">
                 <h2>Passkey</h2>
                 <p>With {biometrics.verifiedBy}</p>
+                {/* Another install of Subify on this device saved its own: the name tells which is this one's. */}
+                {biometricsOn && passkeyName !== undefined && <p>Saved as “{passkeyName}”</p>}
               </IonLabel>
             </IonToggle>
           </IonItem>

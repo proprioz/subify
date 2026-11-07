@@ -84,16 +84,22 @@ describe('a passkey that wasn’t made', () => {
     expect(await createPasskey(new Uint8Array(16), clock(4000))).toBe('unavailable');
   });
 
-  it('is asked for with the device’s user id, so a password manager replaces it instead of adding one', async () => {
+  // Two installs on one device, the same day, each save their own passkey: only the code and the minute tell them apart.
+  it('is asked for with the device’s user id, so a password manager replaces it instead of adding one, under a name only this install has', async () => {
     const create = refusing('NotAllowedError');
     const user = new Uint8Array(16).fill(9);
-    await createPasskey(user, clock(4000));
+    await createPasskey(user, clock(4000), new Date(2026, 10, 7, 16, 42));
 
     const options = (create.mock.calls[0] as unknown as [{ publicKey: { user: { id: Uint8Array; name: string; displayName: string } } }])[0].publicKey.user;
     expect(options.id).toEqual(user);
     // Bitwarden shows `name` under the site: “iPhone” alone said nothing about Subify.
-    expect(options.name).toBe('Subify on iPhone');
-    expect(options.displayName).toBe('Subify on iPhone');
+    // 0x09 0x09 0x09 → bits 00001 00100 00100 10000 → 1, 4, 4, 16 (G).
+    expect(options.name).toBe('Subify on iPhone (144G), 7 Nov 2026, 16:42');
+    expect(options.displayName).toBe(options.name);
+
+    await createPasskey(new Uint8Array(16).fill(200), clock(4000), new Date(2026, 10, 7, 16, 42));
+    const other = (create.mock.calls[1] as unknown as [{ publicKey: { user: { name: string } } }])[0].publicKey.user;
+    expect(other.name).not.toBe(options.name);
   });
 
   it('is kept when it was made but its sheet was then closed, so the next try uses it instead of adding one', async () => {
