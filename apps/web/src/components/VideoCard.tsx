@@ -79,7 +79,7 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
   // The popovers sit beside the card, not in it: the card's CSS containment would clip them.
   return (
     <>
-      <IonCard className="video-card">
+      <IonCard className={channel.secret ? 'video-card video-secret' : 'video-card'}>
         <IonItem
           button={!unavailable}
           detail={false}

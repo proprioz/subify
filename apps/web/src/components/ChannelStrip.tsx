@@ -202,8 +202,9 @@ export function ChannelStrip(props: Props) {
               onClick={() => onSelect(selected === channel.key ? null : channel.key)}
               label={channel.title}
               hideLabel={selected !== channel.key}
-              start={<ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} secret={channel.secret} />}
+              start={<ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} />}
               secret={channel.secret}
+              {...(channel.secret ? { className: 'strip-secret' } : {})}
             />
           ))}
       </div>
@@ -245,7 +246,7 @@ interface StripChipProps {
 }
 
 function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, secret = false, className }: StripChipProps) {
-  // The avatar's badge is hidden from screen readers: the name says it instead.
+  // A secret channel's chip only shows it by its halo: the name says it to screen readers.
   const name = ariaLabel ?? (hideLabel || secret ? `${label}${secret ? ', secret' : ''}` : undefined);
 
   return (

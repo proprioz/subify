@@ -60,6 +60,9 @@
   --app-avatar-color: #262626;
   --app-placeholder-background: #e5e5e5;
   --app-placeholder-color: #a3a3a3;
+
+  /* The smoke around a shown secret channel's chip and cards: a grey haze. */
+  --app-smoke: rgba(23, 23, 23, 0.2);
 }
 
 :root.ion-palette-dark {
@@ -103,6 +106,9 @@
   --app-avatar-color: #ffffff;
   --app-placeholder-background: #262626;
   --app-placeholder-color: #525252;
+
+  /* Ghostly in the dark: a pale haze. */
+  --app-smoke: rgba(245, 245, 245, 0.26);
 }
 
 /* The platform's red, for lives and the one button that sends something online. */
@@ -1020,7 +1026,61 @@ ion-item.secrets-banner ion-button {
   font-weight: 600;
 }
 
-/* On a secret channel's avatar, a badge in the corner, as a status on a profile picture. */
+/* A shown secret channel's chip in the strip, and its videos' cards, drawn as a dashed outline, like
+   a silhouette not quite there, in a halo of smoke that drifts slowly around them: a badge on the
+   strip's avatars would be cut by the round chip. The chip shown is filled, without an outline. */
+ion-card.video-secret {
+  border: 1.5px dashed rgba(var(--ion-text-color-rgb), 0.5);
+}
+
+.channel-strip ion-chip.strip-secret {
+  border-width: 1.5px;
+  border-style: dashed;
+  border-color: rgba(var(--ion-text-color-rgb), 0.6);
+}
+
+/* The halo is the element's own shadow, which neither the card's containment nor the chip's
+   overflow clips; the chip's is smaller, to stay within the strip, which clips what goes past its
+   edges. */
+ion-card.video-secret,
+.channel-strip ion-chip.strip-secret {
+  --smoke: 1px;
+  box-shadow:
+    calc(-6 * var(--smoke)) calc(-3 * var(--smoke)) calc(16 * var(--smoke)) calc(-2 * var(--smoke)) var(--app-smoke),
+    calc(6 * var(--smoke)) calc(5 * var(--smoke)) calc(20 * var(--smoke)) calc(-3 * var(--smoke)) var(--app-smoke),
+    0 0 calc(8 * var(--smoke)) 0 var(--app-smoke);
+  animation: secret-smoke 8s ease-in-out infinite;
+}
+
+.channel-strip ion-chip.strip-secret {
+  --smoke: 0.5px;
+}
+
+@keyframes secret-smoke {
+  33% {
+    box-shadow:
+      calc(5 * var(--smoke)) calc(-6 * var(--smoke)) calc(20 * var(--smoke)) calc(-3 * var(--smoke)) var(--app-smoke),
+      calc(-5 * var(--smoke)) calc(6 * var(--smoke)) calc(16 * var(--smoke)) calc(-2 * var(--smoke)) var(--app-smoke),
+      0 0 calc(12 * var(--smoke)) 0 var(--app-smoke);
+  }
+
+  66% {
+    box-shadow:
+      calc(7 * var(--smoke)) calc(3 * var(--smoke)) calc(18 * var(--smoke)) calc(-2 * var(--smoke)) var(--app-smoke),
+      calc(-7 * var(--smoke)) calc(-5 * var(--smoke)) calc(22 * var(--smoke)) calc(-3 * var(--smoke)) var(--app-smoke),
+      0 0 calc(6 * var(--smoke)) 0 var(--app-smoke);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ion-card.video-secret,
+  .channel-strip ion-chip.strip-secret {
+    animation: none;
+  }
+}
+
+/* On a secret channel's avatar in the Channels tab, a badge in the corner, as a status on a
+   profile picture. */
 ion-avatar {
   position: relative;
 }
