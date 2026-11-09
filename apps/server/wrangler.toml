@@ -30,6 +30,9 @@ invocation_logs = false
 [assets]
 directory = "../web/dist"
 not_found_handling = "single-page-application"
+# /index.html answers itself rather than redirecting to /: the service worker falls back to
+# fetching it when its copy is missing, and Chrome fails a page served from a redirect (ERR_FAILED).
+html_handling = "none"
 run_worker_first = ["/api/*"]
 
 [[d1_databases]]
