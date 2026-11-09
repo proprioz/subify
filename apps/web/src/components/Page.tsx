@@ -8,8 +8,8 @@ interface Props {
   /** The page's buttons: in its toolbar, or beside the title on wide screens. */
   actions?: ReactNode;
   /**
-   * Controls under the title, such as the feed's channel strip. On iOS phones they stay at the top
-   * of the screen in place of the toolbar, and the title scrolls away.
+   * Controls under the title, such as the feed's channel strip. On phones they stay at the top of
+   * the screen in place of the toolbar, and the title scrolls away.
    */
   bar?: ReactNode;
   /** Where the back button leads when there is no history, for pages below a tab. */
@@ -38,11 +38,12 @@ interface Props {
  * page's buttons beside it.
  *
  * On phones and tablets it is Ionic's collapsible large title, which condenses into the usual
- * small toolbar on scroll; the buttons stay in that toolbar, above the large title. A page with a
- * bar has no small toolbar there: the bar sticks to the top instead, so its button goes in `fab`
- * rather than `actions`, which would not show on iOS phones. That title
+ * small toolbar on scroll; the buttons stay in that toolbar, above the large title. That title
  * only exists in iOS mode: elsewhere the toolbar alone heads the page, and the subtitle needs its
- * own space below it. On wide screens the toolbar would run across the whole window, far from a
+ * own space below it. A page with a bar has no toolbar above its content on phones: the bar sticks
+ * to the top instead, and the title scrolls away above it, the large title on iOS, the toolbar
+ * itself in Material, so the bar's button goes in `fab` rather than `actions`, which would not show
+ * on iOS phones. On wide screens the toolbar would run across the whole window, far from a
  * centred column, so the title sits at the top of the column instead, in Ionic's own heading type.
  */
 export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays, wide = false, refreshing = false, children }: Props) {
@@ -54,7 +55,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
   const ios = getConfig()?.get('mode') === 'ios';
   const hasSubtitle = subtitle !== undefined && subtitle !== null;
   // A small toolbar over the bar would only repeat the title: the bar heads the page instead.
-  const barOnTop = ios && !wideScreen && bar !== undefined;
+  const barOnTop = !wideScreen && bar !== undefined;
   // Without a header to make room for the status bar, the content does (theme.css).
   const headerless = barOnTop || wideScreen;
   const barBox = useRef<HTMLDivElement>(null);
@@ -94,16 +95,19 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
       <IonBackButton defaultHref={back} />
     </IonButtons>
   );
+  const toolbar = (
+    <IonToolbar>
+      {backButton}
+      <IonTitle>{title}</IonTitle>
+      {actions !== undefined && <IonButtons slot="end">{actions}</IonButtons>}
+    </IonToolbar>
+  );
 
   return (
     <IonPage className={refreshing ? 'refreshing' : ''}>
       {!barOnTop && (
         <IonHeader translucent className="ion-hide-lg-up">
-          <IonToolbar>
-            {backButton}
-            <IonTitle>{title}</IonTitle>
-            {actions !== undefined && <IonButtons slot="end">{actions}</IonButtons>}
-          </IonToolbar>
+          {toolbar}
         </IonHeader>
       )}
       <IonContent
@@ -134,6 +138,9 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
               <h1 className="ion-flex-1">{title}</h1>
               {actions !== undefined && <IonButtons>{actions}</IonButtons>}
             </div>
+          ) : !ios && barOnTop ? (
+            // Material has no large title: the toolbar scrolls away above the bar.
+            toolbar
           ) : (
             // The buttons sit in the small toolbar above (or the bar), as in iOS's own apps,
             // rather than beside the large title. The subtitle is a toolbar of the large title's header: it slides

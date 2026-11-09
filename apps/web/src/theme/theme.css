@@ -209,10 +209,10 @@ ion-content.headerless ion-refresher {
   z-index: 11;
 }
 
-/* A page's bar on iOS phones (Page), stuck to the top of the screen in place of the toolbar, under
-   the status bar: sticky positions keep within the content's top padding. Its glass is a layer
-   of its own, which grows over the status bar once the bar is stuck there (`page-bar-stuck`), in
-   place of the strip: one glass, without a seam. */
+/* A page's bar on phones (Page), stuck to the top of the screen in place of the toolbar, under
+   the status bar: sticky positions keep within the content's top padding. Its background is a
+   layer of its own, which grows over the status bar once the bar is stuck there
+   (`page-bar-stuck`), in place of the strip: one surface, without a seam. */
 .page-bar {
   position: sticky;
   top: 0;
@@ -234,17 +234,22 @@ ion-content:has(.page-bar-stuck) .status-backdrop {
   visibility: hidden;
 }
 
-/* The glass behind the clock and the bar is that of iOS's translucent tab bar (Ionic's
+/* On iOS, the glass behind the clock and the bar is that of iOS's translucent tab bar (Ionic's
    `translucent`), the content scrolling blurred behind it; opaque where the browser cannot
-   blur. */
+   blur. Material has no translucent bars: there it stays opaque, and once stuck it casts the
+   shadow of Ionic's Material header, as the toolbar it replaces would. */
 .status-backdrop,
 .page-bar::before {
   background: var(--ion-background-color);
 }
 
+.md .page-bar.page-bar-stuck::before {
+  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.2), 0 4px 5px 0 rgba(0, 0, 0, 0.14), 0 1px 10px 0 rgba(0, 0, 0, 0.12);
+}
+
 @supports (backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0)) {
-  .status-backdrop,
-  .page-bar::before {
+  .ios .status-backdrop,
+  .ios .page-bar::before {
     background: rgba(var(--ion-background-color-rgb), 0.8);
     -webkit-backdrop-filter: saturate(210%) blur(20px);
     backdrop-filter: saturate(210%) blur(20px);
@@ -253,11 +258,11 @@ ion-content:has(.page-bar-stuck) .status-backdrop {
 
 /* The chips on the glass stay solid, so that they stand out from what blurs behind them: the
    same colours as on the page, without their transparency. */
-.page-bar ion-chip {
+.ios .page-bar ion-chip {
   --background: color-mix(in srgb, var(--ion-text-color) 12%, var(--ion-background-color));
 }
 
-.page-bar ion-chip.chip-outline {
+.ios .page-bar ion-chip.chip-outline {
   background: var(--ion-background-color);
 }
 
