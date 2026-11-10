@@ -183,7 +183,9 @@ export async function seedingWrites(keys: ServerKeys, hours: AddingHours, pool: 
 
 /** The stream's batches at these positions of its ring, by position. One not written yet is absent. */
 export async function readBatches(db: Db, keys: ServerKeys, positions: readonly number[]): Promise<Map<number, StreamBatch>> {
-  const rows = positions.length === 0 ? [] : await db.all(compile(query.selectFrom('stream').select(['position', 'blob']).where('position', 'in', [...positions])));
+  // D1 binds at most 100 parameters a statement: a page of the stream is 144 batches.
+  const chunks = Array.from({ length: Math.ceil(positions.length / 100) }, (_, i) => positions.slice(i * 100, (i + 1) * 100));
+  const rows = (await Promise.all(chunks.map((chunk) => db.all(compile(query.selectFrom('stream').select(['position', 'blob']).where('position', 'in', chunk)))))).flat();
   // The sealed overhead, from a codec of no entries.
   const overhead = sealedSize(streamBatchCodec(0)) - streamBatchCodec(0).size;
 

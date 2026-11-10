@@ -148,6 +148,21 @@ describe('the sync stream', () => {
     expect((await (await createHarness()).request('/api/stream?since=0&group=0')).status).toBe(404);
   });
 
+  it('answers a whole page of batches, more than D1 binds in one statement', async () => {
+    const s = await setup();
+    await s.pass(START + 10 * MINUTE);
+    const state = (await readState(s.harness.db, s.keys))!;
+    await s.harness.db.run(await stateWrite(s.keys, { ...state, passes: state.passes + 150 }, false));
+    await s.pass(START + 20 * MINUTE);
+    const latest = (await readState(s.harness.db, s.keys))!.passes;
+
+    const response = await s.harness.request(`/api/stream?since=${latest - 144}&group=0`);
+    expect(response.status).toBe(200);
+    const answer = (await response.json()) as StreamResponse;
+    expect(answer).toMatchObject({ latest, expired: false, more: false });
+    expect(answer.batches.at(-1)?.pass).toBe(latest);
+  });
+
   // The app must mark a channel the platform no longer has as gone, and learn a renamed one.
   it('turns a removal and a rename into deltas', () => {
     const before = { ...slotChannel([]), title: 'Old', handle: 'old' };
