@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
-import { keepsThumbnail, THUMBNAIL_DAYS } from '../data/thumbnails';
+import { keepsThumbnail, THUMBNAIL_KEEP_CHOICES, type ThumbnailKeep, thumbnailMayCome } from '../data/thumbnails';
 import { videoLink } from '../data/video-link';
 import { blurredPicture, type Hsl } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
@@ -27,6 +27,8 @@ interface Props {
   item: StoredItem;
   channel: Subscription;
   thumbnail?: StoredThumbnail | undefined;
+  /** How long the device keeps thumbnails (Settings), to say why an older video has none. */
+  thumbnailKeep: ThumbnailKeep;
   /** Offers “More from …”, which only makes sense when the feed shows more than this channel. */
   onShowChannel?: ((key: string) => void) | undefined;
 }
@@ -38,14 +40,14 @@ interface Props {
  * mark that says it is on its way, and the thumbnail then fades in. Without either, the
  * placeholder holds a button that says why, since an empty frame looks like a fault.
  */
-export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
+export function VideoCard({ item, channel, thumbnail, thumbnailKeep, onShowChannel }: Props) {
   const toast = useToast();
   const image = useImage(thumbnail);
   const fill = useShortFill(item, image);
   const short = item.type === 'short' && image !== null;
   const preview = usePreview(item.preview);
   const kept = (thumbnail?.data ?? null) !== null;
-  const coming = !kept && preview !== null && keepsThumbnail(item);
+  const coming = !kept && preview !== null && thumbnailMayCome(item);
   // Fades in only a thumbnail that arrived while the card was showing: not every card as it mounts.
   const waited = useRef(false);
   useEffect(() => {
@@ -161,7 +163,7 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
       <IonPopover className="info-popover" isOpen={helpFrom !== null} event={helpFrom ?? undefined} onDidDismiss={() => setHelpFrom(null)}>
         <IonContent className="ion-padding">
           <IonText>
-            <p className="ion-no-margin">{coming ? 'The thumbnail is on its way: a refresh brings it, usually within an hour of the video.' : missingThumbnailReason(item, thumbnail)}</p>
+            <p className="ion-no-margin">{coming ? 'The thumbnail is on its way: a refresh brings it, usually within an hour of the video.' : missingThumbnailReason(item, thumbnail, thumbnailKeep)}</p>
           </IonText>
         </IonContent>
       </IonPopover>
@@ -171,18 +173,20 @@ export function VideoCard({ item, channel, thumbnail, onShowChannel }: Props) {
 
 /**
  * Why the card shows no thumbnail, in the order the cases are told apart: the platform said it
- * has none, the video is older than what the device keeps, or it was not downloaded yet.
+ * has none, the video is older than what the device keeps, or it was not downloaded or deleted.
  */
-function missingThumbnailReason(item: StoredItem, thumbnail: StoredThumbnail | undefined): string {
+function missingThumbnailReason(item: StoredItem, thumbnail: StoredThumbnail | undefined, keep: ThumbnailKeep): string {
   if (thumbnail !== undefined && thumbnail.data === null) {
     return 'The platform has no thumbnail for this video.';
   }
 
-  if (!keepsThumbnail(item)) {
-    return `To save space, the app keeps thumbnails for the last ${THUMBNAIL_DAYS} days only.`;
+  if (!keepsThumbnail(item, keep)) {
+    const time = THUMBNAIL_KEEP_CHOICES.find((choice) => choice.value === keep)!.label.replace(/^1 /, '');
+
+    return `To save space, the app keeps thumbnails for the last ${time} only. You can change this in Settings.`;
   }
 
-  return 'No thumbnail: the app gets them with a refresh, for the videos of the last 7 days.';
+  return 'No thumbnail: the app gets them with a refresh, for the videos of the last 7 days, and one deleted to save space doesn’t come back.';
 }
 
 /** A Short's fill until its main colour is known: no colour of its own, rather than a wrong one. */

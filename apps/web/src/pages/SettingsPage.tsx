@@ -19,6 +19,7 @@ import {
   IonTitle,
   IonToggle,
   IonToolbar,
+  useIonActionSheet,
   useIonAlert,
 } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -30,6 +31,7 @@ import {
   mapOutline,
   lockClosedOutline,
   globeOutline,
+  imagesOutline,
   moonOutline,
   phonePortraitOutline,
   shieldCheckmarkOutline,
@@ -54,6 +56,16 @@ import { connectionCheckOn, setConnectionCheck } from '../data/connection-check'
 import { getMeta, setMeta } from '../data/db';
 import { ageLabel } from '../data/format';
 import { loadTheme, type Theme } from '../data/settings';
+import {
+  DEFAULT_THUMBNAIL_KEEP,
+  deleteThumbnailsOlderThan,
+  loadThumbnailKeep,
+  megabytes,
+  setThumbnailKeep,
+  THUMBNAIL_KEEP_CHOICES,
+  type ThumbnailKeep,
+  thumbnailSpace,
+} from '../data/thumbnails';
 import { checkAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter } from '../data/vault';
 import { midSentence } from '../ui/biometrics';
 import { SHARE_ICON } from '../ui/icons';
@@ -64,10 +76,11 @@ import { useToast } from '../ui/toast';
 type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string };
 
 export function SettingsPage() {
-  const { db, api, gate, install, lock, sync } = useAppData();
+  const { db, api, gate, install, lock, sync, secretsShown } = useAppData();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
+  const [presentActionSheet] = useIonActionSheet();
   const showToast = useToast();
   const backupInput = useRef<HTMLInputElement>(null);
   const [contacting, setContacting] = useState(false);
@@ -80,6 +93,7 @@ export function SettingsPage() {
   const { confirmSecrets, secretLock, lockSecrets, lockApp, choosePassword } = useSecretFlow();
   // Redraws a choice the user cancelled or the device refused, so it shows the one still in force.
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
+  const [keepChoiceDrawn, setKeepChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The install guide reopens once the backup it asked for is saved and the password dialog has gone.
@@ -106,6 +120,10 @@ export function SettingsPage() {
         : appLocked
         ? `Only ${how} opens Subify. If you forget the password, only a backup brings your channels back.`
         : `Subify’s data is encrypted, but anyone using your unlocked ${platformDevice()} can open it.`;
+
+  const thumbnailKeep = useLiveQuery(() => loadThumbnailKeep(db), [db]) ?? DEFAULT_THUMBNAIL_KEEP;
+  // Hidden secret channels stay out of the numbers, which would otherwise hint at them.
+  const space = useLiveQuery(() => thumbnailSpace(db, secretsShown), [db, secretsShown]);
 
   const hasSecrets = useLiveQuery(async () => (await db.subscriptions.filter((channel) => channel.secret).count()) > 0, [db]);
 
@@ -272,6 +290,63 @@ export function SettingsPage() {
     await db.meta.delete('secretCredential');
     // The passkey stays in the password manager, to be used again: nothing to delete there.
     await toast(`${biometrics.verifiedBy} off. Your password still works.`);
+  };
+
+  const keepSize = (keep: ThumbnailKeep) =>
+    space === undefined ? '' : keep === 'always' ? ` · ${megabytes(space.perDay * 365)} a year` : ` · ${megabytes(space.perDay * keep)}`;
+
+  // Keeping them longer loses nothing; keeping them shorter deletes at once, after a confirmation.
+  const chooseKeep = (keep: ThumbnailKeep) => {
+    const freed = keep === 'always' ? 0 : (space?.olderThan[keep] ?? 0);
+
+    if (freed === 0) {
+      void setThumbnailKeep(db, keep);
+
+      return;
+    }
+
+    const label = THUMBNAIL_KEEP_CHOICES.find((choice) => choice.value === keep)!.label;
+    void presentAlert({
+      header: 'Delete older thumbnails?',
+      message: `Keeping thumbnails for ${label} deletes the older ones now, ${megabytes(freed)}. They can’t come back: the app only gets thumbnails for the videos of the last 7 days.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        { text: 'Delete', role: 'destructive', handler: () => void setThumbnailKeep(db, keep).then(() => toast(`Freed ${megabytes(freed)}.`)) },
+      ],
+      onDidDismiss: (event) => event.detail.role !== 'destructive' && setKeepChoiceDrawn((drawn) => drawn + 1),
+    });
+  };
+
+  // A one-off cleanup, under the time chosen: what it keeps from now on stays the same.
+  const chooseCleanup = () => {
+    const choices = THUMBNAIL_KEEP_CHOICES.flatMap(({ value, label }) =>
+      value !== 'always' && (thumbnailKeep === 'always' || value < thumbnailKeep) && (space?.olderThan[value] ?? 0) > 0 ? [{ days: value, label, freed: space!.olderThan[value]! }] : [],
+    );
+
+    if (choices.length === 0) {
+      void toast('No thumbnail older than a month to delete.');
+
+      return;
+    }
+
+    void presentActionSheet({
+      header: 'Delete thumbnails older than',
+      buttons: [
+        ...choices.map(({ days, label, freed }) => ({
+          text: `${label} · ${megabytes(freed)}`,
+          handler: () =>
+            void presentAlert({
+              header: `Delete thumbnails older than ${label}?`,
+              message: `This frees ${megabytes(freed)}. They can’t come back: the app only gets thumbnails for the videos of the last 7 days.`,
+              buttons: [
+                { text: 'Cancel', role: 'cancel' },
+                { text: 'Delete', role: 'destructive', handler: () => void deleteThumbnailsOlderThan(db, days).then(() => toast(`Freed ${megabytes(freed)}.`)) },
+              ],
+            }),
+        })),
+        { text: 'Cancel', role: 'cancel' },
+      ],
+    });
   };
 
   const toggle = (change: Promise<void>) => void change.finally(() => setLockChoiceDrawn((drawn) => drawn + 1));
@@ -489,6 +564,38 @@ export function SettingsPage() {
             Check the connection first
           </IonToggle>
         </IonItem>
+      </Section>
+
+      <Section
+        heading="Thumbnails"
+        footer={`${space === undefined ? '' : `Thumbnails take ${megabytes(space.used)} on this device. `}The app only gets those of the last 7 days: once deleted, they don’t come back. Sizes are estimates for the channels you follow.`}
+      >
+        <IonItem {...(thumbnailKeep === DEFAULT_THUMBNAIL_KEEP ? { lines: 'none' as const } : {})}>
+          <IonIcon slot="start" icon={imagesOutline} aria-hidden="true" />
+          <IonSelect
+            key={keepChoiceDrawn}
+            label="Keep thumbnails"
+            labelPlacement="stacked"
+            interface="action-sheet"
+            value={thumbnailKeep}
+            // Said here: the select doesn't read its options again when their sizes change.
+            selectedText={`${THUMBNAIL_KEEP_CHOICES.find((choice) => choice.value === thumbnailKeep)!.label}${keepSize(thumbnailKeep)}`}
+            onIonChange={(event) => chooseKeep(event.detail.value as ThumbnailKeep)}
+          >
+            {THUMBNAIL_KEEP_CHOICES.map(({ value, label }) => (
+              <IonSelectOption key={String(value)} value={value}>
+                {`${label}${keepSize(value)}`}
+              </IonSelectOption>
+            ))}
+          </IonSelect>
+        </IonItem>
+        {/* Under a month, nothing to clean: thumbnails already go after one. */}
+        {thumbnailKeep !== DEFAULT_THUMBNAIL_KEEP && (
+          <IonItem button detail={false} lines="none" onClick={chooseCleanup}>
+            <IonIcon slot="start" icon={trashOutline} aria-hidden="true" />
+            <IonLabel>Delete older thumbnails…</IonLabel>
+          </IonItem>
+        )}
       </Section>
 
       <Section heading="About" footer="The server keeps videos for six months: older ones can’t be shown, even for a channel you just added.">

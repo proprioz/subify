@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { forgetSecretChannels } from '../src/data/secret';
 import { unsubscribe } from '../src/data/subscriptions';
-import { dropOldThumbnails } from '../src/data/thumbnails';
+import { deleteThumbnailsOlderThan, dropOldThumbnails, loadThumbnailKeep, setThumbnailKeep, thumbnailSpace } from '../src/data/thumbnails';
 import { channel, FakeServer, freshDb, item, NOW, subscribe } from './fake-server';
 
 const A = 'UCaaaaaaaaaaaaaaaaaaaaaa';
@@ -35,6 +35,57 @@ describe('kept thumbnails', () => {
     await dropOldThumbnails(db, NOW + 30 * DAY);
 
     expect(await db.thumbnails.count()).toBe(0);
+  });
+
+  it('stay as long as the user chose, and a shorter time deletes them at once', async () => {
+    const server = new FakeServer().publish(channel(A), item(A, 'v', 1)).thumbnail('youtube:v', `youtube:${A}`, IMAGE);
+    const { db } = await followed(server);
+    await setThumbnailKeep(db, 90, NOW);
+
+    await dropOldThumbnails(db, NOW + 60 * DAY);
+    expect(await db.thumbnails.count()).toBe(1);
+
+    await setThumbnailKeep(db, 30, NOW + 60 * DAY);
+    expect(await db.thumbnails.count()).toBe(0);
+  });
+});
+
+// The cleanup frees space now without changing what the device keeps from then on.
+describe('deleting older thumbnails', () => {
+  it('deletes only those past the age chosen, upcoming ones aside', async () => {
+    const server = new FakeServer()
+      .publish(channel(A), item(A, 'old', 40), item(A, 'new', 1), { ...item(A, 'soon', 50), upcoming: true })
+      .thumbnail('youtube:old', `youtube:${A}`, IMAGE)
+      .thumbnail('youtube:new', `youtube:${A}`, IMAGE)
+      .thumbnail('youtube:soon', `youtube:${A}`, IMAGE);
+    const { db } = await followed(server);
+    await setThumbnailKeep(db, 365, NOW);
+    expect(await db.thumbnails.count()).toBe(3);
+
+    await deleteThumbnailsOlderThan(db, 30, NOW);
+
+    expect((await db.thumbnails.toCollection().primaryKeys()).sort()).toEqual(['youtube:new', 'youtube:soon']);
+    expect(await loadThumbnailKeep(db)).toBe(365);
+  });
+});
+
+// The numbers in Settings must not hint at hidden secret channels.
+describe('thumbnail space', () => {
+  it('leaves hidden secret channels out', async () => {
+    const server = new FakeServer()
+      .publish(channel(A), item(A, 'a1', 40))
+      .publish(channel(B), item(B, 'b1', 40), item(B, 'b2', 2))
+      .thumbnail('youtube:a1', `youtube:${A}`, IMAGE)
+      .thumbnail('youtube:b1', `youtube:${B}`, IMAGE)
+      .thumbnail('youtube:b2', `youtube:${B}`, IMAGE);
+    const { db, api } = await followed(server);
+    await subscribe(db, api, B, NOW);
+    await setThumbnailKeep(db, 365, NOW);
+    await db.subscriptions.update(`youtube:${B}`, { secret: true });
+    const size = IMAGE.byteLength;
+
+    expect(await thumbnailSpace(db, false, NOW)).toEqual({ used: size, perDay: 0, olderThan: { 30: size, 90: 0, 180: 0, 365: 0 } });
+    expect(await thumbnailSpace(db, true, NOW)).toEqual({ used: 3 * size, perDay: size / 30, olderThan: { 30: 2 * size, 90: 0, 180: 0, 365: 0 } });
   });
 });
 

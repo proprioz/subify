@@ -18,7 +18,7 @@ import { type Api, ServerError } from './api';
 import { itemUrl } from './channel-link';
 import type { OnStep } from './subscriptions';
 import { getMeta, putItems, setRetryAt, type Slot, type StoredThumbnail, type Subscription, type SubifyDb, setMeta } from './db';
-import { keepsThumbnail } from './thumbnails';
+import { keepsThumbnail, loadThumbnailKeep } from './thumbnails';
 
 /**
  * The app on a server with the encrypted catalog (docs/FEATURES.md, D16). It finds its channels
@@ -672,11 +672,11 @@ function inGrouping(read: LotsRead, groups: number, wanted: readonly number[]): 
 /** Keeps these thumbnails, by item key, for the items the device has, keeps a thumbnail for and has none of; gives how many. */
 async function putThumbnails(db: SubifyDb, images: ReadonlyMap<string, SlotImage>, now: number): Promise<number> {
   const keys = [...images.keys()];
-  const [items, thumbnails] = await Promise.all([db.items.bulkGet(keys), db.thumbnails.bulkGet(keys)]);
+  const [items, thumbnails, keep] = await Promise.all([db.items.bulkGet(keys), db.thumbnails.bulkGet(keys), loadThumbnailKeep(db)]);
   const fresh = keys.flatMap((key, i) => {
     const item = items[i];
 
-    return item === undefined || (thumbnails[i]?.data ?? null) !== null || !keepsThumbnail(item, now) ? [] : [{ key, channel: item.channel, type: images.get(key)!.type, data: images.get(key)!.bytes.slice().buffer }];
+    return item === undefined || (thumbnails[i]?.data ?? null) !== null || !keepsThumbnail(item, keep, now) ? [] : [{ key, channel: item.channel, type: images.get(key)!.type, data: images.get(key)!.bytes.slice().buffer }];
   });
   await db.thumbnails.bulkPut(fresh);
 
