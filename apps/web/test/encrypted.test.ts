@@ -311,6 +311,7 @@ describe('the encrypted catalog', () => {
       secretCodeHash: null,
       theme: 'system',
       checkConnection: false,
+      thumbnailKeep: 30,
     };
 
     await restoreBackup(db, api, backup, NOW);

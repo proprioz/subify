@@ -6,6 +6,7 @@ import { connectionCheckOn, setConnectionCheck } from '../src/data/connection-ch
 import { getMeta, setMeta } from '../src/data/db';
 import { loadShowUpcoming, loadTypeFilter } from '../src/data/feed';
 import { checkSecretCode, setSecretCode } from '../src/data/secret';
+import { loadThumbnailKeep, setThumbnailKeep } from '../src/data/thumbnails';
 import { channel, FakeServer, freshDb, item, NOW } from './fake-server';
 
 const NASA = 'UCLA_DiR1FfKNvjuUpBHmylQ';
@@ -25,6 +26,8 @@ describe('a backup in format version 1', () => {
     const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1));
     server.online(KURZGESAGT, channel(KURZGESAGT, 'Kurzgesagt'), [item(KURZGESAGT, 'k1', 2)]);
     const db = freshDb();
+    // Version 1 had no such setting: the device's own gives way to the default, as every setting is replaced.
+    await setThumbnailKeep(db, 365, NOW);
 
     const backup = await readBackup(fixture('backup-v1.json'), PASSWORD);
     const result = await restoreBackup(db, server.api(), backup, NOW);
@@ -38,6 +41,7 @@ describe('a backup in format version 1', () => {
     expect(await getMeta(db, 'theme')).toBe('dark');
     expect(await checkSecretCode(db, '2468', NOW)).toEqual({ ok: true });
     expect(await connectionCheckOn(db)).toBe(false);
+    expect(await loadThumbnailKeep(db)).toBe(30);
   });
 
   it('refuses a wrong password without touching the device', async () => {
@@ -50,6 +54,21 @@ describe('a backup in format version 1', () => {
     ['broken JSON', '{"format": "subify-backup"'],
   ])('refuses %s', async (_, file) => {
     await expect(readBackup(file, PASSWORD)).rejects.toThrow(BackupError);
+  });
+});
+
+// backup-v2.json is a file in format version 2 and must never be regenerated.
+describe('a backup in format version 2', () => {
+  it('restores how long thumbnails are kept, with the rest', async () => {
+    const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1));
+    server.online(KURZGESAGT, channel(KURZGESAGT, 'Kurzgesagt'), [item(KURZGESAGT, 'k1', 2)]);
+    const db = freshDb();
+
+    await restoreBackup(db, server.api(), await readBackup(fixture('backup-v2.json'), PASSWORD), NOW);
+
+    expect(await loadThumbnailKeep(db)).toBe(365);
+    expect(await db.subscriptions.count()).toBe(2);
+    expect(await getMeta(db, 'theme')).toBe('dark');
   });
 });
 
@@ -75,7 +94,7 @@ describe('the secret code hash of a backup', () => {
 
 // The backup is the user's only copy of their subscriptions: a round trip must lose nothing.
 describe('this app’s backups', () => {
-  it('give back channels, kinds, secrets, filters, sort, code, theme and the connection check', async () => {
+  it('give back channels, kinds, secrets, filters, sort, code, theme, the connection check and the thumbnails kept', async () => {
     const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1)).publish(channel(KURZGESAGT, 'Kurzgesagt'), item(KURZGESAGT, 'k1', 1));
     const source = freshDb();
     await restoreBackup(source, server.api(), await readBackup(fixture('backup-v1.json'), PASSWORD), NOW);
@@ -84,6 +103,7 @@ describe('this app’s backups', () => {
     await setMeta(source, 'theme', 'light');
     await setConnectionCheck(source, true);
     await setMeta(source, 'showUpcoming', true);
+    await setThumbnailKeep(source, 'always', NOW);
 
     const file = await exportBackup(source, 'a long password', NOW);
     const target = freshDb();
@@ -96,6 +116,7 @@ describe('this app’s backups', () => {
     expect(await getMeta(target, 'channelSort')).toBe('name');
     expect(await getMeta(target, 'theme')).toBe('light');
     expect(await connectionCheckOn(target)).toBe(true);
+    expect(await loadThumbnailKeep(target)).toBe('always');
     expect(await checkSecretCode(target, '97531', NOW)).toEqual({ ok: true });
     expect(file).not.toContain('NASA');
   });
