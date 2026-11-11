@@ -160,7 +160,7 @@ Limits, from [developers.cloudflare.com](https://developers.cloudflare.com/worke
 
 ### D16: a catalog the server stores without reading it
 
-The app calls this design, seeding included (D15), **Sealring** (Why Subify), after the seal ring that closed letters: the sync stream's ring of sealed batches is part of it.
+The README calls this design, seeding included (D15), **Sealring**, after the seal ring that closed letters: the sync stream's ring of sealed batches is part of it.
 
 A readable catalog would tell anyone holding a copy of the database (a dump, a restore of an earlier state, a legal request) its channels, their videos, and roughly when each channel entered it. So the server stores the catalog without being able to read it at rest; who follows what is never stored at all.
 

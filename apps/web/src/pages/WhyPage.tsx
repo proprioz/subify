@@ -1,3 +1,5 @@
+import { IonButton, IonIcon } from '@ionic/react';
+import { logoGithub } from 'ionicons/icons';
 import { Link } from 'react-router-dom';
 import { Page } from '../components/Page';
 
@@ -19,7 +21,7 @@ export function WhyPage() {
         <h2>No account, no tracking</h2>
         <ul>
           <li>Never a mandatory sign-in: no account, no email, no profile.</li>
-          <li>The platform never learns which channels you follow.</li>
+          <li>The platform never learns which channels you follow, and neither does Subify’s server.</li>
           <li>No ads, and nothing that studies your habits.</li>
           <li>The app never goes online on its own: only for what you are doing in it, and without sending anything that identifies you.</li>
           <li>
@@ -27,33 +29,12 @@ export function WhyPage() {
           </li>
         </ul>
 
-        <h2>Sealring</h2>
-        <p>
-          Sealring is the privacy system designed for Subify. Its name comes from the seal ring once used to close letters with wax: whoever carried the letter couldn’t read
-          it without breaking the seal. Here, the server carries your news without being able to read it, and without knowing who it is for.
-        </p>
-        <ul>
-          <li>
-            <strong>Sealed.</strong> Each channel stays sealed at all times, and the server can’t open it. Every few minutes, each seal is swapped for a fresh one, so
-            even copies of its data taken at different times tell nothing about the channels.
-          </li>
-          <li>
-            <strong>The ring.</strong> If the server sent each device its own news, it would know what each device follows. So it posts everyone’s news on a ring
-            (a circle) of places, like the hand of a clock going round: every few minutes it fills the next place with a bundle of sealed envelopes, always the same size, real news
-            mixed with empty ones. Once round, each new bundle replaces the oldest, so the ring never grows and gives nothing away. Your device picks up the bundles it
-            missed and opens only the envelopes meant for it.
-          </li>
-          <li>Your device finds your channels without telling the server which ones they are.</li>
-          <li>
-            The server can also add channels on its own, at random, the way a real person would. Whoever runs the server can’t tell which channels were added by users.
-          </li>
-        </ul>
-
         <h2>Open source</h2>
-        <p>
-          You don’t have to trust us. Subify’s code is public, under a free license (AGPL-3.0): anyone can audit it, and run the whole system on their own server, a Raspberry Pi, or a
-          NAS (coming soon).
-        </p>
+        <p>You don’t have to trust us. Subify’s code is public, under a free license: anyone can check it, and run their own server.</p>
+        <IonButton expand="block" href="https://github.com/proprioz/subify" target="_blank" rel="noopener noreferrer">
+          <IonIcon slot="start" icon={logoGithub} aria-hidden="true" />
+          See the code on GitHub
+        </IonButton>
 
         <h2>Watch on YouTube</h2>
         <p>Subify doesn’t play videos: tap a video to copy its link, or open it in YouTube and watch it there, as usual.</p>

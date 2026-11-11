@@ -481,7 +481,7 @@ export function SettingsPage() {
 
       <Section
         heading="Connection"
-        footer="Before going online, the app shows which country the server places your connection in, and waits for you to continue. Handy if you use a VPN. While nothing is remembered, channels waiting to be added wait too."
+        footer="Before going online, the app shows which country the server sees you in, and waits for you to continue. Handy to check that your VPN is on."
       >
         <IonItem lines="none">
           <IonIcon slot="start" icon={globeOutline} aria-hidden="true" />

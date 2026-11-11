@@ -1,7 +1,6 @@
 import type { InstanceResponse } from '@subify/shared';
 import { IonButton, IonNote, IonSpinner } from '@ionic/react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { ContactModal } from '../components/ContactModal';
 import { Page } from '../components/Page';
@@ -56,9 +55,6 @@ export function PrivacyPage() {
           </li>
           <li>Everything the server stores about the channels people follow is encrypted.</li>
         </ul>
-        <p>
-          <Link to="/settings/why">Sealring</Link>, in Why Subify, explains how in a few lines.
-        </p>
 
         <h2>What the server’s operator can see</h2>
         <p>
