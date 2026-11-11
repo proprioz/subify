@@ -1,6 +1,7 @@
 import { catalogCapacity } from '../config';
 import { UpstreamError } from '../http';
 import type { Platform } from '../platform';
+import { randomDictionaryEntry } from '../search/dictionary';
 import { InputError, type ParsedInput, type SourceAdapter } from '../sources/source';
 import { BudgetError } from './budgets';
 import { parseCandidateInput } from './candidates';
@@ -16,8 +17,11 @@ import { readHours, readPool, readState } from './vault';
  * it. They enter through the same code as a user's channel, count against the same budgets, and
  * nothing in the database, nor in the logs, tells them apart.
  *
- * Seeded channels only come from the links in the descriptions of the catalog's videos, kept in
- * the encrypted pool: the code ships no list of channels, so a new catalog's first channels are its users'.
+ * Seeded channels come from two public sources, never from a list in the code: the links in the
+ * descriptions of the catalog's videos, kept in the encrypted pool until the citing video has left
+ * the public feeds, and channels drawn at random from the Wikidata dictionary. Those make seeded
+ * channels that nothing in the catalog cites, as users' often are, and need no wait: they cover a
+ * new catalog from its first users on.
  */
 
 /** Seeding slows down as the catalog fills, and stops at this share of its capacity: the rest is for users. */
@@ -27,6 +31,21 @@ const RUNS_PER_DAY = DAY / MINUTE;
 const WINDOWS_PER_DAY = 24;
 /** Candidates drawn per run when the first ones are in the catalog already: those cost no request. */
 const ATTEMPTS = 3;
+/**
+ * The share of seeded channels drawn from the dictionary while cited ones are ripe; all of them
+ * while none is. More would leave the uncited channels outside the dictionary, often small ones,
+ * more exposed: seeded channels taken from citations are mostly cited.
+ */
+const DICTIONARY_SHARE = 0.25;
+/** The source the dictionary's channels belong to. */
+const DICTIONARY_SOURCE = 'youtube';
+
+interface Seed {
+  source: SourceAdapter;
+  input: ParsedInput;
+  /** Leaves its candidate out of the pool; nothing for a channel of the dictionary. */
+  forget(): Promise<unknown>;
+}
 
 /**
  * A scheduled task, every minute. Now and then, adds a channel that the descriptions of the
@@ -62,41 +81,50 @@ export async function addSeededChannel(platform: Platform, sources: readonly Sou
   let pool = await readPool(db, keys);
 
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const drawn = drawCandidate(pool, Math.floor(now / DAY), () => platform.random());
-    const source = sources.find((candidate) => candidate.source === drawn?.source);
-    const input = drawn === undefined ? null : parseCandidateInput(drawn.input);
+    const drawn = platform.random() < 1 - DICTIONARY_SHARE ? drawCandidate(pool, Math.floor(now / DAY), () => platform.random()) : undefined;
+    let seed: Seed | undefined;
 
-    if (drawn === undefined || source === undefined || input === null) {
+    if (drawn === undefined) {
+      seed = await fromDictionary(platform, sources);
+    } else {
+      pool = pool.filter((candidate) => candidate !== drawn);
+      const source = sources.find((candidate) => candidate.source === drawn.source);
+      const input = parseCandidateInput(drawn.input);
+      seed = source === undefined || input === null ? undefined : { source, input, forget: () => forget(source.source, input) };
+    }
+
+    if (seed === undefined) {
       return false;
     }
 
-    pool = pool.filter((candidate) => candidate !== drawn);
-
-    if ((await knownChannel(context, source.source, input)) !== undefined) {
-      await forget(source.source, input);
+    if ((await knownChannel(context, seed.source.source, seed.input)) !== undefined) {
+      await seed.forget();
       continue;
     }
 
-    return plant(source, input, context, forget);
+    return plant(seed, context);
   }
 
   return false;
 }
 
+/** A channel of the dictionary, drawn alike among all of them: none without a dictionary. */
+async function fromDictionary(platform: Platform, sources: readonly SourceAdapter[]): Promise<Seed | undefined> {
+  const source = sources.find((candidate) => candidate.source === DICTIONARY_SOURCE);
+  const id = (await randomDictionaryEntry(platform.db, () => platform.random()))?.[0];
+
+  return source === undefined || id === undefined ? undefined : { source, input: { kind: 'channel', externalId: id }, forget: async () => {} };
+}
+
 /** Adds the channel as a user's submission would; a candidate that leads to no channel is forgotten. */
-async function plant(
-  source: SourceAdapter,
-  input: ParsedInput,
-  context: SubmitContext,
-  forget: (source: string, input: ParsedInput) => Promise<unknown>,
-): Promise<boolean> {
+async function plant(seed: Seed, context: SubmitContext): Promise<boolean> {
   try {
-    await submitInput(source, input, context);
+    await submitInput(seed.source, seed.input, context);
 
     return true;
   } catch (error) {
     if (error instanceof InputError) {
-      await forget(source.source, input);
+      await seed.forget();
     }
 
     if (error instanceof BudgetError || error instanceof InputError || error instanceof UpstreamError) {

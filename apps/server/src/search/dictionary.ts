@@ -272,3 +272,24 @@ export async function dictionaryVersion(db: Db): Promise<number | null> {
 export async function readDictionarySlice(db: Db, slice: number): Promise<Uint8Array | undefined> {
   return (await db.first(compile(query.selectFrom('dictionary').select('data').where('slice', '=', slice))))?.data;
 }
+
+/**
+ * A channel of the dictionary drawn at random, as its fields: id, handle, names, audience. Slices
+ * split the channels by a character of their id, so they hold about as many each. Undefined
+ * without a dictionary.
+ */
+export async function randomDictionaryEntry(db: Db, random: () => number): Promise<string[] | undefined> {
+  const data = await readDictionarySlice(db, Math.floor(random() * DICTIONARY_SLICES));
+
+  if (data === undefined) {
+    return undefined;
+  }
+
+  const lines = (await gunzip(data)).split('\n').filter((line) => line !== '');
+
+  return lines[Math.floor(random() * lines.length)]?.split('\t');
+}
+
+async function gunzip(bytes: Uint8Array): Promise<string> {
+  return new Response(new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+}

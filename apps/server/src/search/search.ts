@@ -1,5 +1,4 @@
 import type { SearchResult } from '@subify/shared';
-import { DICTIONARY_SLICES } from '@subify/shared';
 import { budgets } from '../catalog/budgets';
 import type { InstanceKind, InstanceState, SearchState } from '../catalog/coordinator';
 import { DAY } from '../catalog/schedule';
@@ -8,7 +7,7 @@ import { Http, UpstreamError } from '../http';
 import { logError, logMeasure } from '../log';
 import type { Platform } from '../platform';
 import type { SourceAdapter } from '../sources/source';
-import { readDictionarySlice } from './dictionary';
+import { randomDictionaryEntry } from './dictionary';
 
 /**
  * Searching a channel by name on Invidious and Piped instances (docs/FEATURES.md, D16), when
@@ -152,17 +151,12 @@ async function sendDecoy(platform: Platform, instance: InstanceState): Promise<v
 /** A name from a random slice of the dictionary, or a common word: never anything from the catalog. */
 export async function decoyTerm(platform: Platform): Promise<string> {
   if (platform.random() < 0.5) {
-    const data = await readDictionarySlice(platform.db, Math.floor(platform.random() * DICTIONARY_SLICES));
+    const entry = await randomDictionaryEntry(platform.db, () => platform.random());
+    const names = (entry?.[2] ?? '').split('\u001f').filter((name) => name.length >= 3);
+    const name = names[Math.floor(platform.random() * names.length)];
 
-    if (data !== undefined) {
-      const lines = (await gunzip(data)).split('\n').filter((line) => line !== '');
-      const line = lines[Math.floor(platform.random() * lines.length)];
-      const names = (line?.split('\t')[2] ?? '').split('\u001f').filter((name) => name.length >= 3);
-      const name = names[Math.floor(platform.random() * names.length)];
-
-      if (name !== undefined) {
-        return name;
-      }
+    if (name !== undefined) {
+      return name;
     }
   }
 
@@ -395,8 +389,4 @@ function shuffled<T>(items: readonly T[], platform: Platform): T[] {
   }
 
   return copy;
-}
-
-async function gunzip(bytes: Uint8Array): Promise<string> {
-  return new Response(new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 }

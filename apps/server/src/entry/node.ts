@@ -55,6 +55,12 @@ if (config.instanceName === null) {
 }
 // Next to the database by default, in a file of its own: back it up apart from the database,
 // since a copy of both reveals the catalog.
+// Seeding draws part of its channels from the dictionary (docs/FEATURES.md, D15): without it, a new
+// catalog waits weeks for its first seeded channels, and those are all channels the catalog cites.
+if (config.seededChannelsPerDay > 0 && (!config.searchSources.has('wikidata') || config.wikidataUserAgent === null)) {
+  console.log('Seeding is on without the dictionary of channel names: set WIKIDATA_USER_AGENT (see docs/SELF-HOSTING.md)');
+}
+
 const master = loadMasterSecret(process.env.MASTER_SECRET?.trim() || null, process.env.SECRET_PATH ?? join(dirname(databasePath), 'subify.secret'));
 
 if (master.generated) {

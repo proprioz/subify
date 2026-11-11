@@ -16,8 +16,8 @@ import { START } from '../harness/types';
 import { FakeFetch, withRecordedChannels } from '../support/fake-fetch';
 import { FakeSource, item } from '../support/fake-source';
 
-async function setup(config: Partial<Config> = {}): Promise<{ harness: Harness; source: FakeSource }> {
-  const source = new FakeSource();
+async function setup(config: Partial<Config> = {}, name = 'fake'): Promise<{ harness: Harness; source: FakeSource }> {
+  const source = new FakeSource(name);
   ['a', 'b', 'c', 'z'].forEach((id) => source.channel(id, [item(`${id}1`, START - HOUR)]));
   // On, as an instance turns it on (SEEDED_CHANNELS_PER_DAY).
   const harness = await createHarness({ sources: [source], config: { seededChannelsPerDay: 24, ...config } });
@@ -59,8 +59,8 @@ interface Ripe {
  * of its type; the pass harvested 'b', the next one read 'a' again, and the clock is still in the
  * hour users add at: with 15 newer, the citing video has left the public feeds, and seeding may draw 'b'.
  */
-async function ripe(config: Partial<Config> = {}, newer = 15): Promise<Ripe> {
-  const { harness, source } = await setup(config);
+async function ripe(config: Partial<Config> = {}, newer = 15, name = 'fake'): Promise<Ripe> {
+  const { harness, source } = await setup(config, name);
   const keys = await harness.platform.keys;
   const queued = async () => (await openUpdates(keys, await harness.platform.coordinator.pending(100))).opened.map(({ update }) => update);
   const pass = async () => {
@@ -79,6 +79,18 @@ async function ripe(config: Partial<Config> = {}, newer = 15): Promise<Ripe> {
 
   return { harness, source, keys, userUpdates, queued };
 }
+
+/** A dictionary whose every slice holds these channels alone, as the server stores it. */
+async function fillDictionary(harness: Harness, ids: readonly string[]): Promise<void> {
+  const text = ids.map((id) => `${id}\t\tChannel ${id}\t5\n`).join('');
+  const gz = new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+
+  for (let slice = 0; slice < 64; slice++) {
+    await harness.db.run('INSERT INTO dictionary (slice, data) VALUES (?, ?)', [slice, gz]);
+  }
+}
+
+const entering = (updates: readonly Update[]) => updates.flatMap((update) => (update.kind === 'channel' ? [update.channel.externalId] : []));
 
 /** An update's fields and the types of their values, down to the channel's: what would tell two apart without reading them. */
 function shape(value: unknown): unknown {
@@ -206,6 +218,38 @@ describe('seeding from the encrypted pool', () => {
     harness.setNow(noon + 40 * MINUTE);
     await pass();
     expect(await pool()).toEqual(['channel:b×2']);
+  });
+
+  // Seeded channels all cited would leave users' uncited channels standing out, and a new catalog would wait weeks for its first.
+  it('come from the dictionary a quarter of the time, and every time no cited channel is ripe', async () => {
+    for (const [newer, draws, expected] of [
+      // Ripe 'b': cited when the share's draw falls in the first three quarters, the dictionary's 'd' otherwise.
+      [15, [0, 0, 0.7], 'b'],
+      [15, [0, 0, 0.8], 'd'],
+      // 'b' not ripe yet: the dictionary, whatever the draw.
+      [14, [0, 0, 0], 'd'],
+    ] as const) {
+      const { harness, source, queued } = await ripe({}, newer, 'youtube');
+      citing(source, 'b', [], 15);
+      citing(source, 'd', [], 15);
+      await fillDictionary(harness, ['d']);
+      const sequence: number[] = [...draws];
+      harness.platform.random = () => sequence.shift() ?? 0;
+      const before = entering(await queued());
+
+      expect(await addSeededChannel(harness.platform, [source])).toBe(true);
+      expect(entering(await queued()).filter((id) => !before.includes(id))).toEqual([expected]);
+    }
+  });
+
+  it('draw nothing from the dictionary when there is none, nor from a dictionary channel the catalog has', async () => {
+    const { harness, source, queued } = await ripe({}, 14, 'youtube');
+    const before = (await queued()).length;
+
+    expect(await addSeededChannel(harness.platform, [source])).toBe(false);
+    await fillDictionary(harness, ['a']);
+    expect(await addSeededChannel(harness.platform, [source])).toBe(false);
+    expect(await queued()).toHaveLength(before);
   });
 
   // A candidate that kept its first citation would ripen while a newer video citing it is still in the feeds.

@@ -254,7 +254,9 @@ Default: 30.
 
 ### `SEEDED_CHANNELS_PER_DAY`
 
-How many channels the server adds to its catalog on its own each day, on average, so that a channel in the catalog doesn't show that someone follows it. It takes channels that the catalog's video descriptions link to, once the video citing them has left its channel's public feeds, at the hours users add channels at, once the catalog has its first channels, and stops at half the catalog's capacity. Seeded channels go through the same code as users' channels and can't be told apart from them ([FEATURES.md](FEATURES.md), D15).
+How many channels the server adds to its catalog on its own each day, on average, so that a channel in the catalog doesn't show that someone follows it. It takes channels from two sources: the channels the catalog's video descriptions link to, once the citing video has left its channel's public feeds, and channels drawn at random from the dictionary of channel names (`WIKIDATA_USER_AGENT`). It adds them at the hours users add channels at, once the catalog has its first channels, and stops at half the catalog's capacity. Seeded channels go through the same code as users' channels and can't be told apart from them ([FEATURES.md](FEATURES.md), D15).
+
+Without the dictionary, only the first source remains: a new catalog gets its first seeded channels only after a few weeks, and someone who archives the feeds of the catalog's channels (YouTube itself among them) can better tell your users' channels from seeded ones. Set `WIKIDATA_USER_AGENT` along with seeding; on Node, the server says so at start when you don't.
 
 For a personal instance, keep it at 0: hide the server instead. For a shared one, 10 to 24 is enough. The official instance uses 24.
 
@@ -274,7 +276,9 @@ Default: generated on Node, none on Workers.
 
 **What it is for.** When someone types a channel's name rather than its @handle or link, the app first looks for it in a dictionary of about 157,000 YouTube channels that Wikidata names, which it downloads whole (about 7 MB) and searches on the device. The server never learns a name the dictionary knows. The server builds that dictionary from Wikidata, and Wikimedia asks every automated client to name itself and give a way to reach its operator: this variable is that name and contact, sent to Wikidata only. Your server's other requests keep the generic User-Agent.
 
-**Without it**, the server never contacts Wikidata and has no dictionary. Adding a channel by its @handle or its link works the same; a name is only tried as the @handles it likely gives, which the server reads online, so the server learns it, and a channel whose handle doesn't follow its name can't be found by name.
+**Seeding uses it too.** Part of the seeded channels are drawn from it at random, so that seeded channels are not all channels the catalog cites ([FEATURES.md](FEATURES.md), D15). **To build it**, set this variable: your server downloads the dictionary from Wikidata by itself, about an hour after it starts, then again every `WIKIDATA_REFRESH_DAYS`. It sends Wikidata nothing about your users.
+
+**Without it**, the server never contacts Wikidata and has no dictionary, and seeding takes cited channels only. Adding a channel by its @handle or its link works the same; a name is only tried as the @handles it likely gives, which the server reads online, so the server learns it, and a channel whose handle doesn't follow its name can't be found by name.
 
 Set it to your instance's name and a contact you read, for example `SubifyBot/1.0 (https://videos.example.org; you@example.org) feed-reader`. The official instance uses `SubifyBot/1.0 (https://subify.tv) feed-reader`.
 

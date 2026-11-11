@@ -19,7 +19,9 @@ import {
  * `fake:<channel id>`.
  */
 export class FakeSource implements SourceAdapter {
-  readonly source = 'fake';
+  /** 'fake' unless a test needs a source the server knows by name, such as the dictionary's. */
+  constructor(readonly source: string = 'fake') {}
+
   readonly hosts = new Set(['fake.test']);
   private readonly channels = new Map<string, ChannelSnapshot & { version: number }>();
   /** Every poll, in order, with what the catalog sent along. */
