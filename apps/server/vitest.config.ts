@@ -24,10 +24,9 @@ export default defineConfig(async () => ({
         plugins: [
           cloudflareTest({
             wrangler: { configPath: './wrangler.toml' },
-            // wrangler.toml names no instance: the tests give the Worker a name. PUBLIC_BASE_URL,
-            // WIKIDATA_USER_AGENT and SEARCH_SOURCES stay empty, whatever wrangler.toml says: with them, the Cron Trigger test would turn WebSub on and could ask the hub to
-            // subscribe, query Wikidata, or read the Invidious and Piped lists, and no test may reach
-            // the network. MASTER_SECRET is a test value, the tests'
+            // wrangler.toml names no instance: the tests give the Worker a name. PUBLIC_BASE_URL and
+            // WIKIDATA_USER_AGENT stay empty, whatever wrangler.toml says: with them, the Cron Trigger test would turn WebSub on and could ask the hub to
+            // subscribe, or query Wikidata, and no test may reach the network. MASTER_SECRET is a test value, the tests'
             // own (test/harness/common.ts): the Worker refuses to serve without one.
             miniflare: {
               bindings: {
@@ -35,7 +34,6 @@ export default defineConfig(async () => ({
                 INSTANCE_NAME: 'Subify test',
                 PUBLIC_BASE_URL: '',
                 WIKIDATA_USER_AGENT: '',
-                SEARCH_SOURCES: 'none',
                 MASTER_SECRET: 'Xl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl4=',
               },
             },

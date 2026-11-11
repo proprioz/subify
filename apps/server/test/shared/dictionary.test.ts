@@ -54,14 +54,11 @@ async function everyMinute(harness: Harness, runs: number, from = START): Promis
 
 describe('the Wikidata dictionary', () => {
   // Wikimedia asks every automated client for a contact: without one set by the admin, the server must not query it at all.
-  it('reads nothing without WIKIDATA_USER_AGENT, or with SEARCH_SOURCES=none', async () => {
+  it('reads nothing without WIKIDATA_USER_AGENT', async () => {
     const quiet = await createHarness({ fake: wikidata('') });
     await everyMinute(quiet, 3);
-    const off = await createHarness({ fake: wikidata(''), config: { wikidataUserAgent: AGENT, searchSources: new Set() } });
-    await everyMinute(off, 3);
 
     expect(quiet.fake.calls).toEqual([]);
-    expect(off.fake.calls).toEqual([]);
     expect((await quiet.request('/api/dictionary')).status).toBe(404);
   });
 

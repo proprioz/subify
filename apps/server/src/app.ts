@@ -19,8 +19,6 @@ import {
   HealthResponse,
   InstanceResponse,
   NoQuery,
-  SearchRequest,
-  SearchResponse,
   SubmitRequest,
   OprfKeyResponse,
   SnapshotQuery,
@@ -48,7 +46,6 @@ import { UpstreamError } from './http';
 import { ICON_FILES, iconPath, manifest } from './instance';
 import { logError } from './log';
 import { dictionaryVersion, readDictionarySlice } from './search/dictionary';
-import { searchByName, searchKinds } from './search/search';
 import type { Platform } from './platform';
 import { InputError, type SourceAdapter } from './sources/source';
 
@@ -209,16 +206,6 @@ const dictionarySliceRoute = createRoute({
   path: '/dictionary/{slice}',
   request: { params: DictionarySliceParams, query: NoQuery },
   responses: { 200: json(DictionarySliceResponse, 'One slice of the dictionary'), ...errors(400, 404) },
-});
-
-// A name nothing on the device found, searched on Invidious or Piped by the server: the name is
-// answered, then forgotten. A server whose admin turned no such service on answers 404.
-const searchRoute = createRoute({
-  method: 'post',
-  path: '/search',
-  middleware: [bodyLimit({ maxSize: 1024, onError: (c) => fail(c, 'invalid_request', 'Send a short name.', 413) })],
-  request: { query: NoQuery, body: jsonBody(SearchRequest) },
-  responses: { 200: json(SearchResponse, 'The channels found, each confirmed by its feed'), ...errors(400, 404, 413, 503) },
 });
 
 // Who runs this server, for the Privacy page: the app asks only when the user taps for it.
@@ -405,20 +392,6 @@ export function createApp({ sources }: AppOptions) {
         return c.json({ v: 3 as const, name: instanceName ?? '', operator, messages }, 200);
       },
       refuse('This request takes no parameters.'),
-    )
-
-    .openapi(
-      searchRoute,
-      async (c) => {
-        const { platform } = c.env;
-
-        if (searchKinds(platform).length === 0) {
-          return fail(c, 'invalid_request', 'This server doesn’t search channels by name.', 404);
-        }
-
-        return c.json({ v: 3 as const, results: await searchByName(platform, sources, c.req.valid('json').q) }, 200);
-      },
-      refuse('Send a JSON object with a single `q` field, a name of 3 to 100 characters.'),
     )
 
     .openapi(

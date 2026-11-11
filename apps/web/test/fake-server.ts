@@ -24,10 +24,6 @@ export async function subscribe(db: SubifyDb, api: Api, input: string, now?: num
     throw new AlreadyFollowing(found.following);
   }
 
-  if ('matches' in found) {
-    throw new Error('The search found several channels: pick one.');
-  }
-
   return follow(db, found.submitted, now);
 }
 
@@ -65,8 +61,6 @@ export class FakeServer {
   private streamCalls = 0;
   /** What /connection answers: the country the server places the device in. */
   country: string | null = 'CH';
-  /** What /search answers for any name, or null for a server with no search service (404). */
-  searchResults: { id: string; name: string; handle: string | null; description: string }[] | null = null;
   /** The Wikidata dictionary the server offers: its version and its slices' lines, or none. */
   dictionary: { version: number; slices: string[] } | null = null;
   /** The encrypted catalog, which answers its routes. */
@@ -169,10 +163,6 @@ export class FakeServer {
       if (this.streamCalls === this.failStreamAt) {
         throw new TypeError('The app was suspended.');
       }
-    }
-
-    if (url === '/api/search' && method === 'POST') {
-      return this.searchResults === null ? json({ v: 2, error: 'invalid_request', message: 'No search.' }, 404) : json({ v: 3, results: this.searchResults });
     }
 
     if (url === '/api/dictionary' && method === 'GET') {

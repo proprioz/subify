@@ -305,7 +305,7 @@ export function ChannelsPage() {
       )}
 
       {/* As soon as something is typed, one list replaces the page's: the followed channels it
-          matches, the channels to follow, and “Search online”. */}
+          matches, the channels to follow, and the row that searches further. */}
       {term !== '' && <ChannelSearchResults finder={finder} own={shown} onOpen={showVideos} />}
     </Page>
   );

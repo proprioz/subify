@@ -140,15 +140,6 @@ export class Api {
     return this.read(this.call(() => this.client.api.dictionary[':slice'].$get({ param: { slice: String(slice) }, query: {} })));
   }
 
-  /**
-   * Searches a name on the search services the server's admin turned on (Invidious, Piped), or
-   * null when there are none. Each result was checked against the channel's own feed.
-   */
-  async search(q: string) {
-    const response = await this.call(() => this.client.api.search.$post({ query: {}, json: { q } }));
-
-    return response.status === 404 ? null : this.read(Promise.resolve(response));
-  }
 
   /** A robot check for the contact form, or null when this server takes no messages. */
   async contactChallenge() {

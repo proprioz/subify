@@ -135,7 +135,7 @@ You need the Workers Paid plan: the pass that rewrites the catalog needs more CP
    export INSTANCE_URL=https://videos.example.org   # your domain on Cloudflare
    export D1_DATABASE_ID=…                          # from step 1
    export INSTANCE_NAME="Our videos"
-   # Optional: OPERATOR_NAME, OPERATOR_CONTACT, SEEDED_CHANNELS_PER_DAY, SEARCH_SOURCES, MESSAGES_TO, MESSAGES_FROM
+   # Optional: OPERATOR_NAME, OPERATOR_CONTACT, SEEDED_CHANNELS_PER_DAY, MESSAGES_TO, MESSAGES_FROM
    pnpm --filter @subify/web build
    pnpm --filter @subify/server deploy:config
    pnpm --filter @subify/server exec wrangler d1 migrations apply subify --remote --config wrangler.deploy.toml
@@ -289,26 +289,6 @@ Default: empty, no dictionary.
 Days between two downloads of the dictionary. A download reads one slice a minute, 64 in all, about an hour, and writes them to the database outside the encrypted catalog's pass (the dictionary is public data).
 
 Default: 7.
-
-### `SEARCH_SOURCES`
-
-Where a channel's name is looked for, comma-separated. `wikidata` is the dictionary above (it also needs `WIKIDATA_USER_AGENT`). `invidious` and `piped` let your server search a name on public Invidious and Piped instances when nothing on the device found it: the server sends the name to one instance (never the device), checks each result against the channel's own feed on YouTube, and shows at most 5. `none` leaves only @handles and links.
-
-Turn `invidious` and `piped` on knowingly. These are third-party services that read YouTube in ways that may break its terms, which Subify itself doesn't; their operators ask to limit automated traffic, and most public instances keep their API closed. An instance sees the names searched from your server, mixed with decoys (below), never who searched them. An instance that answers 401, 403, 429 or a challenge page instead of its API is left alone for a day. Each search counts in `ONLINE_LOOKUPS_PER_MINUTE`.
-
-Default: `wikidata`. The official instance turns on all three. Example: `SEARCH_SOURCES=wikidata,invidious,piped`.
-
-### `INVIDIOUS_INSTANCES`, `PIPED_INSTANCES`
-
-The instances to search, comma-separated host names or https addresses, for example `INVIDIOUS_INSTANCES=invidious.example.org` for one you run yourself. Left empty, the server reads the projects' official lists once a day (`api.invidious.io` and `piped-instances.kavin.rocks`) and keeps the instances with their API open: for Invidious, those the list marks with an open API and up; for Piped, those up to date and up 90 % of the last week. A real search goes to one of the three that answered best lately, drawn at random by their scores, which live in memory only and start over at a restart.
-
-Default: empty, the official lists.
-
-### `SEARCH_DECOYS_PER_HOUR`
-
-Decoy searches sent to the instances per hour, on average, at random times, besides the 2 sent to other instances with each real search. They are names from the dictionary and common words, never anything from your catalog, so that an instance can't tell a real search from the others. More decoys hide real searches better, and load instances that ask to limit robots. Once a day the server logs the share of searches an instance sees that are real (`Search blurring`), the number the decoys bring down.
-
-Default: 2. 0 keeps only the decoys sent with each search.
 
 ### Node only
 

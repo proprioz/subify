@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { type Coordinator, Counters, keysAfter, type PendingUpdate, type SearchState, updateKey } from '../catalog/coordinator';
+import { type Coordinator, Counters, keysAfter, type PendingUpdate, updateKey } from '../catalog/coordinator';
 
 /** Durable Object storage deletes at most this many keys per call. */
 const DELETE_CHUNK = 128;
@@ -11,7 +11,6 @@ const DELETE_CHUNK = 128;
  */
 export class CoordinatorObject extends DurableObject {
   private readonly counters = new Counters();
-  private search: SearchState | undefined;
 
   async enqueue(message: Uint8Array, at?: number): Promise<void> {
     await this.ctx.storage.put(updateKey(at ?? Date.now(), crypto.getRandomValues(new Uint8Array(8))), message);
@@ -38,13 +37,6 @@ export class CoordinatorObject extends DurableObject {
   }
 
   /** The search instances' scores: memory only, like the budgets. */
-  async searchState(): Promise<SearchState | undefined> {
-    return this.search;
-  }
-
-  async saveSearchState(state: SearchState): Promise<void> {
-    this.search = state;
-  }
 }
 
 /** The one instance, through its binding. */
@@ -57,7 +49,5 @@ export function coordinatorOf(namespace: DurableObjectNamespace<CoordinatorObjec
     remove: (keys) => stub.remove([...keys]),
     take: (name, windowStart, limit) => stub.take(name, windowStart, limit),
     spent: (name, windowStart) => stub.spent(name, windowStart),
-    searchState: () => stub.searchState(),
-    saveSearchState: (state) => stub.saveSearchState(state),
   };
 }

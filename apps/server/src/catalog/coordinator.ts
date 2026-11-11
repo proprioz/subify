@@ -20,30 +20,6 @@ export interface Coordinator {
   take(name: string, windowStart: number, limit: number | null): Promise<boolean>;
   /** What a budget counted in this window so far. */
   spent(name: string, windowStart: number): Promise<number>;
-  /** The search instances and how reliable each has been (src/search/search.ts), in memory only; undefined after a restart. */
-  searchState(): Promise<SearchState | undefined>;
-  saveSearchState(state: SearchState): Promise<void>;
-}
-
-export type InstanceKind = 'invidious' | 'piped';
-
-export interface InstanceState {
-  kind: InstanceKind;
-  host: string;
-  /** From 0 to 1, how well it answered lately; 0.5 for an instance not tried yet. */
-  score: number;
-  scoredAt: number;
-  /** It refused automated requests: left alone until then. */
-  blockedUntil: number;
-}
-
-export interface SearchState {
-  /** When the instance lists were last read. */
-  listedAt: number;
-  instances: InstanceState[];
-  /** Searches each instance got since then, real and decoy, to measure the blurring. */
-  real: number;
-  decoys: number;
 }
 
 export interface PendingUpdate {
@@ -92,7 +68,6 @@ export function keysAfter(until: number): string {
 export class MemoryCoordinator implements Coordinator {
   private readonly updates = new Map<string, Uint8Array>();
   private readonly counters = new Counters();
-  private search: SearchState | undefined;
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -118,13 +93,5 @@ export class MemoryCoordinator implements Coordinator {
 
   async spent(name: string, windowStart: number): Promise<number> {
     return this.counters.spent(name, windowStart);
-  }
-
-  async searchState(): Promise<SearchState | undefined> {
-    return this.search === undefined ? undefined : structuredClone(this.search);
-  }
-
-  async saveSearchState(state: SearchState): Promise<void> {
-    this.search = structuredClone(state);
   }
 }

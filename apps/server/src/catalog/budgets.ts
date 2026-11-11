@@ -41,8 +41,6 @@ export interface Budgets {
   beforeGoingOnline(): Promise<void>;
   /** Called once a channel entered the catalog. */
   channelAdded(): Promise<void>;
-  /** Called once by a search by name before it goes online: it costs a read of this minute's, like a submission. */
-  beforeSearching(): Promise<void>;
 }
 
 /**
@@ -86,14 +84,6 @@ export function budgets(platform: Pick<Platform, 'db' | 'config' | 'clock' | 'co
       const at = platform.clock.now();
 
       await Promise.all([take(PER_HOUR, at, null), take(PER_DAY, at, null)]);
-    },
-
-    async beforeSearching() {
-      const at = platform.clock.now();
-
-      if (!(await take(LOOKUPS, at, config.onlineLookupsPerMinute))) {
-        throw new BudgetError('busy', BUSY, secondsLeft(LOOKUPS, at));
-      }
     },
   };
 }

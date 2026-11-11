@@ -75,5 +75,3 @@ PUBLIC_BASE_URL = ""
 CONTACT_URL = ""
 # Seeding (docs/FEATURES.md, D15): off unless the instance turns it on.
 SEEDED_CHANNELS_PER_DAY = "0"
-# Name search (docs/FEATURES.md, D16): the Wikidata dictionary, then optionally Invidious and Piped.
-SEARCH_SOURCES = "wikidata"

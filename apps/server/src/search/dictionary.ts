@@ -80,7 +80,7 @@ export function popularityQuery(slice: number): string {
 export async function refreshDictionary(platform: Platform): Promise<void> {
   const { config, db, clock } = platform;
 
-  if (!config.searchSources.has('wikidata') || config.wikidataUserAgent === null) {
+  if (config.wikidataUserAgent === null) {
     return;
   }
 

@@ -17,8 +17,6 @@ export interface NamedChannel {
   id: string;
   handle: string | null;
   name: string;
-  /** What a search service says of it; the dictionary has none. */
-  description?: string;
   /** Found despite a typo or two: a suggestion rather than the name typed. */
   similar?: true;
   /**

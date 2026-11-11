@@ -107,13 +107,13 @@ export async function findInCatalog(
 
     onStep({ kind: 'blind', inputs: input.handles.length });
     const entries = await evaluate(api, catalog, input.handles.map((handle) => handleInput('youtube', handle)));
-    const target = await readHandles(api, entries, onStep);
+    const found = await readHandles(api, entries, onStep);
 
-    if (target === null) {
+    if (found === null) {
       return null;
     }
 
-    key = `${target.source}:${target.externalId}`;
+    key = `${found.source}:${found.externalId}`;
   }
 
   onStep({ kind: 'blind', inputs: 1 });
@@ -134,11 +134,11 @@ export async function findInCatalog(
 }
 
 /**
- * The channel the first of these handles' entries leads to in the handle index, or null. The
- * chunks read are those of the entries when they all fall in one, else every chunk: the set of
- * chunks a name's guesses fall in would point the server to the name.
+ * The channel the first of these handles' entries leads to in the handle index, with that entry's
+ * place, or null. The chunks read are those of the entries when they all fall in one, else every
+ * chunk: the set of chunks a name's guesses fall in would point the server to the name.
  */
-async function readHandles(api: Api, entries: readonly Slot[], onStep: OnStep): Promise<{ source: string; externalId: string } | null> {
+async function readHandles(api: Api, entries: readonly Slot[], onStep: OnStep): Promise<{ source: string; externalId: string; at: number } | null> {
   try {
     const bounds = (await api.handleBounds()).chunks.map(fromBase64Url);
     const wanted = new Set(entries.map((entry) => chunkOf(bounds, entry.id)));
@@ -150,11 +150,11 @@ async function readHandles(api: Api, entries: readonly Slot[], onStep: OnStep): 
       chunks.set(chunk, fromBase64Url((await api.handleChunk(chunk)).entries));
     }
 
-    for (const entry of entries) {
+    for (const [at, entry] of entries.entries()) {
       const target = await openHandleEntry(entry.id, entry.key, chunks.get(chunkOf(bounds, entry.id))!);
 
       if (target !== null) {
-        return target;
+        return { ...target, at };
       }
     }
 
@@ -167,6 +167,22 @@ async function readHandles(api: Api, entries: readonly Slot[], onStep: OnStep): 
 
     throw error;
   }
+}
+
+/**
+ * The channel one of these handles names in the catalog, found blindly in the handle index, with
+ * the handle that found it; null when none does. Lighter than findInCatalog: it reads no group,
+ * so a name's guesses can be looked up as the name is typed, and following the channel reads its group.
+ */
+export async function findHandle(api: Api, catalog: CatalogKey, handles: readonly string[]): Promise<{ key: string; handle: string } | null> {
+  if (handles.length === 0) {
+    return null;
+  }
+
+  const { handleInput } = await oprf();
+  const found = await readHandles(api, await evaluate(api, catalog, handles.map((handle) => handleInput('youtube', handle))), () => {});
+
+  return found === null ? null : { key: `${found.source}:${found.externalId}`, handle: handles[found.at]! };
 }
 
 /** Adds a channel by link the clear way: the server reads it online if the catalog doesn't have it. */

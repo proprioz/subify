@@ -116,7 +116,6 @@ jobs:
           OPERATOR_NAME: ${{ vars.OPERATOR_NAME }}
           OPERATOR_CONTACT: ${{ vars.OPERATOR_CONTACT }}
           SEEDED_CHANNELS_PER_DAY: ${{ vars.SEEDED_CHANNELS_PER_DAY }}
-          SEARCH_SOURCES: ${{ vars.SEARCH_SOURCES }}
           # A secret, not a variable: deploy logs are public on a public repository, and GitHub hides secrets in them.
           MESSAGES_TO: ${{ secrets.MESSAGES_TO }}
           MESSAGES_FROM: ${{ vars.MESSAGES_FROM }}

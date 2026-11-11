@@ -3,7 +3,7 @@ import type { SnapshotChannel } from '@subify/shared/codec';
 import { describe, expect, it } from 'vitest';
 import { type Backup, restoreBackup } from '../src/data/backup';
 import { getMeta } from '../src/data/db';
-import { unfinishedSync } from '../src/data/encrypted';
+import { findHandle, unfinishedSync } from '../src/data/encrypted';
 import { followMany, followOne } from '../src/data/follow-many';
 import { findChannel, follow } from '../src/data/subscriptions';
 import { syncUpdates } from '../src/data/sync';
@@ -118,7 +118,6 @@ describe('the encrypted catalog', () => {
     const { server, catalog } = encryptedServer();
     catalog.publish(snapshotChannel(B, 1));
     catalog.online.set('Léna Situations', snapshotChannel(A, 1, 'lenasituations'));
-    server.searchResults = [];
     const db = freshDb();
     const steps = async (input: string) => {
       const kinds: string[] = [];
@@ -133,40 +132,23 @@ describe('the encrypted catalog', () => {
 
     expect(known.kinds).toEqual(['catalog', 'blind', 'group']);
     expect(known.sent).not.toContain('POST /api/add');
-    expect(name.kinds).toEqual(['catalog', 'blind', 'handles', 'search', 'add']);
-    expect(name.sent.slice(-2)).toEqual(['POST /api/search', 'POST /api/add']);
+    expect(name.kinds).toEqual(['catalog', 'blind', 'handles', 'add']);
+    expect(name.sent.at(-1)).toBe('POST /api/add');
   });
 
-  // The search services come after everything that names nothing: only a name the handle index doesn't know goes there, and its results are offered to choose from.
-  it('searches a name on the server’s search services only when no guessed handle is in the catalog', async () => {
+  // Looked up as a name is typed, a guess must name nothing to the server and read no group: following the channel does that.
+  it('finds the channel a likely handle names in the catalog, with that handle, without reading its group', async () => {
     const { server, catalog } = encryptedServer();
-    catalog.publish(snapshotChannel(B, 1, 'knownchannel'));
-    server.searchResults = [{ id: A, name: 'Léna Situations', handle: 'lena', description: 'Vlogs' }];
-    const db = freshDb();
+    catalog.publish(snapshotChannel(B, 1, 'le.monde'));
+    const api = server.api();
 
-    const known = await findChannel(db, server.api(), 'Known Channel');
-    const searched = await findChannel(db, server.api(), 'Léna Situations');
+    const found = await findHandle(api, await api.catalog(), ['lemonde', 'le.monde', 'le_monde']);
+    const none = await findHandle(api, await api.catalog(), ['nobodyhere']);
 
-    expect(known).toMatchObject({ submitted: { channel: { key: `youtube:${B}` } } });
-    expect(searched).toEqual({ matches: [{ id: A, name: 'Léna Situations', handle: 'lena', description: 'Vlogs' }] });
-    expect(server.posted('/api/search')).toEqual([{ q: 'Léna Situations' }]);
+    expect(found).toEqual({ key: `youtube:${B}`, handle: 'le.monde' });
+    expect(none).toBeNull();
+    expect(server.paths.some((path) => path.startsWith('GET /api/snapshot'))).toBe(false);
     expect(server.paths).not.toContain('POST /api/add');
-  });
-
-  // “Not listed?” after the search's results, or a search that found nothing, must still reach the last resort: the server's guessed handles.
-  it('goes on to the server’s guessed handles when the search found nothing, or is skipped', async () => {
-    const { server, catalog } = encryptedServer();
-    catalog.online.set('Léna Situations', snapshotChannel(A, 1, 'lenasituations'));
-    server.searchResults = [];
-    const db = freshDb();
-
-    const empty = await findChannel(db, server.api(), 'Léna Situations');
-    server.searchResults = [{ id: B, name: 'Other', handle: null, description: '' }];
-    const skipped = await findChannel(db, server.api(), 'Léna Situations', { search: false });
-
-    expect(empty).toMatchObject({ submitted: { channel: { key: `youtube:${A}` } } });
-    expect(skipped).toMatchObject({ submitted: { channel: { key: `youtube:${A}` } } });
-    expect(server.posted('/api/search')).toHaveLength(1);
   });
 
   // A channel the catalog lacks is the only case where the server learns the link, and the device must still get it whole.

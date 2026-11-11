@@ -49,9 +49,9 @@ export function PrivacyPage() {
           </li>
           <li>
             Looking a channel up by its name starts on this device, in a public list of channel names, the same for everyone, that the app downloads when you start
-            adding a channel or refresh (about 7 MB, again when the server renews it). If nothing is found there, the server searches: on Invidious or Piped, services
-            run by others, if this server’s operator turned them on, and last on YouTube. These searches leave from the server, never from your device, so they stay anonymous, and the server forgets
-            them.
+            adding a channel or refresh (about 7 MB, again when the server renews it). The app also looks for the
+            @handles the name likely gives in the server’s catalog, without telling the server which. Only if you choose to check YouTube does the server see the name: it
+            looks those @handles up there, from the server, never from your device, without learning who asked, and forgets the name.
           </li>
           <li>
             With the connection check on in Settings, the app first asks the server which country it sees you from, for example to make sure your VPN is on. The server doesn’t

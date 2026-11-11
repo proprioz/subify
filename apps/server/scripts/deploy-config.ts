@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
  * - INSTANCE_URL (required): https://<domain>. Gives the route, PUBLIC_BASE_URL and the contact
  *   Wikidata asks automated clients for.
  * - D1_DATABASE_ID (required): the id `wrangler d1 create` gave.
- * - INSTANCE_NAME (required), OPERATOR_NAME, OPERATOR_CONTACT, SEEDED_CHANNELS_PER_DAY,
- *   SEARCH_SOURCES (optional: wrangler.toml's values stay).
+ * - INSTANCE_NAME (required), OPERATOR_NAME, OPERATOR_CONTACT, SEEDED_CHANNELS_PER_DAY (optional:
+ *   wrangler.toml's values stay).
  * - MESSAGES_TO (optional): turns the contact form on, with a send_email binding to that address
  *   only. MESSAGES_FROM: the sender, contact@<domain> by default.
  */
@@ -69,7 +69,7 @@ set('INSTANCE_NAME', text(required('INSTANCE_NAME')));
 set('PUBLIC_BASE_URL', text(origin));
 set('WIKIDATA_USER_AGENT', text(`SubifyBot/1.0 (${origin}) feed-reader`));
 
-for (const key of ['OPERATOR_NAME', 'OPERATOR_CONTACT', 'SEEDED_CHANNELS_PER_DAY', 'SEARCH_SOURCES', 'MESSAGES_TO']) {
+for (const key of ['OPERATOR_NAME', 'OPERATOR_CONTACT', 'SEEDED_CHANNELS_PER_DAY', 'MESSAGES_TO']) {
   const value = optional(key);
 
   if (value !== null) {

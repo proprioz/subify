@@ -14,7 +14,6 @@ import {
   DEFAULT_ONLINE_LOOKUPS_PER_MINUTE,
   DEFAULT_POLL_BATCH_SIZE,
   DEFAULT_SEEDED_CHANNELS_PER_DAY,
-  DEFAULT_SEARCH_DECOYS_PER_HOUR,
   DEFAULT_WIKIDATA_REFRESH_DAYS,
 } from '../../src/config';
 import { FakeFetch } from '../support/fake-fetch';
@@ -41,13 +40,9 @@ const defaultConfig: Config = {
   seededChannelsPerDay: DEFAULT_SEEDED_CHANNELS_PER_DAY,
   // Off, so that a channel enters at the next pass: test/shared/seeding.test.ts checks the delay.
   entryDelay: 0,
-  searchSources: new Set(['wikidata']),
   // Without it nothing reads Wikidata: the dictionary's tests set one.
   wikidataUserAgent: null,
   wikidataRefreshDays: DEFAULT_WIKIDATA_REFRESH_DAYS,
-  invidiousInstances: null,
-  pipedInstances: null,
-  searchDecoysPerHour: DEFAULT_SEARCH_DECOYS_PER_HOUR,
 };
 
 /** The tests' master secret: any 32 bytes do. */

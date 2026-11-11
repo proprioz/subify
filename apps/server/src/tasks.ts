@@ -2,7 +2,6 @@ import { runPassIfDue } from './catalog/pass';
 import { addSeededChannel } from './catalog/seeding';
 import { logError } from './log';
 import { refreshDictionary } from './search/dictionary';
-import { searchInBackground } from './search/search';
 import type { Platform } from './platform';
 import type { SourceAdapter } from './sources/source';
 
@@ -23,8 +22,6 @@ export const scheduledTasks: readonly ScheduledTask[] = [
   { name: 'pass', everyMinutes: 1, run: runPassIfDue },
   // Off without WIKIDATA_USER_AGENT; while a refresh runs, one slice a minute.
   { name: 'dictionary', everyMinutes: 1, run: refreshDictionary },
-  // Off unless SEARCH_SOURCES names invidious or piped: the instance lists once a day, and decoys.
-  { name: 'search', everyMinutes: 1, run: searchInBackground },
 ];
 
 export function isDue(task: ScheduledTask, now: number): boolean {

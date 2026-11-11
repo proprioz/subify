@@ -59,30 +59,13 @@ export interface Config {
   /** ENTRY_DELAY, never set from the environment: tests take 0, to see a channel enter at the next pass. */
   entryDelay: number;
   /**
-   * Where a name is looked for when the app's search finds no handle or link (docs/FEATURES.md,
-   * D16): `wikidata` (the dictionary, downloaded by devices), `invidious`, `piped`. Default
-   * `wikidata`; `none` leaves only handles and links.
-   */
-  searchSources: ReadonlySet<SearchSource>;
-  /**
    * Sent to Wikidata only, as Wikimedia asks of every automated client: a name and a contact. Without
    * it the server doesn't download the dictionary, and devices find channels by name less often.
    */
   wikidataUserAgent: string | null;
   /** Days between two refreshes of the dictionary. */
   wikidataRefreshDays: number;
-  /**
-   * The Invidious and Piped instances to search, as host names. null: those the projects' official
-   * lists show with an open API, read once a day.
-   */
-  invidiousInstances: readonly string[] | null;
-  pipedInstances: readonly string[] | null;
-  /** Decoy searches sent to the instances per hour, on average, besides those sent with each real search. */
-  searchDecoysPerHour: number;
 }
-
-export type SearchSource = 'wikidata' | 'invidious' | 'piped';
-const SEARCH_SOURCES: readonly SearchSource[] = ['wikidata', 'invidious', 'piped'];
 
 export const DEFAULT_POLL_BATCH_SIZE = 5;
 export const DEFAULT_RETENTION_DAYS = 183;
@@ -92,7 +75,6 @@ export const DEFAULT_ONLINE_LOOKUPS_PER_MINUTE = 10;
 export const DEFAULT_BLIND_BATCHES_PER_MINUTE = 30;
 export const DEFAULT_SEEDED_CHANNELS_PER_DAY = 0;
 export const DEFAULT_WIKIDATA_REFRESH_DAYS = 7;
-export const DEFAULT_SEARCH_DECOYS_PER_HOUR = 2;
 export const DEFAULT_MESSAGES_PER_HOUR = 5;
 export const DEFAULT_MESSAGES_PER_DAY = 20;
 
@@ -140,37 +122,9 @@ export function loadConfig(env: Record<string, unknown>): Config {
     blindBatchesPerMinute: positive(text('BLIND_BATCHES_PER_MINUTE'), DEFAULT_BLIND_BATCHES_PER_MINUTE),
     seededChannelsPerDay: positiveOrZero(text('SEEDED_CHANNELS_PER_DAY'), DEFAULT_SEEDED_CHANNELS_PER_DAY),
     entryDelay: ENTRY_DELAY,
-    searchSources: searchSources(text('SEARCH_SOURCES')),
     wikidataUserAgent: text('WIKIDATA_USER_AGENT'),
     wikidataRefreshDays: positive(text('WIKIDATA_REFRESH_DAYS'), DEFAULT_WIKIDATA_REFRESH_DAYS),
-    invidiousInstances: hosts(text('INVIDIOUS_INSTANCES')),
-    pipedInstances: hosts(text('PIPED_INSTANCES')),
-    searchDecoysPerHour: positiveOrZero(text('SEARCH_DECOYS_PER_HOUR'), DEFAULT_SEARCH_DECOYS_PER_HOUR),
   };
-}
-
-/** Comma-separated https addresses or host names, as host names; null when not set. Anything else is left out. */
-function hosts(value: string | null): readonly string[] | null {
-  if (value === null) {
-    return null;
-  }
-
-  return value.split(',').flatMap((entry) => {
-    try {
-      const url = new URL(/^https?:\/\//i.test(entry.trim()) ? entry.trim() : `https://${entry.trim()}`);
-
-      return url.protocol === 'https:' && url.port === '' && url.username === '' ? [url.hostname] : [];
-    } catch {
-      return [];
-    }
-  });
-}
-
-/** A comma-separated list; unknown names are left out. */
-function searchSources(value: string | null): ReadonlySet<SearchSource> {
-  const names = (value ?? 'wikidata').split(',').map((name) => name.trim().toLowerCase());
-
-  return new Set(SEARCH_SOURCES.filter((source) => names.includes(source)));
 }
 
 function positive(value: string | null, fallback: number): number {

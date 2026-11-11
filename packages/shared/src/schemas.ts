@@ -178,26 +178,6 @@ export const DictionarySliceResponse = z.object({
   data: z.string(),
 });
 
-export const SearchRequest = z.strictObject({
-  /** A channel's name, as the user typed it: sent only when nothing on the device found it. */
-  q: z.string().trim().min(3).max(100),
-});
-
-export const SearchResult = z.object({
-  /** The channel id, `UC…`: the app then looks the channel up by it, like a link. */
-  id: z.string(),
-  /** As the channel's own feed names it: every result was checked against it. */
-  name: z.string(),
-  handle: z.string().nullable(),
-  description: z.string(),
-});
-
-export const SearchResponse = z.object({
-  v: version3,
-  /** At most 5, empty when no search service answered: the app then tries the name's likely handles. */
-  results: z.array(SearchResult),
-});
-
 export const InstanceResponse = z.object({
   v: version3,
   /** The name its admin gave this server (INSTANCE_NAME): what the installed app is called. */

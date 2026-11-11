@@ -49,10 +49,6 @@ export type DictionaryResponse = z.infer<typeof schemas.DictionaryResponse>;
 
 export type DictionarySliceResponse = z.infer<typeof schemas.DictionarySliceResponse>;
 
-export type SearchResult = z.infer<typeof schemas.SearchResult>;
-
-export type SearchResponse = z.infer<typeof schemas.SearchResponse>;
-
 export type InstanceResponse = z.infer<typeof schemas.InstanceResponse>;
 export type ContactChallengeResponse = z.infer<typeof schemas.ContactChallengeResponse>;
 export type ContactRequest = z.input<typeof schemas.ContactRequest>;

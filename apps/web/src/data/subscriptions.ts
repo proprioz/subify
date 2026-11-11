@@ -1,7 +1,6 @@
 import { type ApiChannel, type ApiItem, ENTRY_DELAY, guessHandles, MAX_SYNC_CHANNELS } from '@subify/shared';
 import type { Api } from './api';
 import { localChannelKey, localHandle } from './channel-link';
-import type { NamedChannel } from './dictionary';
 import { addByLink, findInCatalog, type NewChannel } from './encrypted';
 import { ALL_TYPES, putItems, setMeta, setRetryAt, type Subscription, type SubifyDb } from './db';
 
@@ -35,9 +34,6 @@ export async function checkRoom(db: SubifyDb, adding: number): Promise<void> {
  */
 export type FoundChannel = { following: Subscription } | { submitted: NewChannel };
 
-/** What looking text up gives: a channel, or, for a name, the channels a search service found, to choose from. */
-export type LookUpResult = FoundChannel | { matches: NamedChannel[] };
-
 /**
  * Each step a lookup goes through, as it starts, so the user can see where it is and why it takes
  * time. A step of the same kind as the previous one (another slice, another chunk) continues it.
@@ -55,8 +51,6 @@ export type LookUpStep =
   | { kind: 'handles'; chunk: number; chunks: number }
   /** Reading a whole group's snapshot. */
   | { kind: 'group' }
-  /** Invidious and Piped, through the server. */
-  | { kind: 'search' }
   /** `POST /add`: the server reads the channel online, and answers after at least 8 seconds. */
   | { kind: 'add' };
 
@@ -67,7 +61,7 @@ export type OnStep = (step: LookUpStep) => void;
  * closing the results leaves the device as it was. A link that names a channel already followed
  * is answered without asking.
  */
-export async function findChannel(db: SubifyDb, api: Api, input: string, { search = true, onStep = () => {} }: { search?: boolean; onStep?: OnStep } = {}): Promise<LookUpResult> {
+export async function findChannel(db: SubifyDb, api: Api, input: string, { onStep = () => {} }: { onStep?: OnStep } = {}): Promise<FoundChannel> {
   const key = localChannelKey(input);
   const known = key === null ? undefined : await db.subscriptions.get(key);
 
@@ -75,12 +69,7 @@ export async function findChannel(db: SubifyDb, api: Api, input: string, { searc
     return { following: known };
   }
 
-  const submitted = await lookUp(api, input, key, search, onStep);
-
-  if (Array.isArray(submitted)) {
-    return { matches: submitted };
-  }
-
+  const submitted = await lookUp(api, input, key, onStep);
   const existing = await db.subscriptions.get(submitted.channel.key);
 
   return existing === undefined ? { submitted } : { following: existing };
@@ -88,11 +77,11 @@ export async function findChannel(db: SubifyDb, api: Api, input: string, { searc
 
 /**
  * The channel a link names, from the server. A channel id, a @handle or the handles a name likely
- * gives are first looked for in the encrypted catalog without naming them;
- * then a name goes to the server's search services, when it has any and `search` allows; anything
- * else, or a channel none of them finds, is sent in clear.
+ * gives are first looked for in the encrypted catalog without naming them; anything else, or a
+ * channel the catalog lacks, is sent in clear, and the server reads it online (a name, as the
+ * handles it likely gives).
  */
-async function lookUp(api: Api, input: string, key: string | null, search: boolean, onStep: OnStep): Promise<NewChannel | NamedChannel[]> {
+async function lookUp(api: Api, input: string, key: string | null, onStep: OnStep): Promise<NewChannel> {
   onStep({ kind: 'catalog' });
   const catalog = await api.catalog();
 
@@ -103,16 +92,6 @@ async function lookUp(api: Api, input: string, key: string | null, search: boole
 
   if (known !== null) {
     return known;
-  }
-
-  // A name: Invidious or Piped, through the server, before the server reads guessed handles online.
-  if (search && key === null && handle === null && guesses.length > 0) {
-    onStep({ kind: 'search' });
-    const results = (await api.search(input.trim()))?.results ?? [];
-
-    if (results.length > 0) {
-      return results;
-    }
   }
 
   onStep({ kind: 'add' });
