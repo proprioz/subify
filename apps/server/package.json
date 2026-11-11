@@ -22,29 +22,29 @@
     "dev:seed": "tsx --tsconfig tsconfig.json scripts/seed-dev.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.0",
+    "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
     "@jsquash/jpeg": "^1.6.0",
     "@jsquash/webp": "^1.5.0",
     "@subify/shared": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "fast-xml-parser": "^5.12.0",
-    "hono": "^4.13.14",
-    "kysely": "^0.29.7",
-    "nodemailer": "^10.2.1",
+    "hono": "^4.13.16",
+    "kysely": "^0.29.8",
+    "nodemailer": "^10.3.1",
     "thumbhash": "^0.1.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.8",
-    "@cloudflare/workers-types": "^5.20261026.1",
+    "@cloudflare/vitest-plugin": "^1.5.1",
+    "@cloudflare/workers-types": "^5.20261104.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^8.0.2",
     "tsx": "^4.20.0",
     "typescript": "^7.0.0",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "wrangler": "^4.153.0"
   }
 }
