@@ -132,6 +132,33 @@ describe('what a sync keeps', () => {
   });
 });
 
+// The cursor a device sends would tie its refreshes together: it names only the 12 hours its last refresh fell in.
+describe('what a sync tells the server', () => {
+  it('reads from its cursor rounded down to 72 passes, and writes the new videos once', async () => {
+    const server = new FakeServer().publish(channel(A));
+    const { db, api } = await followedA(server);
+    onePassEach(server, 80);
+    await syncUpdates(db, api, NOW);
+    const cursor = await getMeta<number>(db, 'streamPass');
+    many(A, 'w', 3).forEach((video) => server.publish(null, video));
+    const sinces: number[] = [];
+    const stream = api.stream.bind(api);
+    api.stream = async (since, group) => {
+      sinces.push(since);
+
+      return stream(since, group);
+    };
+
+    await syncUpdates(db, api, NOW);
+
+    expect(cursor! % 72).not.toBe(0);
+    // After the request for the latest pass alone.
+    expect(sinces.slice(1)).toEqual([cursor! - (cursor! % 72)]);
+    expect(await db.items.count()).toBe(83);
+    expect(await getMeta<number>(db, 'streamPass')).toBe(server.encrypted.pass);
+  });
+});
+
 /** A screen the test turns off and back on. */
 class FakeScreen implements Visibility {
   private listeners = new Set<() => void>();

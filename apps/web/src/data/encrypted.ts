@@ -321,6 +321,14 @@ const LATEST_ONLY = 999_999_999;
 const PARALLEL = 6;
 
 /**
+ * The cursor a sync reads from is rounded down to a multiple of this many passes, 12 hours at the
+ * 10-minute period: every device whose last refresh fell in the same 12 hours sends the same
+ * `since`, so it doesn't tie two refreshes of a device together. The passes read again change
+ * nothing, since an older change is skipped.
+ */
+const SINCE_STEP = 72;
+
+/**
  * A sync under way, kept so that one cut short resumes where it stopped: it has read the passes in
  * (below, top], newest first; those in (streamPass, below] are left.
  */
@@ -376,6 +384,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
       continue;
     }
 
+    const start = since - (since % SINCE_STEP);
     let run = await getMeta<StreamRun>(db, 'streamRun');
 
     if (run === undefined) {
@@ -383,7 +392,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
       await setMeta(db, 'streamGroups', latest.groups);
 
       // A catalog started over, or further behind than the stream keeps: snapshots tell the rest.
-      if (latest.latest < since || since + 1 <= latest.latest - STREAM_KEPT_PASSES) {
+      if (latest.latest < since || start + 1 <= latest.latest - STREAM_KEPT_PASSES) {
         await catchUp(db, api, catalog, now, true);
         continue;
       }
@@ -398,8 +407,8 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
       await setMeta(db, 'streamRun', run);
     }
 
-    onProgress(run.top === since ? 1 : (run.top - run.below) / (run.top - since));
-    const from = Math.max(since, run.below - run.page);
+    onProgress((run.top - run.below) / (run.top - start));
+    const from = Math.max(start, run.below - run.page);
     const groups = (await getMeta<number>(db, 'streamGroups')) ?? 1;
     const wanted = [...new Set(subscriptions.map((subscription) => groupOf(subscription.slot!.id, groups)))];
     const pages = await inParallel(wanted, PARALLEL, async (group) => ({ group, page: await api.stream(from, group) }));
@@ -430,7 +439,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
       }
     }
 
-    const done = from === since;
+    const done = from === start;
 
     await db.transaction('rw', db.subscriptions, db.items, db.meta, async () => {
       for (const { subscription, pass, deltas } of changes) {
