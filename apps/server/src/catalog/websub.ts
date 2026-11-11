@@ -106,7 +106,7 @@ export async function receiveNotification(platform: Platform, sources: readonly 
           now: platform.clock.now(),
         });
 
-        Object.assign(update, { title: result.snapshot?.title ?? '', items: result.snapshot?.items ?? [], dropped: result.droppedUpcoming ?? [], mentions: result.snapshot?.mentions ?? [] });
+        Object.assign(update, { title: result.snapshot?.title ?? '', items: result.snapshot?.items ?? [], dropped: result.droppedUpcoming ?? [], citations: result.snapshot?.citations ?? [] });
       }
 
       await enqueueUpdate(platform.coordinator, keys, update);

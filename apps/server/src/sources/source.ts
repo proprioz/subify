@@ -156,10 +156,17 @@ export interface ChannelSnapshot {
   title: string;
   items: IncomingItem[];
   /**
-   * Other channels that the descriptions of new items link to, a few at most: the server may add
-   * them as seeded channels (docs/FEATURES.md, D15).
+   * Other channels that the descriptions of new items link to, a few at most, each with the item
+   * that cites it: the server may add them as seeded channels (docs/FEATURES.md, D15).
    */
-  mentions?: ParsedInput[];
+  citations?: Citation[];
+}
+
+/** A link to another channel, and the item whose description it is in, with its publication time. */
+export interface Citation {
+  input: ParsedInput;
+  video: string;
+  published: number;
 }
 
 export type InputErrorCode = 'invalid_link' | 'channel_not_found';

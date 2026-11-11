@@ -1,7 +1,7 @@
 import type { SlotChannel, SlotImage, StreamDelta, WebSubStatus } from '@subify/shared/codec';
 import { openMessage, sealMessage } from '../crypto/aead';
 import type { ServerKeys } from '../crypto/keys';
-import type { IncomingItem, ParsedInput } from '../sources/source';
+import type { Citation, IncomingItem, ParsedInput } from '../sources/source';
 import type { Coordinator, PendingUpdate } from './coordinator';
 
 /**
@@ -14,7 +14,7 @@ export type Update =
   | {
       kind: 'channel';
       channel: SlotChannel;
-      mentions?: ParsedInput[];
+      citations?: Citation[];
       /**
        * The thumbnails the addition already read, by item, with their previews; null for one it
        * tried and didn't get. The pass doesn't read them again.
@@ -22,7 +22,7 @@ export type Update =
       thumbnails?: { itemId: string; image: SlotImage | null; preview?: Uint8Array | null }[];
     }
   /** What a channel's feeds said, read after a WebSub notification. */
-  | { kind: 'feed'; source: string; externalId: string; title: string; items: IncomingItem[]; dropped: string[]; deleted: string[]; mentions?: ParsedInput[] }
+  | { kind: 'feed'; source: string; externalId: string; title: string; items: IncomingItem[]; dropped: string[]; deleted: string[]; citations?: Citation[] }
   /** The hub confirmed or denied a subscription. */
   | { kind: 'websub'; source: string; externalId: string; status: WebSubStatus; expiresAt: number | null }
   /** A thumbnail the last pass had no case for in the ring. */

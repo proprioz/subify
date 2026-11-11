@@ -9,6 +9,7 @@ import slotV2 from '../fixtures/payloads/slot-v2.hex?raw';
 import stateV1 from '../fixtures/payloads/state-v1.hex?raw';
 import thumbnailV1 from '../fixtures/payloads/thumbnail-v1.hex?raw';
 import poolV1 from '../fixtures/payloads/pool-v1.hex?raw';
+import poolV2 from '../fixtures/payloads/pool-v2.hex?raw';
 import hoursV1 from '../fixtures/payloads/hours-v1.hex?raw';
 import deltaV1 from '../fixtures/payloads/delta-v1.hex?raw';
 import deltaV2 from '../fixtures/payloads/delta-v2.hex?raw';
@@ -97,15 +98,22 @@ describe('the slot codec', () => {
   });
 
   // A pass reads seeding's rows before it rewrites them: a format change would show in this diff, and rows of version 1 must keep decoding.
-  it('keeps decoding the version 1 seed pool and hours fixtures, and encodes them the same way', () => {
+  // Version 1 knew no citing video: its candidates read with none, and ripen by their day.
+  it('keeps decoding the version 1 and 2 seed pool and the hours fixtures, and encodes them the same way', () => {
+    const none = { citer: '', video: '', cited: 0, ripe: false };
     const pool = [
-      { source: 'fake', input: 'channel:b', cites: 2, day: 20_750 },
-      { source: 'youtube', input: 'handle:lenasitu', cites: 1, day: 20_760 },
+      { source: 'fake', input: 'channel:b', cites: 2, day: 20_750, ...none },
+      { source: 'youtube', input: 'handle:lenasitu', cites: 1, day: 20_760, ...none },
+    ];
+    const poolWithCiters = [
+      { source: 'fake', input: 'channel:b', cites: 2, day: 20_750, citer: 'a', video: 'a1', cited: 20_740, ripe: true },
+      { source: 'youtube', input: 'handle:lenasitu', cites: 1, day: 20_760, citer: 'UCsXVk37bltHxD1rDPwtNM8Q', video: 'dQw4w9WgXcQ', cited: 20_759, ripe: false },
     ];
     const hours = { counts: Array.from({ length: 24 }, (_, hour) => (hour === 12 ? 5 : hour === 18 ? 1 : 0)), halvedDay: 20_755 };
 
     expect(seedPoolCodec.decode(fromHex(poolV1, seedPoolCodec.size))).toEqual(pool);
-    expect(hex(seedPoolCodec.encode(pool)).replace(/(00)+$/, '')).toBe(poolV1.trim());
+    expect(seedPoolCodec.decode(fromHex(poolV2, seedPoolCodec.size))).toEqual(poolWithCiters);
+    expect(hex(seedPoolCodec.encode(poolWithCiters)).replace(/(00)+$/, '')).toBe(poolV2.trim());
     expect(addingHoursCodec.decode(fromHex(hoursV1, addingHoursCodec.size))).toEqual(hours);
     expect(hex(addingHoursCodec.encode(hours))).toBe(hoursV1.trim() + '00'.repeat(addingHoursCodec.size - hoursV1.trim().length / 2));
   });

@@ -1,5 +1,5 @@
-import { type AddingHours, candidateSize, SEED_POOL_ROW_ROOM, type SeedCandidate, utf8Length } from '@subify/shared/codec';
-import type { ParsedInput } from '../sources/source';
+import { type AddingHours, candidateSize, SEED_POOL_ROW_ROOM, type SeedCandidate, type SlotChannel, type SlotItem, utf8Length } from '@subify/shared/codec';
+import type { Citation, ParsedInput } from '../sources/source';
 import { candidateInput } from './candidates';
 import { DAY, HOUR } from './schedule';
 
@@ -8,12 +8,16 @@ import { DAY, HOUR } from './schedule';
  * pass harvests from the catalog's descriptions, and the hours of day users add channels at.
  */
 
-/** Rows of candidates, rewritten whole at every pass: about 60,000 candidates. */
+/** Rows of candidates, rewritten whole at every pass: about 30,000 candidates. */
 export const POOL_ROWS = 64;
 /**
- * A candidate is drawn only this long after it was first cited: by then the video citing it has
- * usually left its channel's public feed (its latest 15 videos, about a month at the catalog's
- * 0.44 videos a day), so the seeded channel can't be traced to it from outside.
+ * A channel's public feeds list its latest 15 videos, and each typed playlist (videos, Shorts,
+ * lives) its latest 15 of that type: a video has left them all once 15 newer of its type came.
+ */
+export const FEED_LENGTH = 15;
+/**
+ * A candidate of version 1 knows no citing video: it is drawn this long after it was first cited,
+ * about a month at the catalog's 0.44 videos a day.
  */
 export const SEED_DELAY_DAYS = 30;
 /** Hour counts are halved this often: they follow users' habits of the last weeks. */
@@ -25,30 +29,63 @@ export interface Mention {
   input: ParsedInput;
 }
 
+/** A mention read in a description: the channel and video citing it, and that video's day. */
+export interface CitedMention extends Mention {
+  citer: string;
+  video: string;
+  cited: number;
+}
+
+/** A channel's citations as mentions, its own id as their citer. */
+export function citedBy(channel: Pick<SlotChannel, 'source' | 'externalId'>, citations: readonly Citation[] = []): CitedMention[] {
+  return citations.map(({ input, video, published }) => ({ source: channel.source, input, citer: channel.externalId, video, cited: Math.floor(published / DAY) }));
+}
+
+/**
+ * Whether a video has left its channel's public feeds, from the channel's slot: 15 newer of its
+ * type came, or it was deleted. One the slot no longer holds is past RETENTION_DAYS, or behind
+ * 400 newer ones. One whose type is still unknown waits until a read tells it.
+ */
+export function leftFeeds(items: readonly SlotItem[], video: string): boolean {
+  const cited = items.find((item) => item.id === video);
+
+  if (cited === undefined || cited.deleted) {
+    return true;
+  }
+
+  return cited.type !== 'unknown' && items.filter((item) => !item.deleted && item.type === cited.type && item.published > cited.published).length >= FEED_LENGTH;
+}
+
 /**
  * The pool after a pass: forgotten candidates out (their channel entered the catalog, or they
- * lead to none), new mentions in, a known one counted once more.
+ * lead to none), new mentions in, a known one counted once more. A known one cited again by a
+ * video as recent or more follows that video, and waits for it to leave the feeds too.
  */
-export function harvest(pool: readonly SeedCandidate[], mentions: readonly Mention[], forgotten: readonly Mention[], today: number): SeedCandidate[] {
+export function harvest(pool: readonly SeedCandidate[], mentions: readonly CitedMention[], forgotten: readonly Mention[], today: number): SeedCandidate[] {
   const gone = new Set(forgotten.map((mention) => keyOf(mention.source, candidateInput(mention.input))));
   const kept = pool.filter((candidate) => !gone.has(keyOf(candidate.source, candidate.input))).map((candidate) => ({ ...candidate }));
   const byKey = new Map(kept.map((candidate) => [keyOf(candidate.source, candidate.input), candidate]));
 
-  for (const { source, input } of mentions) {
+  for (const { source, input, citer, video, cited } of mentions) {
     const stored = candidateInput(input);
     const key = keyOf(source, stored);
     const known = byKey.get(key);
 
-    if (gone.has(key) || utf8Length(source) > MAX_TEXT || utf8Length(stored) > MAX_TEXT) {
+    if (gone.has(key) || [source, stored, citer, video].some((text) => utf8Length(text) > MAX_TEXT)) {
       continue;
     }
 
     if (known === undefined) {
-      const candidate = { source, input: stored, cites: 1, day: today };
+      const candidate = { source, input: stored, cites: 1, day: today, citer, video, cited, ripe: false };
       kept.push(candidate);
       byKey.set(key, candidate);
-    } else {
-      known.cites = Math.min(known.cites + 1, 0xff);
+      continue;
+    }
+
+    known.cites = Math.min(known.cites + 1, 0xff);
+
+    if (known.citer === '' || cited >= known.cited) {
+      Object.assign(known, { citer, video, cited, ripe: false });
     }
   }
 
@@ -81,11 +118,12 @@ export function packPool(pool: readonly SeedCandidate[], count = POOL_ROWS): See
 }
 
 /**
- * A candidate to seed: cited at least SEED_DELAY_DAYS ago, and cited once if any such is left, as
- * a channel many videos cite is easy to tell as cited.
+ * A candidate to seed: one whose citing video has left the public feeds (SEED_DELAY_DAYS after it
+ * was first cited for one of version 1), and cited once if any such is left, as a channel many
+ * videos cite is easy to tell as cited.
  */
 export function drawCandidate(pool: readonly SeedCandidate[], today: number, random: () => number): SeedCandidate | undefined {
-  const ripe = pool.filter((candidate) => candidate.day + SEED_DELAY_DAYS <= today);
+  const ripe = pool.filter((candidate) => candidate.ripe || (candidate.citer === '' && candidate.day + SEED_DELAY_DAYS <= today));
   const once = ripe.filter((candidate) => candidate.cites === 1);
   const from = once.length > 0 ? once : ripe;
 

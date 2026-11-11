@@ -7,7 +7,7 @@ import { DAY, HOUR, MINUTE, retentionCutoff } from './schedule';
 import { buildHandleIndex, type Handle } from './handles';
 import { buildLots, lotDue, lotPosition, type LotThumbnail } from './lots';
 import { PassRing, ringPositions } from './ring';
-import { countHours, emptyHours, harvest, type Mention, packPool, POOL_ROWS } from './seed-pool';
+import { citedBy, type CitedMention, countHours, emptyHours, harvest, leftFeeds, type Mention, packPool, POOL_ROWS } from './seed-pool';
 import { FIRST_TABLE_SIZE, GROWTH_WINDOW, grownSize, type LotPlan, lotPlan, needsGrowth, passPeriod, type RingPlan, ringPlan, STREAM_ROWS, type StreamPlan, streamPlan } from './sizing';
 import { deltasOf, PassStream } from './stream';
 import { slotIdOf } from './slot-id';
@@ -103,7 +103,7 @@ export async function runPass(
   const waiting = new Map<string, { id: Uint8Array; updates: Update[]; keys: string[] }>();
   const streamShape = options.stream ?? streamPlan({ slots: current.tableSize, period });
   const stream = new PassStream(streamShape, current.passes + 1);
-  const mentions: Mention[] = [];
+  const mentions: CitedMention[] = [];
   const handles: Handle[] = [];
   const keep = (channel: SlotChannel) => {
     if (channel.handle !== null) {
@@ -159,6 +159,20 @@ export async function runPass(
   const gone: Uint8Array[] = [];
   let occupied = 0;
   let after: Uint8Array | null = null;
+  // Seed candidates by the channel that cited them: each slot read tells whether its citing videos left the public feeds.
+  const [hours, pool] = await Promise.all([readHours(db, keys), readPool(db, keys)]);
+  const citing = new Map<string, typeof pool>();
+
+  for (const candidate of pool.filter((candidate) => candidate.citer !== '' && !candidate.ripe)) {
+    const key = `${candidate.source}:${candidate.citer}`;
+    citing.set(key, [...(citing.get(key) ?? []), candidate]);
+  }
+
+  const ripen = (channel: SlotChannel, items: SlotChannel['items']) => {
+    for (const candidate of citing.get(`${channel.source}:${channel.externalId}`) ?? []) {
+      candidate.ripe = leftFeeds(items, candidate.video);
+    }
+  };
 
   for (;;) {
     const slots: Slot[] = await readSlots(db, keys, after, READ_CHUNK);
@@ -180,6 +194,9 @@ export async function runPass(
       waiting.delete(hex(slot.id));
       const next = await tend(slot.payload, entry?.updates ?? [], context);
       stream.add(slot.payload.source, slot.payload.externalId, deltasOf(slot.payload, next));
+
+      // A channel gone for good has no feeds left.
+      ripen(slot.payload, next?.items ?? []);
 
       if (next === null) {
         gone.push(slot.id);
@@ -223,7 +240,7 @@ export async function runPass(
     replacements.push(...(await slotReplace(keys, decoy, { id, payload: channel })));
     occupied++;
     keep(channel);
-    mentions.push(...(entering.mentions ?? []).map((input) => ({ source: channel.source, input })));
+    mentions.push(...citedBy(channel, entering.citations));
     // A candidate left behind next to its channel would tell that a user added it.
     forgotten.push({ source: channel.source, input: { kind: 'channel', externalId: channel.externalId } });
 
@@ -294,7 +311,6 @@ export async function runPass(
   }
 
   const today = Math.floor(now / DAY);
-  const [hours, pool] = await Promise.all([readHours(db, keys), readPool(db, keys)]);
   await writeAll(platform, await seedingWrites(keys, countHours(hours ?? emptyHours(today), additions, today), packPool(harvest(pool, mentions, forgotten, today), options.poolRows)));
 
   for (const thumbnail of ring.waiting) {

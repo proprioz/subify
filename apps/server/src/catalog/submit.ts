@@ -161,7 +161,7 @@ export async function submitInput(source: SourceAdapter, parsed: ParsedInput, co
     const thumbnails = await recentThumbnails(source, snapshot.items, context);
     const channel = enteringSlot(source.source, resolved.externalId, title, handle, avatar, snapshot.items, failed, context);
     // Until the next pass gives it its slot, the coordinator holds it: a second addition meanwhile reads it again.
-    await enqueueUpdate(context.coordinator, context.keys, { kind: 'channel', channel, mentions: snapshot.mentions ?? [], thumbnails });
+    await enqueueUpdate(context.coordinator, context.keys, { kind: 'channel', channel, citations: snapshot.citations ?? [], thumbnails });
 
     if (context.byUser === true) {
       await enqueueUpdate(context.coordinator, context.keys, { kind: 'added', at: context.now() });

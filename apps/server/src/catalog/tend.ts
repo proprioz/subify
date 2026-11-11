@@ -5,7 +5,7 @@ import { logError } from '../log';
 import type { Platform } from '../platform';
 import type { SourceAdapter } from '../sources/source';
 import type { PassRing } from './ring';
-import type { Mention } from './seed-pool';
+import { citedBy, type CitedMention } from './seed-pool';
 import { DAY, EMPTY_READS, failureDelay, HOUR, nextPollDelay, withJitter } from './schedule';
 import { mergeItems } from './slot-items';
 import type { Update } from './updates';
@@ -47,8 +47,8 @@ export interface TendContext {
   cutoff: number;
   budget: PassBudget;
   ring: PassRing;
-  /** Links to channels in the descriptions read during the pass: seed candidates. */
-  mentions: Mention[];
+  /** Links to channels in the descriptions read during the pass, with the videos citing them: seed candidates. */
+  mentions: CitedMention[];
 }
 
 /** What an addition read for an item: its thumbnail, or null, and its preview. */
@@ -176,8 +176,8 @@ async function readThumbnails(
 }
 
 export function applyUpdate(slot: SlotChannel, update: Update, context: Pick<TendContext, 'now' | 'cutoff' | 'ring' | 'mentions'>): SlotChannel {
-  if ((update.kind === 'channel' || update.kind === 'feed') && update.mentions !== undefined) {
-    context.mentions.push(...update.mentions.map((input) => ({ source: slot.source, input })));
+  if (update.kind === 'channel' || update.kind === 'feed') {
+    context.mentions.push(...citedBy(slot, update.citations));
   }
 
   switch (update.kind) {
@@ -247,7 +247,7 @@ async function poll(slot: SlotChannel, source: SourceAdapter, context: TendConte
       return { ...slot, schedule: failedSchedule(slot, false, context) };
     }
 
-    context.mentions.push(...(snapshot?.mentions ?? []).map((input) => ({ source: slot.source, input })));
+    context.mentions.push(...citedBy(slot, snapshot?.citations));
     const items = snapshot === null ? slot.items : mergeItems(slot.items, { incoming: snapshot.items, dropped: result.droppedUpcoming ?? [] }, context.cutoff, now);
     const websubActive = slot.schedule.websubExpiresAt !== null && slot.schedule.websubExpiresAt > now;
     const delay = nextPollDelay(items.filter((item) => !item.deleted).map((item) => item.published), now, websubActive);

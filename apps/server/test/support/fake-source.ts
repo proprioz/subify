@@ -3,6 +3,7 @@ import { UpstreamError } from '../../src/http';
 import type { Image } from '../../src/sources/image';
 import {
   type ChannelSnapshot,
+  type Citation,
   type IncomingItem,
   InputError,
   type ParsedInput,
@@ -29,8 +30,8 @@ export class FakeSource implements SourceAdapter {
   readonly images = new Map<string, Image | null>();
   /** Every image URL read, in order. */
   readonly imageReads: string[] = [];
-  /** By channel: the links its items' descriptions hold, sent with each of its snapshots. */
-  readonly mentions = new Map<string, ParsedInput[]>();
+  /** By channel: the links its items' descriptions hold, with the items, sent with each of its snapshots. */
+  readonly citations = new Map<string, Citation[]>();
 
   /** Makes a channel exist on the platform, with these items. */
   channel(id: string, items: IncomingItem[] = [], title = `Channel ${id}`): this {
@@ -108,7 +109,7 @@ export class FakeSource implements SourceAdapter {
       throw new InputError('channel_not_found', 'No such fake channel.');
     }
 
-    return { title: channel.title, items: structuredClone(channel.items), mentions: this.mentions.get(externalId) ?? [] };
+    return { title: channel.title, items: structuredClone(channel.items), citations: this.citations.get(externalId) ?? [] };
   }
 
   /** Answers like a platform with ETags: unchanged since the last poll gives no snapshot. */
@@ -131,7 +132,7 @@ export class FakeSource implements SourceAdapter {
     const validators = new Map([['channel', { etag, lastModified: null }]]);
     const unchanged = !context.force && context.validators.get('channel')?.etag === etag;
 
-    const snapshot = { title: channel.title, items: structuredClone(channel.items), mentions: this.mentions.get(externalId) ?? [] };
+    const snapshot = { title: channel.title, items: structuredClone(channel.items), citations: this.citations.get(externalId) ?? [] };
 
     return { snapshot: unchanged ? null : snapshot, validators };
   }

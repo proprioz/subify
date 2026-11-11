@@ -2,6 +2,7 @@ import type { ItemType } from '@subify/shared';
 import { type Http, UpstreamError } from '../../http';
 import {
   type ChannelSnapshot,
+  type Citation,
   type IncomingItem,
   InputError,
   type ParsedInput,
@@ -157,7 +158,7 @@ export const youtube: SourceAdapter = {
     return {
       title: channel.title,
       items: classify(channel, { live: live.result, short: short.result, video: video.result }, now),
-      mentions: mentionsOf([channel, ...[live, short, video].map(({ result }) => feedOfResult(result))], channelId, () => true),
+      citations: citationsOf([channel, ...[live, short, video].map(({ result }) => feedOfResult(result))], channelId, () => true),
     };
   },
 
@@ -220,7 +221,7 @@ export const youtube: SourceAdapter = {
       snapshot: {
         title: channel?.title ?? '',
         items,
-        mentions: mentionsOf([channel, ...typed.map(([, result]) => feedOfResult(result))], channelId, isNew),
+        citations: citationsOf([channel, ...typed.map(([, result]) => feedOfResult(result))], channelId, isNew),
       },
       validators,
       droppedUpcoming: complete ? [...context.upcoming].filter((id) => !listed.has(id)) : [],
@@ -236,18 +237,32 @@ function feedOfResult(result: TypedFeedResult): Feed | null {
 
 /**
  * The channels that the descriptions of these feeds' new entries link to, as seed candidates
- * (docs/FEATURES.md, D15). Only new entries: the others were read when they were new.
+ * (docs/FEATURES.md, D15), each with the newest entry citing it. Only new entries: the others were
+ * read when they were new. Those whose newest citation is the oldest come first: their video
+ * leaves the public feeds first, and only then may they be seeded.
  */
-function mentionsOf(feeds: readonly (Feed | null)[], channelId: string, isNew: (videoId: string) => boolean): ParsedInput[] {
-  const groups = new Map<string, string>();
+function citationsOf(feeds: readonly (Feed | null)[], channelId: string, isNew: (videoId: string) => boolean): Citation[] {
+  const entries = new Map<string, FeedEntry>();
 
   for (const entry of feeds.flatMap((feed) => feed?.entries ?? [])) {
-    if (!groups.has(entry.videoId) && isNew(entry.videoId)) {
-      groups.set(entry.videoId, entry.group);
+    if (!entries.has(entry.videoId) && isNew(entry.videoId)) {
+      entries.set(entry.videoId, entry);
     }
   }
 
-  return groups.size === 0 ? [] : channelMentions([...groups.values()].join('\n'), channelId, MAX_MENTIONS);
+  const newest = new Map<string, Citation>();
+
+  for (const entry of [...entries.values()].sort((a, b) => b.published - a.published)) {
+    for (const input of channelMentions(entry.group, channelId, Infinity)) {
+      const key = input.kind === 'channel' ? input.externalId : input.kind === 'handle' ? `@${input.handle.toLowerCase()}` : input.value;
+
+      if (!newest.has(key)) {
+        newest.set(key, { input, video: entry.videoId, published: entry.published });
+      }
+    }
+  }
+
+  return [...newest.values()].sort((a, b) => a.published - b.published).slice(0, MAX_MENTIONS);
 }
 
 interface ConditionalAnswer {

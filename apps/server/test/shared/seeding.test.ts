@@ -2,7 +2,7 @@ import { createHarness, type Harness } from '#harness';
 import { describe, expect, it } from 'vitest';
 import { runPass } from '../../src/catalog/pass';
 import { addSeededChannel } from '../../src/catalog/seeding';
-import { countHours, emptyHours, hourShare, SEED_DELAY_DAYS } from '../../src/catalog/seed-pool';
+import { countHours, drawCandidate, emptyHours, harvest, hourShare, SEED_DELAY_DAYS } from '../../src/catalog/seed-pool';
 import { openUpdates, type Update } from '../../src/catalog/updates';
 import { readPool, readState, stateWrite } from '../../src/catalog/vault';
 import { DAY, HOUR, MINUTE } from '../../src/catalog/schedule';
@@ -29,6 +29,21 @@ async function setup(config: Partial<Config> = {}): Promise<{ harness: Harness; 
 }
 
 const OPTIONS = { firstTableSize: 8, poolRows: 2 };
+const CITED_AT = START - 20 * DAY;
+
+/**
+ * Makes channel `id` cite `cited` in its oldest video, followed by `newer` videos and 5 Shorts:
+ * the Shorts don't push a video out of its typed playlist.
+ */
+function citing(source: FakeSource, id: string, cited: readonly string[], newer: number): void {
+  const videos = Array.from({ length: newer }, (_, i) => item(`${id}v${i}`, CITED_AT + (i + 1) * HOUR));
+  const shorts = Array.from({ length: 5 }, (_, i) => item(`${id}s${i}`, CITED_AT + (i + 1) * HOUR, 'short'));
+  source.channel(id, [item(`${id}1`, CITED_AT), ...videos, ...shorts]);
+  source.citations.set(
+    id,
+    cited.map((externalId) => ({ input: { kind: 'channel', externalId }, video: `${id}1`, published: CITED_AT })),
+  );
+}
 
 interface Ripe {
   harness: Harness;
@@ -40,21 +55,27 @@ interface Ripe {
 }
 
 /**
- * A user added 'fake:a' at noon, whose new video links to 'fake:b'; the pass harvested 'b', and
- * the clock is now past the delay a candidate waits, at noon: seeding may draw 'b'.
+ * A user added 'fake:a' at noon, whose oldest video links to 'fake:b', followed by `newer` videos
+ * of its type; the pass harvested 'b', the next one read 'a' again, and the clock is still in the
+ * hour users add at: with 15 newer, the citing video has left the public feeds, and seeding may draw 'b'.
  */
-async function ripe(config: Partial<Config> = {}): Promise<Ripe> {
+async function ripe(config: Partial<Config> = {}, newer = 15): Promise<Ripe> {
   const { harness, source } = await setup(config);
   const keys = await harness.platform.keys;
   const queued = async () => (await openUpdates(keys, await harness.platform.coordinator.pending(100))).opened.map(({ update }) => update);
+  const pass = async () => {
+    await runPass(harness.platform, keys, await readState(harness.db, keys), OPTIONS, [source]);
+  };
   await runPass(harness.platform, keys, undefined, OPTIONS);
-  source.mentions.set('a', [{ kind: 'channel', externalId: 'b' }]);
+  citing(source, 'a', ['b'], newer);
   await harness.add('fake:a');
   const userUpdates = await queued();
-  source.mentions.clear();
+  source.citations.clear();
   harness.setNow(START + 10 * MINUTE);
-  await runPass(harness.platform, keys, await readState(harness.db, keys), OPTIONS, [source]);
-  harness.setNow(START + SEED_DELAY_DAYS * DAY + 20 * MINUTE);
+  await pass();
+  harness.setNow(START + 20 * MINUTE);
+  await pass();
+  harness.setNow(START + 30 * MINUTE);
 
   return { harness, source, keys, userUpdates, queued };
 }
@@ -75,8 +96,8 @@ describe('seeded channels', () => {
     const { harness, source, userUpdates, queued } = await ripe();
     const kinds = (updates: readonly Update[]) => updates.map((update) => update.kind).sort();
     const before = await queued();
-    // As 'a' had when its user added it: one video of the last hour.
-    source.channel('b', [item('b1', harness.platform.clock.now() - HOUR)]);
+    // As 'a' had when its user added it, without its link.
+    citing(source, 'b', [], 15);
 
     expect(await addSeededChannel(harness.platform, [source])).toBe(true);
     const after = await queued();
@@ -85,7 +106,7 @@ describe('seeded channels', () => {
 
     expect(kinds(userUpdates)).toEqual(['added', 'channel']);
     expect(kinds(after)).toEqual(kinds([...before, seeded!]));
-    expect(shape({ ...seeded, mentions: [] })).toEqual(shape({ ...user, mentions: [] }));
+    expect(shape({ ...seeded, citations: [] })).toEqual(shape({ ...user, citations: [] }));
   });
 
   // A seeded channel costs reads and polling like any channel: the shared budgets must hold it back too.
@@ -122,6 +143,19 @@ describe('seeded channels', () => {
 
 // With the encrypted catalog, seeding must not rely on what it can't keep: a date of entry per channel, a readable list of candidates, a write outside the pass.
 describe('seeding from the encrypted pool', () => {
+  // Drawn while the citing video is still in its channel's feeds, a seeded channel would point to it, and users' channels would stand out as uncited.
+  it('wait until the video citing them has left its channel’s public feeds: 15 newer of its type', async () => {
+    for (const [newer, drawn] of [
+      [14, false],
+      [15, true],
+    ] as const) {
+      const { harness, source } = await ripe({}, newer);
+      source.channel('b', [item('b1', harness.platform.clock.now() - HOUR)]);
+
+      expect(await addSeededChannel(harness.platform, [source])).toBe(drawn);
+    }
+  });
+
   it('draws from the pool the pass harvests, once ripe, cited once first, at the hours users add at, and forgets what it used', async () => {
     const { harness, source } = await setup();
     const keys = await harness.platform.keys;
@@ -130,44 +164,62 @@ describe('seeding from the encrypted pool', () => {
     };
     const pool = async () => (await readPool(harness.db, keys)).map((candidate) => `${candidate.input}×${candidate.cites}`).sort();
     await pass();
-    source.mentions.set('a', [{ kind: 'channel', externalId: 'b' }, { kind: 'channel', externalId: 'nobody' }, { kind: 'channel', externalId: 'c' }]);
-    source.mentions.set('z', [{ kind: 'channel', externalId: 'b' }]);
+    citing(source, 'a', ['b', 'nobody', 'c'], 15);
+    citing(source, 'z', ['b'], 15);
     // Two users' additions at noon UTC (START): seeding then adds at noon only.
     await harness.add('fake:a');
     await harness.add('fake:z');
     // YouTube names links from new videos only: later reads of these channels cite nothing more.
-    source.mentions.clear();
+    source.citations.clear();
     harness.setNow(START + 10 * MINUTE);
     await pass();
     expect(await pool()).toEqual(['channel:b×2', 'channel:c×1', 'channel:nobody×1']);
 
-    // Not ripe yet: the citing videos may still be in their channels' public feeds. Then not at
-    // an hour users add at. Nothing is drawn: a draw would leave an update for the pass.
+    // Not ripe yet: no pass has read the citing channels since. Then ripe, but not at an hour
+    // users add at. Nothing is drawn: a draw would leave an update for the pass.
     const waiting = async () => (await harness.platform.coordinator.pending(100)).length;
-    const queued = await waiting();
-    harness.setNow(START + 20 * MINUTE);
+    let queued = await waiting();
+    harness.setNow(START + 15 * MINUTE);
     expect(await addSeededChannel(harness.platform, [source])).toBe(false);
-    const ripe = START + SEED_DELAY_DAYS * DAY;
-    harness.setNow(ripe + 6 * HOUR);
+    expect(await waiting()).toBe(queued);
+    harness.setNow(START + 20 * MINUTE);
+    await pass();
+    queued = await waiting();
+    harness.setNow(START + 6 * HOUR);
     expect(await addSeededChannel(harness.platform, [source])).toBe(false);
     expect(await waiting()).toBe(queued);
 
     // Cited once first: 'nobody' leads to no channel, and is forgotten at the next pass.
-    harness.setNow(ripe + 20 * MINUTE);
+    const noon = START + DAY;
+    harness.setNow(noon + 10 * MINUTE);
     expect(await addSeededChannel(harness.platform, [source])).toBe(false);
-    harness.setNow(ripe + 30 * MINUTE);
+    harness.setNow(noon + 20 * MINUTE);
     await pass();
     expect(await pool()).toEqual(['channel:b×2', 'channel:c×1']);
 
     const before = (await harness.platform.coordinator.pending(10)).length;
-    harness.setNow(ripe + 40 * MINUTE);
+    harness.setNow(noon + 30 * MINUTE);
     expect(await addSeededChannel(harness.platform, [source])).toBe(true);
     // Only the channel waits for the pass: a seeded addition doesn't count in users' hours.
     expect(await harness.platform.coordinator.pending(10)).toHaveLength(before + 1);
 
-    harness.setNow(ripe + 50 * MINUTE);
+    harness.setNow(noon + 40 * MINUTE);
     await pass();
     expect(await pool()).toEqual(['channel:b×2']);
+  });
+
+  // A candidate that kept its first citation would ripen while a newer video citing it is still in the feeds.
+  it('follow the newest citation, and keep the day rule for candidates from before citing videos were kept', () => {
+    const ripeOne = { source: 'fake', input: 'channel:b', cites: 1, day: 100, citer: 'a', video: 'a1', cited: 90, ripe: true };
+    const mention = (citer: string, video: string, cited: number) => ({ source: 'fake', input: { kind: 'channel' as const, externalId: 'b' }, citer, video, cited });
+
+    expect(harvest([ripeOne], [mention('z', 'z1', 95)], [], 101)).toEqual([{ ...ripeOne, cites: 2, citer: 'z', video: 'z1', cited: 95, ripe: false }]);
+    expect(harvest([ripeOne], [mention('z', 'z0', 80)], [], 101)).toEqual([{ ...ripeOne, cites: 2 }]);
+
+    const older = { ...ripeOne, citer: '', video: '', cited: 0, ripe: false };
+    expect(drawCandidate([older], older.day + SEED_DELAY_DAYS - 1, () => 0)).toBeUndefined();
+    expect(drawCandidate([older], older.day + SEED_DELAY_DAYS, () => 0)).toEqual(older);
+    expect(harvest([older], [mention('z', 'z1', 80)], [], 101)).toEqual([{ ...older, cites: 2, citer: 'z', video: 'z1', cited: 80 }]);
   });
 
   // Seeded channels must follow users' current habits: hours counted for good would keep last year's.
@@ -192,7 +244,8 @@ describe('links to channels in YouTube descriptions', () => {
     const fake = withRecordedChannels(new FakeFetch());
     const snapshot = await youtube.fetchLatest(KURZGESAGT, new Http(fake.fetch, 'test', youtube.hosts), START);
 
-    expect(snapshot.mentions).toEqual([{ kind: 'handle', handle: 'nightshift_kurzgesagt' }]);
+    // Two of its videos link to it: the newest one is the one to wait for.
+    expect(snapshot.citations).toEqual([{ input: { kind: 'handle', handle: 'nightshift_kurzgesagt' }, video: 'h3DCdWyb0cc', published: Date.parse('2026-03-30T14:00:12Z') }]);
   });
 
   it('keeps links to other channels only, each once, up to the limit', () => {

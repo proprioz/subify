@@ -254,7 +254,7 @@ Default: 30.
 
 ### `SEEDED_CHANNELS_PER_DAY`
 
-How many channels the server adds to its catalog on its own each day, on average, so that a channel in the catalog doesn't show that someone follows it. It takes channels that the catalog's video descriptions link to, 30 days after they were first cited, at the hours users add channels at, once the catalog has its first channels, and stops at half the catalog's capacity. Seeded channels go through the same code as users' channels and can't be told apart from them ([FEATURES.md](FEATURES.md), D15).
+How many channels the server adds to its catalog on its own each day, on average, so that a channel in the catalog doesn't show that someone follows it. It takes channels that the catalog's video descriptions link to, once the video citing them has left its channel's public feeds, at the hours users add channels at, once the catalog has its first channels, and stops at half the catalog's capacity. Seeded channels go through the same code as users' channels and can't be told apart from them ([FEATURES.md](FEATURES.md), D15).
 
 For a personal instance, keep it at 0: hide the server instead. For a shared one, 10 to 24 is enough. The official instance uses 24.
 
