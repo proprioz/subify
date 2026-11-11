@@ -50,8 +50,9 @@ export function PrivacyPage() {
           <li>
             Looking a channel up by its name starts on this device, in a public list of channel names, the same for everyone, that the app downloads when you start
             adding a channel or refresh (about 7 MB, again when the server renews it). The app also looks for the
-            @handles the name likely gives in the server’s catalog, without telling the server which. Only if you choose to check YouTube does the server see the name: it
-            looks those @handles up there, from the server, never from your device, without learning who asked, and forgets the name.
+            @handles the name likely gives in the server’s catalog, without telling the server which. Only the @handle you tap to check on YouTube reaches the server: it
+            looks it up there, from the server, never from your device, without learning who asked, and forgets it. “Open YouTube” leaves the app for YouTube itself, which then
+            sees your search as usual, and “Paste link” reads your clipboard only when you tap it.
           </li>
           <li>
             With the connection check on in Settings, the app first asks the server which country it sees you from, for example to make sure your VPN is on. The server doesn’t

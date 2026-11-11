@@ -1,8 +1,8 @@
-import { IonButton, IonIcon, IonItem, IonLabel, IonNote, IonSpinner } from '@ionic/react';
+import { IonButton, IonChip, IonIcon, IonItem, IonLabel, IonNote, IonSpinner } from '@ionic/react';
 import { guessHandles } from '@subify/shared';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { add, checkmark, linkOutline, logoYoutube, search } from 'ionicons/icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { add, checkmark, clipboardOutline, closeOutline, logoYoutube, openOutline, search } from 'ionicons/icons';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { ServerError } from '../data/api';
@@ -22,9 +22,10 @@ import { Section } from './Section';
  * box's suggestions. It holds the followed channels the text matches, marked “Following”, the
  * channels the Wikidata dictionary names like it, searched on the device while it is typed, each
  * with “Follow”, then the channel a likely handle of the name names in the catalog, looked up
- * blindly once typing pauses. Last comes the one step that tells the server the name: checking
- * YouTube for its likely handles (“Check YouTube for @…”), the user's action, its row or Enter,
- * which says what the server sees. A link has “Find this channel” instead.
+ * blindly once typing pauses. Last come the options, as chips: the name's likely handles, each
+ * checked on YouTube by the server on the user's tap (Enter takes the first), the one step that
+ * tells the server a name, and what always works, YouTube's own search and the link copied there,
+ * pasted back. A link has “Find this channel” instead.
  *
  * Nothing goes to the server in clear while typing: every lookup of a channel the catalog lacks
  * costs the server a read online, and a name being typed would be read letter by letter.
@@ -34,32 +35,49 @@ import { Section } from './Section';
  * Where a name's wider search goes on from: what the device can still look up without naming it
  * (the dictionary, when it isn't on the device yet, and the name's likely handles in the catalog,
  * when the connection check kept them from being looked up as it was typed), or the server
- * reading the likely handles on YouTube, which tells it the name. A link goes online at once.
+ * reading one likely handle on YouTube, which tells it that handle. A link goes online at once.
  */
 type Step = 'local' | 'online';
 
 interface Wider {
   text: string;
-  status: 'searching' | 'done' | 'nothing' | 'failed';
+  status: 'searching' | 'done' | 'failed';
   /** The step running or last run, for the row's words. */
   step: Step;
+  /** The handle being checked on YouTube, or last checked. */
+  handle: string | null;
   matches: NamedChannel[];
-  found: FoundChannel | null;
-  /** The next step a name can go on to, or null when there is none left. */
-  next: Step | null;
+  found: FoundChannel[];
+  /** The handles checked on YouTube that name no channel. */
+  missed: string[];
+  /** The handles that named a channel, in the catalog or on YouTube: no need to offer them. */
+  hits: string[];
+  /** Whether the device has looked up what typing couldn't. */
+  localDone: boolean;
+  /** A link that names no channel. */
+  nothing: boolean;
 }
 
 export interface ChannelSearch {
   term: string;
+  /** A link or a channel id: looked up as it is, with no handle to offer. */
+  explicit: boolean;
+  /** Whether the text can find a channel: a link, a @handle, or a name of 3 letters or more. */
+  searchable: boolean;
   /** What the device found as the text was typed: the dictionary's matches, then the channel a likely handle names in the catalog. */
   suggested: NamedChannel[];
-  /** The handle the server would read on YouTube first, for a name: what its row says. */
-  firstGuess: string | null;
+  /** The handles to offer for a name, each the user can check on YouTube. */
+  handles: string[];
+  /** Whether a handle or the link found a channel: the options then ask if it is the one. */
+  hit: boolean;
   wider: Wider | null;
-  /** Whether the search can go further for this text. */
-  canWiden: boolean;
-  widen(): Promise<void>;
+  busy: boolean;
+  /** Looks a link up, or checks a handle on YouTube: the one tapped, else the first left (Enter). */
+  widen(handle?: string): Promise<void>;
 }
+
+/** How many likely handles a name offers to check. */
+const MAX_OFFERED = 4;
 
 /**
  * How long typing pauses before a name's likely handles are looked up in the catalog: each lookup
@@ -67,11 +85,24 @@ export interface ChannelSearch {
  */
 const GUESS_PAUSE = 600;
 
-/** The handles to look for blindly: a typed @handle, or those a name likely gives. */
+/** The handles to look for blindly, and to offer: a typed @handle, or those a name likely gives. */
 function guessesOf(term: string): string[] {
   const handle = localHandle(term);
 
-  return handle !== null ? (handle.length >= 3 ? [handle] : []) : isChannelName(term) ? guessHandles(term) : [];
+  if (handle !== null) {
+    return handle.length >= 3 ? [handle] : [];
+  }
+
+  if (!isChannelName(term)) {
+    return [];
+  }
+
+  // A channel often adds its language or “official” to its name: suggested only, read on a tap.
+  const [joined, ...others] = guessHandles(term);
+  const language = navigator.language.split('-')[0]!.toLowerCase();
+  const suffixed = [...(language === 'en' ? [] : [language]), 'official'].map((suffix) => `${joined}${suffix}`).filter((guess) => guess.length <= 30);
+
+  return joined === undefined ? [] : [...new Set([joined, ...suffixed, ...others])];
 }
 
 function guessed(found: { key: string; handle: string }): NamedChannel {
@@ -152,69 +183,89 @@ export function useChannelSearch(text: string): ChannelSearch {
     };
   }, [api, gate, term]);
 
-  const explicit = isChannelInput(term);
-  const searchable = explicit || isChannelName(term);
-  const guessesDone = guessesOf(term).length === 0 || handleFound?.text === term;
-  // A likely handle found in the catalog: YouTube would only read the same page again.
-  const guessFound = handleFound?.text === term && handleFound.channel !== null;
-  const canWiden = searchable && !guessFound && (wider === null || (wider.status !== 'searching' && wider.next !== null));
+  // A @handle typed reads like a name: it is offered, and checked on YouTube on a tap.
+  const typedHandle = term.startsWith('@') && localHandle(term) !== null;
+  const explicit = isChannelInput(term) && !typedHandle;
+  const searchable = explicit || typedHandle || isChannelName(term);
+  const guesses = guessesOf(term);
+  const guessesDone = guesses.length === 0 || handleFound?.text === term;
+  const current = wider?.text === term ? wider : null;
+  // The handles to offer: those the catalog lacks, each checked on YouTube only on the user's tap.
+  const foundByTyping = handleFound?.text === term && handleFound.channel !== null ? handleFound.channel.handle : null;
+  const handles = explicit ? [] : guesses.slice(0, MAX_OFFERED).filter((handle) => handle !== foundByTyping && !(current?.hits ?? []).includes(handle));
+  const busy = current?.status === 'searching';
   const typed = [...suggested, ...(handleFound?.text === term && handleFound.channel !== null ? [handleFound.channel] : [])];
 
-  const widen = useCallback(async () => {
-    if (!canWiden) {
-      return;
-    }
+  const widen = useCallback(
+    async (handle?: string) => {
+      const target = explicit ? null : (handle ?? handles.find((other) => !(current?.missed ?? []).includes(other)) ?? null);
+      const local = !explicit && !(current?.localDone ?? false) && (!ready || !guessesDone);
 
-    const id = latest.current;
-    const show = (next: Wider) => {
-      if (id === latest.current) {
-        setWider(next);
+      if (busy || !searchable || (!explicit && target === null && !local)) {
+        return;
       }
-    };
-    let step: Step = explicit ? 'online' : (wider?.next ?? (ready && guessesDone ? 'online' : 'local'));
-    const previous = { matches: wider?.matches ?? [], found: wider?.found ?? null };
-    show({ text: term, status: 'searching', step, ...previous, next: step });
 
-    try {
-      const answer = await gate.run(api, async (): Promise<Omit<Wider, 'text'>> => {
-        if (step === 'local') {
-          // What typing couldn't look up: found here, it shows, and the name stays off the server.
-          const matches = [...previous.matches];
-
-          if (!ready && ((await hasDictionary(db)) || (await ensureDictionary(db, api)))) {
-            matches.push(...(await searchDictionary(db, term)));
-          }
-
-          const found = guessesDone ? null : await findHandle(api, await api.catalog(), guessesOf(term));
-
-          if (found !== null) {
-            matches.push(guessed(found));
-          }
-
-          if (matches.length > previous.matches.length) {
-            return { status: 'done', step, matches, found: previous.found, next: 'online' };
-          }
-
-          // Nothing: the user asked for YouTube, so the search goes on there.
-          step = 'online';
-          show({ text: term, status: 'searching', step, ...previous, next: step });
+      const id = latest.current;
+      const show = (next: Wider) => {
+        if (id === latest.current) {
+          setWider(next);
         }
+      };
+      const state: Wider = current ?? { text: term, status: 'done', step: 'local', handle: null, matches: [], found: [], missed: [], hits: [], localDone: false, nothing: false };
+      let step: Step = local ? 'local' : 'online';
+      show({ ...state, status: 'searching', step, handle: target });
 
-        return { status: 'done', step, ...previous, found: await findChannel(db, api, term), next: null };
-      });
-      show({ text: term, ...answer });
-    } catch (failure) {
-      // Cancelling the connection check leaves the list as it was.
-      if (isCancelled(failure)) {
-        show({ text: term, status: 'done', step, ...previous, next: step });
-      } else {
-        const nothing = failure instanceof ServerError && (failure.code === 'channel_not_found' || failure.code === 'invalid_link');
-        show({ text: term, status: nothing ? 'nothing' : 'failed', step, ...previous, next: nothing ? null : step });
+      try {
+        const answer = await gate.run(api, async (): Promise<Wider> => {
+          const matches = [...state.matches];
+
+          if (step === 'local') {
+            // What typing couldn't look up: found here, it shows, and the name stays off the server.
+            if (!ready && ((await hasDictionary(db)) || (await ensureDictionary(db, api)))) {
+              matches.push(...(await searchDictionary(db, term)));
+            }
+
+            const found = guessesDone ? null : await findHandle(api, await api.catalog(), guesses);
+
+            if (found !== null) {
+              matches.push(guessed(found));
+            }
+
+            const done = { ...state, status: 'done' as const, matches, localDone: true };
+
+            // Found here, or the handle the user tapped is in the catalog: nothing to ask YouTube.
+            if (target === null || (handle === undefined && matches.length > state.matches.length) || found?.handle === target) {
+              return found === null ? done : { ...done, hits: [...state.hits, found.handle] };
+            }
+
+            step = 'online';
+            show({ ...done, status: 'searching', step, handle: target });
+          }
+
+          try {
+            const found = await findChannel(db, api, target === null ? term : `@${target}`);
+
+            return { ...state, status: 'done', step, matches, localDone: true, found: [...state.found, found], hits: target === null ? state.hits : [...state.hits, target] };
+          } catch (failure) {
+            if (failure instanceof ServerError && (failure.code === 'channel_not_found' || failure.code === 'invalid_link')) {
+              return { ...state, status: 'done', step, matches, localDone: true, missed: target === null ? state.missed : [...state.missed, target], nothing: target === null };
+            }
+
+            throw failure;
+          }
+        });
+        show(answer);
+      } catch (failure) {
+        // Cancelling the connection check leaves the list as it was.
+        show({ ...state, status: isCancelled(failure) ? 'done' : 'failed', step });
       }
-    }
-  }, [db, api, gate, term, wider, explicit, ready, guessesDone, canWiden]);
+    },
+    [db, api, gate, term, current, explicit, searchable, ready, guesses, guessesDone, handles, busy],
+  );
 
-  return { term, suggested: typed, firstGuess: guessesOf(term)[0] ?? null, wider: wider?.text === term ? wider : null, canWiden, widen };
+  const hit = foundByTyping !== null || (current?.found.length ?? 0) > 0;
+
+  return { term, explicit, searchable, suggested: typed, handles, hit, wider: current, busy, widen };
 }
 
 type Row = { kind: 'own'; subscription: Subscription } | { kind: 'named'; channel: NamedChannel } | { kind: 'found'; found: FoundChannel };
@@ -223,7 +274,18 @@ type Row = { kind: 'own'; subscription: Subscription } | { kind: 'named'; channe
  * The list under the field: followed channels the text matches first, then the dictionary's
  * suggestions, then what the wider search found, each channel once, and the row that searches further.
  */
-export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelSearch; own: readonly Subscription[]; onOpen(subscription: Subscription): void }) {
+export function ChannelSearchResults({
+  finder,
+  own,
+  onOpen,
+  onPaste,
+}: {
+  finder: ChannelSearch;
+  own: readonly Subscription[];
+  onOpen(subscription: Subscription): void;
+  /** A link read from the clipboard, for the field, which looks it up; null when the clipboard can't be read. */
+  onPaste(link: string | null): void;
+}) {
   const { db, api, gate, secretsShown } = useAppData();
   const toast = useToast();
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -262,9 +324,8 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
   own.filter((subscription) => !followedHere.has(subscription.key)).forEach((subscription) => push(subscription.key, { kind: 'own', subscription }));
   named.forEach((channel) => push(`youtube:${channel.id}`, { kind: 'named', channel }));
 
-  if (wider?.found) {
-    const key = 'following' in wider.found ? wider.found.following.key : wider.found.submitted.channel.key;
-    push(key, { kind: 'found', found: wider.found });
+  for (const found of wider?.found ?? []) {
+    push('following' in found ? found.following.key : found.submitted.channel.key, { kind: 'found', found });
   }
 
   const withBusy = async (key: string, work: () => Promise<void>) => {
@@ -304,9 +365,40 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
         })
       : Promise.resolve();
 
-  const explicit = isChannelInput(finder.term);
-  const searchable = explicit || isChannelName(finder.term);
+  const { explicit, searchable } = finder;
+
+  // The link the user copied in YouTube: read on their tap, never otherwise.
+  const paste = async () => {
+    let text: string | null = null;
+
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      // Refused or unsupported: the user pastes in the field.
+    }
+
+    if (text !== null && !isChannelInput(text)) {
+      await toast('Copy the link of a YouTube channel or video first.');
+    } else {
+      onPaste(text);
+
+      if (text === null) {
+        await toast('Paste the link in the search field.');
+      }
+    }
+  };
+  // YouTube's own search, in the browser or its app: the user's visit, which YouTube sees as usual.
+  const openYoutube = () =>
+    void window.open(
+      explicit ? 'https://www.youtube.com/' : `https://www.youtube.com/results?search_query=${encodeURIComponent(finder.term)}&sp=EgIQAg%253D%253D`,
+      '_blank',
+      'noopener,noreferrer',
+    );
   const letters = finder.term.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
+  // The handles still worth a tap, and what the options' heading says of the search so far.
+  const left = finder.handles.filter((handle) => !(wider?.missed ?? []).includes(handle));
+  const optionsTitle =
+    rows.length === 0 ? (left.length === 0 ? 'No channel found' : 'Nothing found yet') : finder.hit ? 'Not the one?' : left.length === 0 && (wider?.missed.length ?? 0) > 0 ? 'Nothing more found' : 'Not listed?';
 
   return (
     <Section
@@ -368,39 +460,64 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
         <IonItem lines="none">
           <IonSpinner slot="start" name="crescent" className="search-wider-spinner" />
           <IonLabel color="medium" className="ion-text-wrap">
-            {explicit ? 'Looking for this channel…' : wider.step === 'local' ? `Looking for “${finder.term}”…` : `Checking YouTube for @${finder.firstGuess}…`}
+            {explicit ? 'Looking for this channel…' : wider.step === 'local' ? `Looking for “${finder.term}”…` : `Checking YouTube for @${wider.handle}…`}
             {slow && <p>This can take a few seconds.</p>}
           </IonLabel>
         </IonItem>
-      ) : explicit && finder.canWiden ? (
-        <IonItem lines="none" button detail={false} onClick={() => void finder.widen()}>
-          <IonIcon slot="start" icon={search} color="medium" aria-hidden="true" />
-          <IonLabel>
-            <h2>Find this channel</h2>
-          </IonLabel>
-        </IonItem>
+      ) : explicit && !(wider?.nothing ?? false) ? (
+        wider?.found.length ? null : (
+          <IonItem lines="none" button detail={false} onClick={() => void finder.widen()}>
+            <IonIcon slot="start" icon={search} color="medium" aria-hidden="true" />
+            <IonLabel>
+              <h2>Find this channel</h2>
+            </IonLabel>
+          </IonItem>
+        )
       ) : !searchable ? (
         // The list opens with the first letter: it says what more it needs to suggest channels.
         <IonItem lines="none">
           <IonLabel color="medium" className="ion-text-wrap">
-            {letters < 3 ? 'Keep typing: channels to add show from 3 letters.' : 'Type a channel’s name, @handle or link.'}
+            {letters < 3 ? 'Keep typing: channels to add show from 3 letters.' : 'Type a channel’s name, or paste its link.'}
           </IonLabel>
         </IonItem>
-      ) : finder.canWiden && finder.firstGuess !== null ? (
-        // The one step that tells the server the name: the user takes it, knowing what it sees.
-        <IonItem lines="none" button detail={false} onClick={() => void finder.widen()}>
-          <IonIcon slot="start" icon={logoYoutube} color="medium" aria-hidden="true" />
-          <IonLabel className="ion-text-wrap">
-            <h2>{rows.length === 0 ? '' : 'Not listed? '}Check YouTube for @{finder.firstGuess}</h2>
-            <p>The server will see this name, not who you are.</p>
-          </IonLabel>
-        </IonItem>
-      ) : rows.length === 0 || wider?.status === 'nothing' || (wider?.status === 'done' && wider.found === null) ? (
-        <LinkHint lead={rows.length === 0 ? 'No channel found' : 'Nothing more found'} />
-      ) : wider === null && !explicit ? (
-        // A likely handle found the channel: the link still finds another one.
-        <LinkHint lead="Not the one?" />
-      ) : null}
+      ) : (
+        <Options title={optionsTitle}>
+          {left.length > 0 && (
+            // The one step that tells the server a name: the one the user taps, knowing what it sees.
+            <>
+              <p>Is it one of these on YouTube? The server sees the one you tap, not who you are.</p>
+              <div className="search-options">
+                {finder.handles.map((handle) => {
+                  const missed = (wider?.missed ?? []).includes(handle);
+
+                  return (
+                    <IonChip key={handle} outline disabled={missed} onClick={() => void finder.widen(handle)} aria-label={missed ? `@${handle}: no channel` : `Check @${handle} on YouTube`}>
+                      <IonIcon icon={missed ? closeOutline : logoYoutube} aria-hidden="true" />@{handle}
+                    </IonChip>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {/* What always works: the channel's link, or one of its videos', copied in YouTube. */}
+          {/* It leaves the app: the line says so before the tap, and where it lands. */}
+          <p>
+            {left.length > 0 ? 'Or look' : explicit ? 'Check the link, or look' : rows.length === 0 ? 'Check the spelling, or look' : 'Look'} for it in YouTube: this
+            leaves Subify and opens the YouTube app, or its website. There, tap Share, then Copy link, and come back here to paste it.
+          </p>
+          <div className="search-options">
+            <IonChip outline onClick={openYoutube} aria-label={`Open YouTube to look for “${finder.term}”, outside Subify`}>
+              <IonIcon icon={logoYoutube} aria-hidden="true" />
+              Open YouTube
+              <IonIcon icon={openOutline} aria-hidden="true" />
+            </IonChip>
+            <IonChip outline onClick={() => void paste()}>
+              <IonIcon icon={clipboardOutline} aria-hidden="true" />
+              Paste link
+            </IonChip>
+          </div>
+        </Options>
+      )}
       {wider?.status === 'failed' && (
         <IonNote color="medium" className="ion-display-block ion-padding-horizontal ion-padding-bottom">
           Couldn’t search right now. Try again in a moment.
@@ -410,14 +527,13 @@ export function ChannelSearchResults({ finder, own, onOpen }: { finder: ChannelS
   );
 }
 
-/** What always finds a channel when its name doesn't: its link, pasted in the same field. */
-function LinkHint({ lead }: { lead: string }) {
+/** Where the search goes on: each kind of option, a line on what it does, then its chips. */
+function Options({ title, children }: { title: string; children: ReactNode }) {
   return (
     <IonItem lines="none">
-      <IonIcon slot="start" icon={linkOutline} color="medium" aria-hidden="true" />
-      <IonLabel className="ion-text-wrap">
-        <h2>{lead}</h2>
-        <p>Check the spelling, or paste the channel’s link. In YouTube, open the channel, then ⋮ › Share › Copy link.</p>
+      <IonLabel className="ion-text-wrap search-options-card">
+        <h2>{title}</h2>
+        {children}
       </IonLabel>
     </IonItem>
   );

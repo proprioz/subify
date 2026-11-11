@@ -1291,3 +1291,34 @@ ion-popover.info-popover ion-content {
 ion-note.strength-weak {
   --color: var(--ion-text-color);
 }
+
+/* The options under the search's list, as chips the user taps: where the search goes on. */
+.search-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+}
+
+.search-options ion-chip {
+  margin: 0;
+  font-weight: 500;
+}
+
+.search-options ion-chip ion-icon {
+  margin: 0 6px 0 -4px;
+  font-size: 18px;
+}
+
+.search-options ion-chip ion-icon:last-child:not(:first-child) {
+  margin: 0 -4px 0 6px;
+  font-size: 14px;
+}
+
+.search-options-card > p + .search-options {
+  margin-bottom: 12px;
+}
+
+.search-options-card > .search-options:last-child {
+  margin-bottom: 0;
+}

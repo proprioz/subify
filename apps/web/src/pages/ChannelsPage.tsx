@@ -58,6 +58,14 @@ export function ChannelsPage() {
   const searchbar = useRef<HTMLIonSearchbarElement>(null);
   const [search, setSearch] = useState('');
   const finder = useChannelSearch(search);
+  // A link pasted from the list's chip is looked up at once, as if Enter had followed it.
+  const [findPasted, setFindPasted] = useState<string | null>(null);
+  useEffect(() => {
+    if (findPasted !== null && finder.term === findPasted) {
+      setFindPasted(null);
+      void finder.widen();
+    }
+  }, [finder, findPasted]);
   const [editingTypesOf, setEditingTypesOf] = useState<string | null>(null);
   const [sortFrom, setSortFrom] = useState<Event | null>(null);
   const [optionsFrom, setOptionsFrom] = useState<Event | null>(null);
@@ -306,7 +314,25 @@ export function ChannelsPage() {
 
       {/* As soon as something is typed, one list replaces the page's: the followed channels it
           matches, the channels to follow, and the row that searches further. */}
-      {term !== '' && <ChannelSearchResults finder={finder} own={shown} onOpen={showVideos} />}
+      {term !== '' && (
+        <ChannelSearchResults
+          finder={finder}
+          own={shown}
+          onOpen={showVideos}
+          onPaste={(link) => {
+            if (link === null) {
+              // The link pasted there replaces the name.
+              void searchbar.current?.getInputElement().then((input) => {
+                input.focus();
+                input.select();
+              });
+            } else {
+              setSearch(link);
+              setFindPasted(link);
+            }
+          }}
+        />
+      )}
     </Page>
   );
 }
