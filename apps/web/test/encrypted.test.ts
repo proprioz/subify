@@ -1,3 +1,4 @@
+import { ENTRY_DELAY } from '@subify/shared';
 import type { SnapshotChannel } from '@subify/shared/codec';
 import { describe, expect, it } from 'vitest';
 import { type Backup, restoreBackup } from '../src/data/backup';
@@ -255,7 +256,8 @@ describe('the encrypted catalog', () => {
   });
 
   // The safety net: a channel added in clear that never reached the catalog must be submitted again, but not before its first pass had time to run.
-  it('puts a channel the catalog still lacks after an hour back in the queue', async () => {
+  // The server lets a new channel enter up to ENTRY_DELAY later: sent again sooner, it would be read and seen once more.
+  it('puts a channel the catalog still lacks back in the queue once its entry time is past, never before', async () => {
     const { server, catalog } = encryptedServer();
     catalog.online.set('@newchannel', snapshotChannel(A, 1));
     catalog.online.set('@entered', snapshotChannel(B, 1));
@@ -265,11 +267,11 @@ describe('the encrypted catalog', () => {
     await subscribe(db, api, '@entered', NOW);
     catalog.publish(snapshotChannel(B, 1));
 
-    await syncUpdates(db, api, NOW + 50 * 60_000);
+    await syncUpdates(db, api, NOW + ENTRY_DELAY + 50 * 60_000);
     const early = await db.subscriptions.get(`youtube:${A}`);
-    await syncUpdates(db, api, NOW + 2 * HOUR);
+    await syncUpdates(db, api, NOW + ENTRY_DELAY + 2 * HOUR);
     const snapshots = server.paths.filter((path) => path.startsWith('GET /api/snapshot')).length;
-    await syncUpdates(db, api, NOW + 3 * HOUR);
+    await syncUpdates(db, api, NOW + ENTRY_DELAY + 3 * HOUR);
 
     expect(early).toMatchObject({ status: 'ready', slot: { keyId: 1 } });
     expect(await db.subscriptions.get(`youtube:${A}`)).toMatchObject({ status: 'pending_submit' });

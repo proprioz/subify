@@ -10,6 +10,14 @@ export const STREAM_KEPT_PASSES = 30 * 144;
  */
 export const BLIND_BATCH_SIZES = [10, 50] as const;
 
+/**
+ * A channel new to the catalog enters it at a random time within this long after it was read
+ * (docs/FEATURES.md, D16), so that when it enters tells neither when someone added it nor which
+ * channels one person added together. The device that added it has it at once; its next videos
+ * may come up to this late.
+ */
+export const ENTRY_DELAY = 6 * 60 * 60_000;
+
 /** The characters a YouTube channel id is made of, after its `UC`. */
 const CHANNEL_ID_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 

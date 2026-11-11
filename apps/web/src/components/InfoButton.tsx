@@ -42,6 +42,18 @@ export function NotFetchedInfo({ title }: { title: string }) {
   );
 }
 
+/** Why a channel just added in clear may bring its next videos late (Subscription.submittedAt). */
+export function JoiningInfo({ title }: { title: string }) {
+  return (
+    <InfoButton label={`Why videos from ${title} may be late`}>
+      <p className="ion-no-margin">
+        A channel new to this server joins its catalog at a random time within six hours, so that when it joins can’t be tied to you. Until then, this channel’s new
+        videos may show up a few hours late.
+      </p>
+    </InfoButton>
+  );
+}
+
 /** What to do about a channel the server couldn't read yet (Subscription.retryAt): the solution, first. */
 export function refreshHint(retryAt: number, now = Date.now()): string {
   const after = retryLabel(retryAt, now, 'after');

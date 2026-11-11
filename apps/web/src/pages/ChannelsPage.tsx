@@ -34,7 +34,7 @@ import { ChannelAvatar } from '../components/ChannelAvatar';
 import { ChannelSearchResults, useChannelSearch } from '../components/ChannelSearch';
 import { ChannelTypesModal } from '../components/ChannelTypesModal';
 import { EmptyState } from '../components/EmptyState';
-import { NotFetchedInfo, refreshHint, RetryInfo } from '../components/InfoButton';
+import { JoiningInfo, NotFetchedInfo, refreshHint, RetryInfo } from '../components/InfoButton';
 import { Menu, type MenuAction } from '../components/Menu';
 import { Page } from '../components/Page';
 import { SecretsBanner } from '../components/SecretsBanner';
@@ -46,7 +46,7 @@ import { dismissSecretCard, secretCardDue } from '../data/secret';
 import { refreshDictionary } from '../data/dictionary';
 import { type ChannelSort, sortChannels } from '../data/feed';
 import { ageLabel } from '../data/format';
-import { unsubscribe } from '../data/subscriptions';
+import { joining, unsubscribe } from '../data/subscriptions';
 import { MORE_ICON } from '../ui/icons';
 
 export function ChannelsPage() {
@@ -265,9 +265,13 @@ export function ChannelsPage() {
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p className="ion-display-flex ion-align-items-center">
                     {channelStatus(channel, lastUploads?.get(channel.key))}
-                    {channel.status !== 'pending_submit' &&
+                    {channel.retryAt === undefined && joining(channel) ? (
+                      <JoiningInfo title={channel.title} />
+                    ) : (
+                      channel.status !== 'pending_submit' &&
                       lastUploads?.get(channel.key) === undefined &&
-                      (channel.retryAt === undefined ? <NotFetchedInfo title={channel.title} /> : <RetryInfo title={channel.title} retryAt={channel.retryAt} />)}
+                      (channel.retryAt === undefined ? <NotFetchedInfo title={channel.title} /> : <RetryInfo title={channel.title} retryAt={channel.retryAt} />)
+                    )}
                   </p>
                 </IonLabel>
                 <IonButton
@@ -316,6 +320,11 @@ function channelStatus(channel: Subscription, latest: number | undefined): strin
     case 'pending_submit':
       return 'Waiting to be added…';
     default:
+      // A channel whose read failed says when to refresh first: that one matters more.
+      if (channel.retryAt === undefined && joining(channel)) {
+        return 'New videos may be late';
+      }
+
       if (latest !== undefined) {
         return `Last upload ${ageLabel(latest)}`;
       }

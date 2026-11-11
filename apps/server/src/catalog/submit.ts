@@ -33,6 +33,8 @@ export interface SubmitContext {
   cutoff: () => number;
   /** What a channel new to the catalog may cost, shared by every user (see budgets.ts). */
   budgets: Budgets;
+  /** A channel new to the catalog enters it at a random time within this long (ENTRY_DELAY). */
+  entryDelay: number;
   /** A user's addition, as opposed to seeding: only those set the hours seeding adds at. */
   byUser?: boolean;
 }
@@ -60,6 +62,7 @@ export async function submitContext(platform: Platform, sources: readonly Source
     sleep: (ms) => platform.sleep(ms),
     cutoff: () => retentionCutoff(platform),
     budgets: budgets(platform, keys),
+    entryDelay: platform.config.entryDelay,
   };
 }
 
@@ -160,8 +163,9 @@ export async function submitInput(source: SourceAdapter, parsed: ParsedInput, co
     const title = resolved.title ?? (snapshot.title || resolved.externalId);
     const thumbnails = await recentThumbnails(source, snapshot.items, context);
     const channel = enteringSlot(source.source, resolved.externalId, title, handle, avatar, snapshot.items, failed, context);
-    // Until the next pass gives it its slot, the coordinator holds it: a second addition meanwhile reads it again.
-    await enqueueUpdate(context.coordinator, context.keys, { kind: 'channel', channel, citations: snapshot.citations ?? [], thumbnails });
+    // It enters the catalog at a time drawn now, alike for every channel, seeded or not (ENTRY_DELAY).
+    // Until a pass gives it its slot, the coordinator holds it: a second addition meanwhile reads it again.
+    await enqueueUpdate(context.coordinator, context.keys, { kind: 'channel', channel, citations: snapshot.citations ?? [], thumbnails }, context.now() + Math.floor(context.random() * context.entryDelay));
 
     if (context.byUser === true) {
       await enqueueUpdate(context.coordinator, context.keys, { kind: 'added', at: context.now() });

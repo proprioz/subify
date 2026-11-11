@@ -39,8 +39,9 @@ export type Update =
 /** Bound into the associated data: a sealed update can't be read as anything else. */
 const UPDATE_KIND = 16;
 
-export async function enqueueUpdate(coordinator: Coordinator, keys: ServerKeys, update: Update): Promise<void> {
-  await coordinator.enqueue(await sealMessage(keys, UPDATE_KIND, new TextEncoder().encode(JSON.stringify(update, withBytes))));
+/** Seals an update for the pass; with `at`, for the first pass from then on. */
+export async function enqueueUpdate(coordinator: Coordinator, keys: ServerKeys, update: Update, at?: number): Promise<void> {
+  await coordinator.enqueue(await sealMessage(keys, UPDATE_KIND, new TextEncoder().encode(JSON.stringify(update, withBytes))), at);
 }
 
 export interface OpenedUpdate {

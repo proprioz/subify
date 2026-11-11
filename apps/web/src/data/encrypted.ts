@@ -1,4 +1,4 @@
-import { type ApiChannel, type ApiItem, BLIND_BATCH_SIZES, type OprfKeyResponse, STREAM_KEPT_PASSES } from '@subify/shared';
+import { type ApiChannel, type ApiItem, BLIND_BATCH_SIZES, ENTRY_DELAY, type OprfKeyResponse, STREAM_KEPT_PASSES } from '@subify/shared';
 import {
   chunkOf,
   fromBase64Url,
@@ -260,14 +260,17 @@ interface GroupThumbnailsRun {
   latest: number | null;
 }
 
-/** Waits this long after adding a channel before resubmitting it for a missing slot: it enters at the next pass. */
-const SLOT_GRACE = 60 * 60_000;
+/**
+ * Waits this long after adding a channel before resubmitting it for a missing slot: it enters
+ * within ENTRY_DELAY, at the pass after its time.
+ */
+const SLOT_GRACE = ENTRY_DELAY + 60 * 60_000;
 
 /**
  * Fills the followed channels from their groups' snapshots: after a restore, at the first refresh
  * on this server, or after a longer absence than the stream keeps. A channel the catalog lacks
  * goes back to the import queue (the safety net), unless it is gone or was added in clear within
- * the hour.
+ * SLOT_GRACE.
  * Sets the stream's cursor when it has none, or is past what the snapshots show.
  *
  * With `thumbnails`, the next step of the refresh reads the thumbnails of the same groups, all of
@@ -355,7 +358,7 @@ export async function unfinishedSync(db: SubifyDb): Promise<boolean> {
  * the sync stands, so an app suspended mid-sync (iOS does that) resumes where it stopped, without a
  * duplicate or a gap. A change older than one already written for the same item or channel is
  * skipped. Without a cursor, or further behind than the stream keeps, it catches up from snapshots
- * instead, as it does an hour after a channel was added in clear. `onProgress` gets the share of
+ * instead, as it does once a channel added in clear should have entered the catalog (SLOT_GRACE). `onProgress` gets the share of
  * the passes read, from 0 to 1.
  */
 export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, now = Date.now(), onProgress: (share: number) => void = () => {}): Promise<{ written: number }> {
@@ -364,7 +367,7 @@ export async function syncStream(db: SubifyDb, api: Api, catalog: CatalogKey, no
   let written = 0;
   const unchecked = (await db.subscriptions.toArray()).some((subscription) => subscription.status === 'ready' && subscription.submittedAt !== undefined && subscription.submittedAt < now - SLOT_GRACE);
 
-  // A channel added in clear over an hour ago should be in the catalog by now: the snapshots tell.
+  // A channel added in clear over SLOT_GRACE ago should be in the catalog by now: the snapshots tell.
   if (unchecked && (await getMeta<number>(db, 'streamPass')) !== undefined) {
     await catchUp(db, api, catalog, now);
   }

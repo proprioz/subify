@@ -1,3 +1,5 @@
+import { ENTRY_DELAY } from '@subify/shared';
+
 /**
  * Settings read from the environment, the same names on Workers (wrangler.toml [vars],
  * .dev.vars) and on Node (.env).
@@ -54,6 +56,8 @@ export interface Config {
    * seeding off: a self-hosted catalog fills with its users' channels unless its admin sets it.
    */
   seededChannelsPerDay: number;
+  /** ENTRY_DELAY, never set from the environment: tests take 0, to see a channel enter at the next pass. */
+  entryDelay: number;
   /**
    * Where a name is looked for when the app's search finds no handle or link (docs/FEATURES.md,
    * D16): `wikidata` (the dictionary, downloaded by devices), `invidious`, `piped`. Default
@@ -135,6 +139,7 @@ export function loadConfig(env: Record<string, unknown>): Config {
     onlineLookupsPerMinute: positive(text('ONLINE_LOOKUPS_PER_MINUTE'), DEFAULT_ONLINE_LOOKUPS_PER_MINUTE),
     blindBatchesPerMinute: positive(text('BLIND_BATCHES_PER_MINUTE'), DEFAULT_BLIND_BATCHES_PER_MINUTE),
     seededChannelsPerDay: positiveOrZero(text('SEEDED_CHANNELS_PER_DAY'), DEFAULT_SEEDED_CHANNELS_PER_DAY),
+    entryDelay: ENTRY_DELAY,
     searchSources: searchSources(text('SEARCH_SOURCES')),
     wikidataUserAgent: text('WIKIDATA_USER_AGENT'),
     wikidataRefreshDays: positive(text('WIKIDATA_REFRESH_DAYS'), DEFAULT_WIKIDATA_REFRESH_DAYS),

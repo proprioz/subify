@@ -5,6 +5,7 @@ import { addSeededChannel } from '../../src/catalog/seeding';
 import { countHours, drawCandidate, emptyHours, harvest, hourShare, SEED_DELAY_DAYS } from '../../src/catalog/seed-pool';
 import { openUpdates, type Update } from '../../src/catalog/updates';
 import { readPool, readState, stateWrite } from '../../src/catalog/vault';
+import { ENTRY_DELAY } from '@subify/shared';
 import { DAY, HOUR, MINUTE } from '../../src/catalog/schedule';
 import type { Config } from '../../src/config';
 import type { ServerKeys } from '../../src/crypto/keys';
@@ -279,6 +280,34 @@ describe('seeding from the encrypted pool', () => {
     hours = countHours(hours, [], day + 8);
     expect(hours.counts[12]).toBe(2);
     expect(hourShare(hours, noon + 6 * HOUR)).toBe(1 / 3);
+  });
+});
+
+// Entering at the next pass, the channels one person adds together would enter together, and
+// when one enters would tell when someone added it (docs/FEATURES.md, D16).
+describe('channels new to the catalog', () => {
+  it('enter at a time drawn within ENTRY_DELAY, each its own, after answering the device that added them', async () => {
+    const { harness, source } = await setup({ entryDelay: ENTRY_DELAY });
+    const keys = await harness.platform.keys;
+    const channels = async (at: number) => {
+      harness.setNow(at);
+      await runPass(harness.platform, keys, await readState(harness.db, keys), OPTIONS, [source]);
+
+      return (await readState(harness.db, keys))?.channels;
+    };
+    await runPass(harness.platform, keys, undefined, OPTIONS);
+    harness.platform.random = () => 0.5;
+    const answer = await harness.add('fake:a');
+    harness.platform.random = () => 0.1;
+    await harness.add('fake:b');
+    harness.platform.random = () => 0;
+
+    expect(answer.status).toBe(200);
+    expect(await channels(START + 10 * MINUTE)).toBe(0);
+    expect(await channels(START + 0.1 * ENTRY_DELAY - MINUTE)).toBe(0);
+    expect(await channels(START + 0.1 * ENTRY_DELAY)).toBe(1);
+    expect(await channels(START + 0.5 * ENTRY_DELAY - MINUTE)).toBe(1);
+    expect(await channels(START + 0.5 * ENTRY_DELAY)).toBe(2);
   });
 });
 

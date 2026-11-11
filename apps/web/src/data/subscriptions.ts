@@ -1,4 +1,4 @@
-import { type ApiChannel, type ApiItem, guessHandles, MAX_SYNC_CHANNELS } from '@subify/shared';
+import { type ApiChannel, type ApiItem, ENTRY_DELAY, guessHandles, MAX_SYNC_CHANNELS } from '@subify/shared';
 import type { Api } from './api';
 import { localChannelKey, localHandle } from './channel-link';
 import type { NamedChannel } from './dictionary';
@@ -193,3 +193,11 @@ export async function fillSubscription(db: SubifyDb, channel: ApiChannel, items:
   });
 }
 
+/**
+ * A channel added in clear lately, which may not have joined the catalog yet: the server gives it
+ * a random time within ENTRY_DELAY, and its next videos may come that late. The device can't tell
+ * whether the catalog had it, so this holds for every channel added in clear.
+ */
+export function joining(subscription: Subscription, now = Date.now()): boolean {
+  return subscription.status === 'ready' && subscription.submittedAt !== undefined && subscription.submittedAt > now - ENTRY_DELAY;
+}

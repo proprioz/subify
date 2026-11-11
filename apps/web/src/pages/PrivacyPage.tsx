@@ -42,7 +42,11 @@ export function PrivacyPage() {
         </p>
         <ul>
           <li>When you refresh, your device downloads the news of many channels at once and keeps only yours. The server doesn’t learn which ones are yours.</li>
-          <li>When you add a channel it doesn’t have yet, the server sees that channel, but not who asked.</li>
+          <li>
+            When you add a channel it doesn’t have yet, the server sees that channel, but not who asked. The channel joins the server’s catalog at a random time within six
+            hours, so that when it joins can’t be tied to you, nor the channels you add at once to each other. Until then, its new videos may show up a few hours late, and
+            adding it on another device sends it to the server again. For a channel you’d rather no one could tie to your IP address, use a VPN or Tor when you add it.
+          </li>
           <li>
             Looking a channel up by its name starts on this device, in a public list of channel names, the same for everyone, that the app downloads when you start
             adding a channel or refresh (about 7 MB, again when the server renews it). If nothing is found there, the server searches: on Invidious or Piped, services

@@ -39,6 +39,8 @@ const defaultConfig: Config = {
   onlineLookupsPerMinute: DEFAULT_ONLINE_LOOKUPS_PER_MINUTE,
   blindBatchesPerMinute: DEFAULT_BLIND_BATCHES_PER_MINUTE,
   seededChannelsPerDay: DEFAULT_SEEDED_CHANNELS_PER_DAY,
+  // Off, so that a channel enters at the next pass: test/shared/seeding.test.ts checks the delay.
+  entryDelay: 0,
   searchSources: new Set(['wikidata']),
   // Without it nothing reads Wikidata: the dictionary's tests set one.
   wikidataUserAgent: null,

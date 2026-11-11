@@ -22,3 +22,16 @@ it('keeps sealed updates in arrival order until they are removed, and counts bud
   // A new window starts over.
   expect(await coordinator.take('new_channels_hour', 3_600_000, 2)).toBe(true);
 });
+
+// A channel new to the catalog waits for its entry time there: given early, it would enter at the next pass (docs/FEATURES.md, D16).
+it('holds an update until its time, for a pass that asks for those due', async () => {
+  const coordinator = coordinatorOf(env.COORDINATOR);
+  await coordinator.remove((await coordinator.pending(100)).map((update) => update.key));
+  const now = Date.now();
+  await coordinator.enqueue(Uint8Array.of(4), now + 60_000);
+  await coordinator.enqueue(Uint8Array.of(5));
+
+  expect((await coordinator.pending(10, now + 59_999)).map((update) => [...update.message])).toEqual([[5]]);
+  expect((await coordinator.pending(10, now + 60_000)).map((update) => [...update.message])).toEqual([[5], [4]]);
+  expect((await coordinator.pending(10)).map((update) => [...update.message])).toEqual([[5], [4]]);
+});

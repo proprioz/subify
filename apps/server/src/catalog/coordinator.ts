@@ -5,10 +5,13 @@
  * Node, this process's memory.
  */
 export interface Coordinator {
-  /** Keeps a sealed update until a pass takes it. */
-  enqueue(message: Uint8Array): Promise<void>;
-  /** Up to `limit` waiting updates, oldest first, with the keys that remove them once applied. */
-  pending(limit: number): Promise<PendingUpdate[]>;
+  /** Keeps a sealed update until a pass takes it, not before `at` when given. */
+  enqueue(message: Uint8Array, at?: number): Promise<void>;
+  /**
+   * Up to `limit` waiting updates, oldest first, with the keys that remove them once applied:
+   * with `until`, those due by then only.
+   */
+  pending(limit: number, until?: number): Promise<PendingUpdate[]>;
   remove(keys: readonly string[]): Promise<void>;
   /**
    * Counts one more in a budget's window, and says whether it did: once `limit` is reached,
@@ -80,6 +83,11 @@ export function updateKey(now: number, random: Uint8Array): string {
   return `${now.toString(36).padStart(10, '0')}-${[...random].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** The first key past those due by `until`: keys sort by their time, then their random part. */
+export function keysAfter(until: number): string {
+  return updateKey(until + 1, new Uint8Array());
+}
+
 /** Node's coordinator, and the tests': this process's memory. Updates waiting are lost with it. */
 export class MemoryCoordinator implements Coordinator {
   private readonly updates = new Map<string, Uint8Array>();
@@ -88,12 +96,13 @@ export class MemoryCoordinator implements Coordinator {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  async enqueue(message: Uint8Array): Promise<void> {
-    this.updates.set(updateKey(this.now(), crypto.getRandomValues(new Uint8Array(8))), message);
+  async enqueue(message: Uint8Array, at?: number): Promise<void> {
+    this.updates.set(updateKey(at ?? this.now(), crypto.getRandomValues(new Uint8Array(8))), message);
   }
 
-  async pending(limit: number): Promise<PendingUpdate[]> {
+  async pending(limit: number, until?: number): Promise<PendingUpdate[]> {
     return [...this.updates]
+      .filter(([key]) => until === undefined || key < keysAfter(until))
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .slice(0, limit)
       .map(([key, message]) => ({ key, message }));

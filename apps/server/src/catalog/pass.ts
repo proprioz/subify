@@ -98,7 +98,8 @@ export async function runPass(
   }
 
   const period = periodOf(current.tableSize);
-  const pending = await platform.coordinator.pending(MAX_UPDATES);
+  // A channel new to the catalog waits for the time drawn when it was read (src/catalog/submit.ts).
+  const pending = await platform.coordinator.pending(MAX_UPDATES, now);
   const { opened, broken } = await openUpdates(keys, pending);
   const waiting = new Map<string, { id: Uint8Array; updates: Update[]; keys: string[] }>();
   const streamShape = options.stream ?? streamPlan({ slots: current.tableSize, period });

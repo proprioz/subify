@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { type Coordinator, Counters, type PendingUpdate, type SearchState, updateKey } from '../catalog/coordinator';
+import { type Coordinator, Counters, keysAfter, type PendingUpdate, type SearchState, updateKey } from '../catalog/coordinator';
 
 /** Durable Object storage deletes at most this many keys per call. */
 const DELETE_CHUNK = 128;
@@ -13,12 +13,12 @@ export class CoordinatorObject extends DurableObject {
   private readonly counters = new Counters();
   private search: SearchState | undefined;
 
-  async enqueue(message: Uint8Array): Promise<void> {
-    await this.ctx.storage.put(updateKey(Date.now(), crypto.getRandomValues(new Uint8Array(8))), message);
+  async enqueue(message: Uint8Array, at?: number): Promise<void> {
+    await this.ctx.storage.put(updateKey(at ?? Date.now(), crypto.getRandomValues(new Uint8Array(8))), message);
   }
 
-  async pending(limit: number): Promise<PendingUpdate[]> {
-    const stored = await this.ctx.storage.list<Uint8Array>({ limit });
+  async pending(limit: number, until?: number): Promise<PendingUpdate[]> {
+    const stored = await this.ctx.storage.list<Uint8Array>(until === undefined ? { limit } : { limit, end: keysAfter(until) });
 
     return [...stored].map(([key, message]) => ({ key, message: new Uint8Array(message) }));
   }
@@ -52,8 +52,8 @@ export function coordinatorOf(namespace: DurableObjectNamespace<CoordinatorObjec
   const stub = namespace.get(namespace.idFromName('catalog'));
 
   return {
-    enqueue: (message) => stub.enqueue(message),
-    pending: (limit) => stub.pending(limit),
+    enqueue: (message, at) => stub.enqueue(message, at),
+    pending: (limit, until) => stub.pending(limit, until),
     remove: (keys) => stub.remove([...keys]),
     take: (name, windowStart, limit) => stub.take(name, windowStart, limit),
     spent: (name, windowStart) => stub.spent(name, windowStart),
