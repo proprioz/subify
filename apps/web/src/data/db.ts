@@ -45,6 +45,8 @@ export interface Subscription {
   retryAt?: number;
   /** The stream's pass that last renamed it: a rename from an earlier pass, read later, is older. */
   renamedAt?: number;
+  /** The stream's pass that last set `retryAt`: one from an earlier pass, read later, is older. */
+  retryPass?: number;
 }
 
 /** Sets or removes a subscription's retry time, in a Dexie update callback. */

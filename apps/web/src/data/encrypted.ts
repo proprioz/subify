@@ -490,7 +490,12 @@ async function apply(db: SubifyDb, subscription: Subscription, pass: number, del
         await db.subscriptions.update(subscription.key, { status: 'gone' });
         break;
       case 'retry':
-        await db.subscriptions.update(subscription.key, (stored) => setRetryAt(stored, delta.retryAt));
+        await db.subscriptions.update(subscription.key, (stored) => {
+          if ((stored.retryPass ?? -1) < pass) {
+            setRetryAt(stored, delta.retryAt);
+            stored.retryPass = pass;
+          }
+        });
         break;
     }
   }

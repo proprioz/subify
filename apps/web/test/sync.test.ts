@@ -62,12 +62,15 @@ describe('a sync cut short', () => {
     server.publish(channel(A, 'Old name'));
     server.publish(null, { ...video!, title: 'Final title' });
     server.publish(channel(A, 'New name'));
+    server.encrypted.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: NOW + 60_000 }] });
+    server.encrypted.passWith({ key: `youtube:${A}`, deltas: [{ kind: 'retry', retryAt: NOW + 120_000 }] });
 
     await syncUpdates(db, api, NOW);
 
     expect(await db.items.get(video!.key)).toMatchObject({ title: 'Final title' });
     expect((await db.items.get(video!.key))?.upcoming).toBeUndefined();
     expect((await db.subscriptions.get(`youtube:${A}`))?.title).toBe('New name');
+    expect((await db.subscriptions.get(`youtube:${A}`))?.retryAt).toBe(NOW + 120_000);
   });
 
   it('keeps the cursor when writing a page fails', async () => {
