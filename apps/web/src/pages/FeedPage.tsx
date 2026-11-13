@@ -14,11 +14,12 @@ import {
   IonRow,
   IonSearchbar,
   IonText,
+  useIonViewWillEnter,
 } from '@ionic/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { add, cloudOfflineOutline, play, refreshOutline, searchOutline, syncOutline } from 'ionicons/icons';
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelStrip } from '../components/ChannelStrip';
@@ -58,6 +59,7 @@ export function FeedPage() {
   const twoColumns = useWideScreen('xl');
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedChannel = searchParams.get('channel');
+  const { pathname } = useLocation();
   const [search, setSearch] = useState('');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -87,6 +89,23 @@ export function FeedPage() {
   );
 
   useEffect(() => setLimit(PAGE), [channelKey, search, typeFilter, showUpcoming]);
+
+  // Another channel, or all of them again, picked here or from the list of channels, shows from
+  // its latest video rather than where the feed was scrolled to: at once, as the videos change.
+  // The page stays mounted under the other tabs, whose address names no channel: only the feed's
+  // own address counts, so that coming back to the same channel keeps its place. A hidden page
+  // cannot scroll: a channel picked from the list waits for the feed to show.
+  const content = useRef<HTMLIonContentElement>(null);
+  const scrolledFor = useRef(requestedChannel);
+  const showFromTop = () => {
+    if (pathname === '/feed' && scrolledFor.current !== requestedChannel && content.current?.closest('.ion-page-hidden') === null) {
+      scrolledFor.current = requestedChannel;
+      void content.current.scrollToTop(0);
+    }
+  };
+
+  useEffect(showFromTop, [pathname, requestedChannel]);
+  useIonViewWillEnter(showFromTop, [pathname, requestedChannel]);
 
   // A hidden field must not keep filtering the feed: closing the search, or the options it sits
   // under, empties it.
@@ -122,6 +141,7 @@ export function FeedPage() {
       title="Feed"
       subtitle={subtitle}
       refreshing={syncing && hasChannels}
+      contentRef={content}
       fab={refreshButton}
       overlays={installFlow.guide}
       bar={

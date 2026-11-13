@@ -1,5 +1,5 @@
 import { getConfig, IonBackButton, IonButtons, IonCol, IonContent, IonFab, IonGrid, IonHeader, IonNote, IonPage, IonRow, IonTitle, IonToolbar } from '@ionic/react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useEffect, useRef, useState } from 'react';
 import { useWideScreen } from '../ui/wide-screen';
 
 interface Props {
@@ -30,6 +30,8 @@ interface Props {
    * app's, at the top of the screen (RefreshBar).
    */
   refreshing?: boolean;
+  /** The page's IonContent, for a page that scrolls it itself. */
+  contentRef?: Ref<HTMLIonContentElement>;
   children: ReactNode;
 }
 
@@ -46,7 +48,7 @@ interface Props {
  * on iOS phones. On wide screens the toolbar would run across the whole window, far from a
  * centred column, so the title sits at the top of the column instead, in Ionic's own heading type.
  */
-export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays, wide = false, refreshing = false, children }: Props) {
+export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays, wide = false, refreshing = false, contentRef, children }: Props) {
   const wideScreen = useWideScreen();
   const [fabHidden, setFabHidden] = useState(false);
   // Where the content stood the last time the button's state was decided: a scroll counts only
@@ -111,6 +113,7 @@ export function Page({ title, subtitle, actions, bar, back, fixed, fab, overlays
         </IonHeader>
       )}
       <IonContent
+        {...(contentRef === undefined ? {} : { ref: contentRef })}
         className={headerless ? 'headerless' : undefined}
         fullscreen
         scrollEvents={fab !== undefined}

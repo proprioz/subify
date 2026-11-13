@@ -87,6 +87,7 @@ function SideMenu() {
                 key={tab}
                 routerLink={`/${tab}`}
                 routerDirection="root"
+                onClick={() => pathname === `/${tab}` && scrollShownPageToTop()}
                 detail={false}
                 aria-current={selected ? 'page' : undefined}
                 {...(selected ? { color: 'light' } : {})}
@@ -100,6 +101,19 @@ function SideMenu() {
       </IonContent>
     </IonMenu>
   );
+}
+
+/**
+ * Scrolls the page shown back to its top, as a second tap on its tab does in both platforms' own
+ * apps, and the feed's channel strip back to its start, where its tools and “All” are. Only from
+ * the tab's own page: from a page below it, Ionic takes the tap back to the tab.
+ */
+function scrollShownPageToTop() {
+  const page = document.querySelector('#main ion-router-outlet > .ion-page:not(.ion-page-hidden)');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  void page?.querySelector<HTMLIonContentElement>('ion-content')?.scrollToTop(reduced ? 0 : 300);
+  // At once: Safari drops a smooth scroll of the strip when the feed redraws for “All” just after.
+  page?.querySelector('.channel-strip')?.scrollTo({ left: 0 });
 }
 
 /** The three tabs. The current one shows its filled icon. */
@@ -133,7 +147,7 @@ function Tabs() {
 
         <IonTabBar slot="bottom" id={TAB_BAR_ID} className="ion-hide-lg-up" translucent>
           {TABS.map(({ tab, label, icon, selectedIcon }) => (
-            <IonTabButton key={tab} tab={tab} href={`/${tab}`}>
+            <IonTabButton key={tab} tab={tab} href={`/${tab}`} onClick={() => pathname === `/${tab}` && scrollShownPageToTop()}>
               <IonIcon aria-hidden="true" icon={pathname.startsWith(`/${tab}`) ? selectedIcon : icon} />
               <IonLabel>{label}</IonLabel>
             </IonTabButton>
