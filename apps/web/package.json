@@ -19,7 +19,7 @@
     "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
     "hash-wasm": "^4.12.0",
-    "hono": "^4.13.14",
+    "hono": "^4.13.16",
     "ionicons": "^8.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
