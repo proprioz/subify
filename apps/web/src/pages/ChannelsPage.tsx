@@ -227,7 +227,7 @@ export function ChannelsPage() {
               <IonItem {...(index === attention.length - 1 ? { lines: 'none' as const } : {})}>
                 <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
                 <IonLabel>
-                  {/* The avatar's ring is hidden from screen readers: the name says it instead. */}
+                  {/* The avatar's frost is hidden from screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p>{channel.status === 'gone' ? 'No longer exists on YouTube' : 'Couldn’t be found online'}</p>
                 </IonLabel>
@@ -269,7 +269,7 @@ export function ChannelsPage() {
               <IonItem button detail={false} {...(index === working.length - 1 ? { lines: 'none' as const } : {})} onClick={() => showVideos(channel)}>
                 <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
                 <IonLabel>
-                  {/* The avatar's ring is hidden from screen readers: the name says it instead. */}
+                  {/* The avatar's frost is hidden from screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p className="ion-display-flex ion-align-items-center">
                     {channelStatus(channel, lastUploads?.get(channel.key))}

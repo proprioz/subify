@@ -88,7 +88,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, onShowChann
           lines="none"
           className={unavailable ? 'video-unavailable' : ''}
           onClick={unavailable ? undefined : () => void copy()}
-          // A secret channel's card only shows it by its outline: the name says it to screen readers.
+          // A secret channel's card only shows it by its frost: the name says it to screen readers.
           aria-label={unavailable ? undefined : `Copy link to ${kind === undefined ? '' : `${kind.text}: `}${item.title}${channel.secret ? ', secret channel' : ''}`}
         >
           <IonThumbnail

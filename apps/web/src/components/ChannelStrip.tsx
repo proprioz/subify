@@ -246,7 +246,7 @@ interface StripChipProps {
 }
 
 function StripChip({ on, onClick, label, ariaLabel, start, hideLabel = false, secret = false, className }: StripChipProps) {
-  // A secret channel's chip only shows it by its halo: the name says it to screen readers.
+  // A secret channel's chip only shows it by its frost: the name says it to screen readers.
   const name = ariaLabel ?? (hideLabel || secret ? `${label}${secret ? ', secret' : ''}` : undefined);
 
   return (
