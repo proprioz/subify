@@ -1,14 +1,16 @@
 import { IonBadge, IonButton, IonCard, IonContent, IonIcon, IonItem, IonLabel, IonPopover, IonText, IonThumbnail } from '@ionic/react';
-import { cloudDownloadOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
+import { cloudDownloadOutline, compassOutline, copyOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
+import type { VideoTap } from '../data/settings';
 import { keepsThumbnail, THUMBNAIL_KEEP_CHOICES, type ThumbnailKeep, thumbnailMayCome } from '../data/thumbnails';
 import { videoLink } from '../data/video-link';
 import { blurredPicture, type Hsl } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
 import { MORE_ICON, SHARE_ICON } from '../ui/icons';
+import { openVideo, openVideoUrl, thisDevice } from '../ui/open-video';
 import { shortFill } from '../ui/short-fill';
 import { useToast } from '../ui/toast';
 import { Menu, type MenuAction } from './Menu';
@@ -29,18 +31,20 @@ interface Props {
   thumbnail?: StoredThumbnail | undefined;
   /** How long the device keeps thumbnails (Settings), to say why an older video has none. */
   thumbnailKeep: ThumbnailKeep;
+  /** What tapping the card does (Settings). */
+  tap: VideoTap;
   /** Offers “More from …”, which only makes sense when the feed shows more than this channel. */
   onShowChannel?: ((key: string) => void) | undefined;
 }
 
 /**
- * One video. Tapping it copies its link, the app's main action: the user opens it wherever they
- * like; opening it on the platform and sharing it live in the ⋯ menu. Until its thumbnail comes,
+ * One video. Tapping it opens it in the platform's app, opens it in the browser or copies its link,
+ * as the user chose in Settings; the ⋯ menu holds the other two, and sharing. Until its thumbnail comes,
  * the card shows the blurred preview the stream gave (its ThumbHash, docs/FEATURES.md, D3) with a
  * mark that says it is on its way, and the thumbnail then fades in. Without either, the
  * placeholder holds a button that says why, since an empty frame looks like a fault.
  */
-export function VideoCard({ item, channel, thumbnail, thumbnailKeep, onShowChannel }: Props) {
+export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShowChannel }: Props) {
   const toast = useToast();
   const image = useImage(thumbnail);
   const fill = useShortFill(item, image);
@@ -66,11 +70,22 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, onShowChann
     await toast(copied ? 'Link copied.' : 'Couldn’t copy the link.', 1500);
   };
 
+  const open: Record<VideoTap, { text: string; icon: string; handler(): void }> = {
+    app: { text: `Open in ${platformName(item.key)}`, icon: openOutline, handler: () => link !== null && openVideo(link, 'app', item.key) },
+    browser: { text: 'Open in the browser', icon: compassOutline, handler: () => link !== null && openVideo(link, 'browser', item.key) },
+    copy: { text: 'Copy link', icon: copyOutline, handler: () => void copy() },
+  };
+  // On a computer, or where the app can't name the browser, both open the same link: they count as one.
+  const device = thisDevice();
+  const sameOpening = link !== null && openVideoUrl(link, 'app', item.key, device) === openVideoUrl(link, 'browser', item.key, device);
+  const opening = (choice: VideoTap) => (sameOpening && choice === 'browser' ? 'app' : choice);
+  const others = (['copy', 'app', 'browser'] as const).filter((choice) => opening(choice) !== opening(tap) && !(sameOpening && choice === 'browser'));
+
   const actions: MenuAction[] = [
     ...(link === null
       ? []
       : [
-          { text: `Open in ${platformName(item.key)}`, icon: openOutline, handler: () => void window.open(link, '_blank', 'noopener,noreferrer') },
+          ...others.map((choice) => open[choice]),
           ...(typeof navigator.share === 'function'
             ? [{ text: 'Share…', icon: SHARE_ICON, handler: () => void navigator.share({ title: item.title, url: link }).catch(() => {}) }]
             : []),
@@ -87,9 +102,9 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, onShowChann
           detail={false}
           lines="none"
           className={unavailable ? 'video-unavailable' : ''}
-          onClick={unavailable ? undefined : () => void copy()}
+          onClick={unavailable ? undefined : open[tap].handler}
           // A secret channel's card only shows it by its frost: the name says it to screen readers.
-          aria-label={unavailable ? undefined : `Copy link to ${kind === undefined ? '' : `${kind.text}: `}${item.title}${channel.secret ? ', secret channel' : ''}`}
+          aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
         >
           <IonThumbnail
             slot="start"

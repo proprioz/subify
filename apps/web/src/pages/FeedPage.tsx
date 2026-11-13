@@ -43,7 +43,7 @@ import {
   toggleType,
 } from '../data/feed';
 import { periodLabel, updatedLabel } from '../data/format';
-import { dismissInstallCard, installCardCanStop, installCardDue, loadInstallCard } from '../data/settings';
+import { DEFAULT_VIDEO_TAP, dismissInstallCard, installCardCanStop, installCardDue, loadInstallCard, loadVideoTap } from '../data/settings';
 import { DEFAULT_THUMBNAIL_KEEP, loadThumbnailKeep } from '../data/thumbnails';
 import { canInstall, startsEmptyOnceInstalled } from '../ui/install';
 import { useWideScreen } from '../ui/wide-screen';
@@ -68,6 +68,7 @@ export function FeedPage() {
   const typeFilter = useLiveQuery(() => loadTypeFilter(db), [db]) ?? DEFAULT_TYPE_FILTER;
   const showUpcoming = useLiveQuery(() => loadShowUpcoming(db), [db]) ?? DEFAULT_SHOW_UPCOMING;
   const thumbnailKeep = useLiveQuery(() => loadThumbnailKeep(db), [db]) ?? DEFAULT_THUMBNAIL_KEEP;
+  const videoTap = useLiveQuery(() => loadVideoTap(db), [db]) ?? DEFAULT_VIDEO_TAP;
   const subscriptions = useLiveQuery(() => db.subscriptions.toArray(), [db]);
   const sort = useLiveQuery(() => getMeta<ChannelSort>(db, 'channelSort'), [db]) ?? 'recent';
   const lastSyncAt = useLiveQuery(() => getMeta<number>(db, 'lastSyncAt'), [db]);
@@ -288,6 +289,7 @@ export function FeedPage() {
               channel={entry.channel}
               thumbnail={entry.thumbnail}
               thumbnailKeep={thumbnailKeep}
+              tap={videoTap}
               onShowChannel={visibleChannels.length > 1 && entry.channel.key !== channelKey ? showChannel : undefined}
             />
           ));

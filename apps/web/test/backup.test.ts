@@ -6,6 +6,7 @@ import { connectionCheckOn, setConnectionCheck } from '../src/data/connection-ch
 import { getMeta, setMeta } from '../src/data/db';
 import { loadShowUpcoming, loadTypeFilter } from '../src/data/feed';
 import { checkSecretCode, setSecretCode } from '../src/data/secret';
+import { loadVideoTap } from '../src/data/settings';
 import { loadThumbnailKeep, setThumbnailKeep } from '../src/data/thumbnails';
 import { channel, FakeServer, freshDb, item, NOW } from './fake-server';
 
@@ -63,12 +64,30 @@ describe('a backup in format version 2', () => {
     const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1));
     server.online(KURZGESAGT, channel(KURZGESAGT, 'Kurzgesagt'), [item(KURZGESAGT, 'k1', 2)]);
     const db = freshDb();
+    await setMeta(db, 'videoTap', 'browser');
 
     await restoreBackup(db, server.api(), await readBackup(fixture('backup-v2.json'), PASSWORD), NOW);
 
     expect(await loadThumbnailKeep(db)).toBe(365);
     expect(await db.subscriptions.count()).toBe(2);
     expect(await getMeta(db, 'theme')).toBe('dark');
+    // Version 2 had no such setting: the default, opening in YouTube, replaces the device's own.
+    expect(await loadVideoTap(db)).toBe('app');
+  });
+});
+
+// backup-v3.json is a file in format version 3 and must never be regenerated.
+describe('a backup in format version 3', () => {
+  it('restores what tapping a video does, with the rest', async () => {
+    const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1));
+    server.online(KURZGESAGT, channel(KURZGESAGT, 'Kurzgesagt'), [item(KURZGESAGT, 'k1', 2)]);
+    const db = freshDb();
+
+    await restoreBackup(db, server.api(), await readBackup(fixture('backup-v3.json'), PASSWORD), NOW);
+
+    expect(await loadVideoTap(db)).toBe('copy');
+    expect(await loadThumbnailKeep(db)).toBe(365);
+    expect(await db.subscriptions.count()).toBe(2);
   });
 });
 
@@ -94,7 +113,7 @@ describe('the secret code hash of a backup', () => {
 
 // The backup is the user's only copy of their subscriptions: a round trip must lose nothing.
 describe('this app’s backups', () => {
-  it('give back channels, kinds, secrets, filters, sort, code, theme, the connection check and the thumbnails kept', async () => {
+  it('give back channels, kinds, secrets, filters, sort, code, theme, the connection check, the thumbnails kept and the tap on a video', async () => {
     const server = new FakeServer().publish(channel(NASA, 'NASA'), item(NASA, 'n1', 1)).publish(channel(KURZGESAGT, 'Kurzgesagt'), item(KURZGESAGT, 'k1', 1));
     const source = freshDb();
     await restoreBackup(source, server.api(), await readBackup(fixture('backup-v1.json'), PASSWORD), NOW);
@@ -104,6 +123,7 @@ describe('this app’s backups', () => {
     await setConnectionCheck(source, true);
     await setMeta(source, 'showUpcoming', true);
     await setThumbnailKeep(source, 'always', NOW);
+    await setMeta(source, 'videoTap', 'browser');
 
     const file = await exportBackup(source, 'a long password', NOW);
     const target = freshDb();
@@ -117,6 +137,7 @@ describe('this app’s backups', () => {
     expect(await getMeta(target, 'theme')).toBe('light');
     expect(await connectionCheckOn(target)).toBe(true);
     expect(await loadThumbnailKeep(target)).toBe('always');
+    expect(await loadVideoTap(target)).toBe('browser');
     expect(await checkSecretCode(target, '97531', NOW)).toEqual({ ok: true });
     expect(file).not.toContain('NASA');
   });

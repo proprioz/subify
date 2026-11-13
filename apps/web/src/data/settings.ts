@@ -6,6 +6,21 @@ export async function loadTheme(db: SubifyDb): Promise<Theme> {
   return (await getMeta<Theme>(db, 'theme')) ?? 'system';
 }
 
+/** What tapping a video does (Settings, “Videos”); the card's ⋯ menu offers the others. */
+export type VideoTap = 'copy' | 'browser' | 'app';
+
+export const VIDEO_TAP_CHOICES: readonly { value: VideoTap; label: string }[] = [
+  { value: 'app', label: 'Open in YouTube' },
+  { value: 'browser', label: 'Open in the browser' },
+  { value: 'copy', label: 'Copy the link' },
+];
+
+export const DEFAULT_VIDEO_TAP: VideoTap = 'app';
+
+export async function loadVideoTap(db: SubifyDb): Promise<VideoTap> {
+  return (await getMeta<VideoTap>(db, 'videoTap')) ?? DEFAULT_VIDEO_TAP;
+}
+
 /** How long “Not now” hides the invitation to install on the feed. */
 export const INSTALL_CARD_PAUSE = 7 * 24 * 60 * 60 * 1000;
 

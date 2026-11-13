@@ -6,20 +6,21 @@ import { type ChannelSort, loadShowUpcoming, loadTypeFilter, type TypeFilter } f
 import { followMany, type FollowManyResult } from './follow-many';
 import { connectionCheckOn } from './connection-check';
 import { secretHashAccepted } from './secret';
-import type { Theme } from './settings';
+import { DEFAULT_VIDEO_TAP, loadVideoTap, type Theme, VIDEO_TAP_CHOICES, type VideoTap } from './settings';
 import { DEFAULT_THUMBNAIL_KEEP, loadThumbnailKeep, THUMBNAIL_KEEP_CHOICES, type ThumbnailKeep } from './thumbnails';
 
 /**
  * A backup holds the channels, the feed filters and sort, the theme, the connection check, how long
- * thumbnails are kept and the secret code's hash, sealed with a password. Videos are not saved:
- * they come back from the server.
+ * thumbnails are kept, what tapping a video does and the secret code's hash, sealed with a password.
+ * Videos are not saved: they come back from the server.
  *
  * The payload is spelled out here rather than taken from the app's types, so that renaming a field
  * in the app never changes the file. A new PAYLOAD_VERSION must keep reading every earlier one
- * (test/fixtures/backup-v1.json, backup-v2.json). Version 2 added `thumbnailKeep`.
+ * (test/fixtures/backup-v1.json, backup-v2.json, backup-v3.json). Version 2 added `thumbnailKeep`,
+ * version 3 `videoTap`.
  */
 
-const PAYLOAD_VERSION = 2;
+const PAYLOAD_VERSION = 3;
 const CHANNEL_KEY = /^youtube:UC[0-9A-Za-z_-]{22}$/;
 const SORTS: readonly ChannelSort[] = ['recent', 'oldest', 'name', 'name-desc'];
 const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
@@ -35,6 +36,8 @@ interface Payload {
   checkConnection: boolean;
   /** From version 2: a version 1 backup restores the default. */
   thumbnailKeep?: ThumbnailKeep;
+  /** From version 3: an earlier backup restores the default. */
+  videoTap?: VideoTap;
   secretCodeHash: string | null;
 }
 
@@ -47,6 +50,7 @@ export interface Backup {
   theme: Theme;
   checkConnection: boolean;
   thumbnailKeep: ThumbnailKeep;
+  videoTap: VideoTap;
 }
 
 export async function exportBackup(db: SubifyDb, password: string, now = Date.now()): Promise<string> {
@@ -66,6 +70,7 @@ export async function exportBackup(db: SubifyDb, password: string, now = Date.no
     theme: (await getMeta<Theme>(db, 'theme')) ?? 'system',
     checkConnection: await connectionCheckOn(db),
     thumbnailKeep: await loadThumbnailKeep(db),
+    videoTap: await loadVideoTap(db),
     secretCodeHash: (await getMeta<string>(db, 'secretCodeHash')) ?? null,
   };
 
@@ -113,6 +118,7 @@ export async function restoreBackup(db: SubifyDb, api: Api, backup: Backup, now 
     await setMeta(db, 'channelSort', backup.channelSort);
     await setMeta(db, 'theme', backup.theme);
     await setMeta(db, 'thumbnailKeep', backup.thumbnailKeep);
+    await setMeta(db, 'videoTap', backup.videoTap);
 
     if (backup.secretCodeHash === null) {
       await db.meta.delete('secretCodeHash');
@@ -127,7 +133,7 @@ export async function restoreBackup(db: SubifyDb, api: Api, backup: Backup, now 
 function parsePayload(value: unknown): Backup {
   const payload = value as Partial<Payload> | null;
 
-  if (payload === null || typeof payload !== 'object' || (payload.version !== 1 && payload.version !== PAYLOAD_VERSION)) {
+  if (payload === null || typeof payload !== 'object' || ![1, 2, PAYLOAD_VERSION].includes(payload.version as number)) {
     throw new BackupError('This backup was made by a version of the app this one doesn’t know.');
   }
 
@@ -177,5 +183,6 @@ function parsePayload(value: unknown): Backup {
     theme: THEMES.includes(payload.theme as Theme) ? (payload.theme as Theme) : 'system',
     checkConnection: payload.checkConnection === true,
     thumbnailKeep: THUMBNAIL_KEEP_CHOICES.some((choice) => choice.value === payload.thumbnailKeep) ? payload.thumbnailKeep! : DEFAULT_THUMBNAIL_KEEP,
+    videoTap: VIDEO_TAP_CHOICES.some((choice) => choice.value === payload.videoTap) ? payload.videoTap! : DEFAULT_VIDEO_TAP,
   };
 }

@@ -296,6 +296,7 @@ describe('the encrypted catalog', () => {
       theme: 'system',
       checkConnection: false,
       thumbnailKeep: 30,
+      videoTap: 'app',
     };
 
     await restoreBackup(db, api, backup, NOW);

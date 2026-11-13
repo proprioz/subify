@@ -34,6 +34,7 @@ import {
   imagesOutline,
   moonOutline,
   phonePortraitOutline,
+  playOutline,
   shieldCheckmarkOutline,
   sparklesOutline,
   sunnyOutline,
@@ -55,7 +56,7 @@ import { BackupError, MINIMUM_PASSWORD_LENGTH } from '../data/backup-cipher';
 import { connectionCheckOn, setConnectionCheck } from '../data/connection-check';
 import { getMeta, setMeta } from '../data/db';
 import { ageLabel } from '../data/format';
-import { loadTheme, type Theme } from '../data/settings';
+import { loadTheme, loadVideoTap, type Theme, VIDEO_TAP_CHOICES, type VideoTap } from '../data/settings';
 import {
   DEFAULT_THUMBNAIL_KEEP,
   deleteThumbnailsOlderThan,
@@ -100,6 +101,7 @@ export function SettingsPage() {
   const reopenGuide = useRef(false);
 
   const theme = useLiveQuery(() => loadTheme(db), [db]) ?? 'system';
+  const videoTap = useLiveQuery(() => loadVideoTap(db), [db]);
   const lastExportAt = useLiveQuery(() => getMeta<number>(db, 'lastExportAt'), [db]);
   const checksConnection = useLiveQuery(() => connectionCheckOn(db), [db]) ?? false;
   const keyring = useLiveQuery(() => readKeyring(db), [db]);
@@ -469,6 +471,25 @@ export function SettingsPage() {
               <IonLabel>System</IonLabel>
             </IonSegmentButton>
           </IonSegment>
+        </IonItem>
+      </Section>
+
+      <Section heading="Videos" footer="The ⋯ menu of each video offers the other choices.">
+        <IonItem lines="none">
+          <IonIcon slot="start" icon={playOutline} aria-hidden="true" />
+          <IonSelect
+            label="Tap a video to"
+            labelPlacement="stacked"
+            interface="action-sheet"
+            value={videoTap}
+            onIonChange={(event) => void setMeta(db, 'videoTap', event.detail.value as VideoTap)}
+          >
+            {VIDEO_TAP_CHOICES.map(({ value, label }) => (
+              <IonSelectOption key={value} value={value}>
+                {label}
+              </IonSelectOption>
+            ))}
+          </IonSelect>
         </IonItem>
       </Section>
 

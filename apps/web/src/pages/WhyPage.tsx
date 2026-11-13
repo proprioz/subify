@@ -37,7 +37,7 @@ export function WhyPage() {
         </IonButton>
 
         <h2>Watch on YouTube</h2>
-        <p>Subify doesn’t play videos: tap a video to copy its link, or open it in YouTube and watch it there, as usual.</p>
+        <p>Subify doesn’t play videos: tap a video to watch it in YouTube, as usual, or to open it in the browser or copy its link, as you choose in Settings.</p>
 
         <h2>Support the creators you love</h2>
         <p>
