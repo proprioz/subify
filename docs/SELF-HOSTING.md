@@ -115,7 +115,7 @@ pnpm --filter @subify/server build:node
 systemctl restart subify
 ```
 
-Migrations run at the next start. They only add to the database, so nothing needs to be done by hand. Installed apps load the new version the next time they talk to the server.
+Migrations run at the next start. They only add to the database, so nothing needs to be done by hand. Installed apps load the new version the next time they talk to the server; Settings › About › Version shows the commit an app was built from.
 
 ### Back up
 
@@ -218,7 +218,7 @@ Default: empty.
 
 ### `COMMIT`
 
-The git commit the server was built from, shown by `/api/health` so that anyone can compare it with the public repository. Only a commit id (7 to 40 hex characters) is shown. The CI deploy sets it each time (`wrangler deploy --var COMMIT:<sha>`); on Node, set it to `git rev-parse HEAD` when you build.
+The git commit the server was built from, shown by `/api/health` so that anyone can compare it with the public repository. Only a commit id (7 to 40 hex characters) is shown. The CI deploy sets it each time (`wrangler deploy --var COMMIT:<sha>`); on Node, set it to `git rev-parse HEAD` when you build. Building the app reads it too, or else asks git, and Settings shows it as the app's version.
 
 Default: empty, and `/api/health` answers `commit: null`.
 

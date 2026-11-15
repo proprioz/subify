@@ -32,6 +32,7 @@ import {
   lockClosedOutline,
   globeOutline,
   imagesOutline,
+  informationCircleOutline,
   moonOutline,
   phonePortraitOutline,
   playOutline,
@@ -628,16 +629,25 @@ export function SettingsPage() {
           <IonIcon slot="start" icon={mapOutline} aria-hidden="true" />
           <IonLabel>Take the tour</IonLabel>
         </IonItem>
-        <IonItem button {...(canInstall(install) ? {} : { lines: 'none' as const })} onClick={() => navigate('/settings/privacy')}>
+        <IonItem button onClick={() => navigate('/settings/privacy')}>
           <IonIcon slot="start" icon={shieldCheckmarkOutline} aria-hidden="true" />
           <IonLabel>Privacy</IonLabel>
         </IonItem>
         {canInstall(install) && (
-          <IonItem button detail={false} lines="none" onClick={installFlow.start}>
+          <IonItem button detail={false} onClick={installFlow.start}>
             <IonIcon slot="start" icon={downloadOutline} aria-hidden="true" />
             <IonLabel>Install the app</IonLabel>
           </IonItem>
         )}
+        {/* Built into the app (vite.config.ts): showing it asks the server nothing. */}
+        <IonItem lines="none">
+          <IonIcon slot="start" icon={informationCircleOutline} aria-hidden="true" />
+          <IonLabel className="ion-text-wrap">
+            Version
+            <p>Expect bugs and frequent changes.</p>
+          </IonLabel>
+          <IonNote slot="end">{__COMMIT__ === null ? 'Alpha' : `Alpha · ${__COMMIT__}`}</IonNote>
+        </IonItem>
       </Section>
 
       <Section footer="Deletes your channels, videos, settings and secret code from this device.">
