@@ -103,7 +103,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
           lines="none"
           className={unavailable ? 'video-unavailable' : ''}
           onClick={unavailable ? undefined : open[tap].handler}
-          // A secret channel's card only shows it by its frost: the name says it to screen readers.
+          // A secret channel's card only shows it by its grey: the name says it to screen readers.
           aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
         >
           <IonThumbnail

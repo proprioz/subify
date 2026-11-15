@@ -224,10 +224,10 @@ export function ChannelsPage() {
         <Section heading="Need your attention">
           {attention.map((channel, index) => (
             <IonItemSliding key={channel.key}>
-              <IonItem {...(index === attention.length - 1 ? { lines: 'none' as const } : {})}>
-                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
+              <IonItem {...(index === attention.length - 1 ? { lines: 'none' as const } : {})} {...(channel.secret ? { className: 'channel-secret' } : {})}>
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" />
                 <IonLabel>
-                  {/* The avatar's frost is hidden from screen readers: the name says it instead. */}
+                  {/* The row's grey is lost on screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p>{channel.status === 'gone' ? 'No longer exists on YouTube' : 'Couldn’t be found online'}</p>
                 </IonLabel>
@@ -266,10 +266,10 @@ export function ChannelsPage() {
             // Swiping a row offers its removal, as in the platforms' own lists; the ⋯ button
             // offers it too, for mice and for those who don't know the gesture.
             <IonItemSliding key={channel.key}>
-              <IonItem button detail={false} {...(index === working.length - 1 ? { lines: 'none' as const } : {})} onClick={() => showVideos(channel)}>
-                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
+              <IonItem button detail={false} {...(index === working.length - 1 ? { lines: 'none' as const } : {})} {...(channel.secret ? { className: 'channel-secret' } : {})} onClick={() => showVideos(channel)}>
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" />
                 <IonLabel>
-                  {/* The avatar's frost is hidden from screen readers: the name says it instead. */}
+                  {/* The row's grey is lost on screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p className="ion-display-flex ion-align-items-center">
                     {channelStatus(channel, lastUploads?.get(channel.key))}
