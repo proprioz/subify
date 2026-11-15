@@ -225,9 +225,9 @@ export function ChannelsPage() {
           {attention.map((channel, index) => (
             <IonItemSliding key={channel.key}>
               <IonItem {...(index === attention.length - 1 ? { lines: 'none' as const } : {})} {...(channel.secret ? { className: 'channel-secret' } : {})}>
-                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" />
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
                 <IonLabel>
-                  {/* The row's grey is lost on screen readers: the name says it instead. */}
+                  {/* The row's grey and the avatar's badge are lost on screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p>{channel.status === 'gone' ? 'No longer exists on YouTube' : 'Couldn’t be found online'}</p>
                 </IonLabel>
@@ -267,9 +267,9 @@ export function ChannelsPage() {
             // offers it too, for mice and for those who don't know the gesture.
             <IonItemSliding key={channel.key}>
               <IonItem button detail={false} {...(index === working.length - 1 ? { lines: 'none' as const } : {})} {...(channel.secret ? { className: 'channel-secret' } : {})} onClick={() => showVideos(channel)}>
-                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" />
+                <ChannelAvatar channel={channel.key} title={channel.title} avatar={channel.avatar} slot="start" secret={channel.secret} />
                 <IonLabel>
-                  {/* The row's grey is lost on screen readers: the name says it instead. */}
+                  {/* The row's grey and the avatar's badge are lost on screen readers: the name says it instead. */}
                   <h2 {...(channel.secret ? { 'aria-label': `${channel.title}, secret` } : {})}>{channel.title}</h2>
                   <p className="ion-display-flex ion-align-items-center">
                     {channelStatus(channel, lastUploads?.get(channel.key))}

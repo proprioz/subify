@@ -1,5 +1,5 @@
 import { IonIcon } from '@ionic/react';
-import { checkmark, eyeOffOutline, people, peopleOutline, play, playOutline, refreshOutline, searchOutline, settings, settingsOutline, syncOutline } from 'ionicons/icons';
+import { checkmark, eyeOff, people, peopleOutline, play, playOutline, refreshOutline, searchOutline, settings, settingsOutline, syncOutline } from 'ionicons/icons';
 import type { CSSProperties, ReactNode } from 'react';
 
 /**
@@ -51,7 +51,7 @@ function Avatar({ channel, secret = false }: { channel: Channel; secret?: boolea
   return (
     <span className="shot-avatar" style={{ background: channel.colour }}>
       {channel.initials}
-      {secret && <IonIcon icon={eyeOffOutline} className="shot-secret" />}
+      {secret && <IonIcon icon={eyeOff} className="shot-secret" />}
     </span>
   );
 }

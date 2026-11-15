@@ -1,5 +1,5 @@
 import { IonBadge, IonButton, IonCard, IonContent, IonIcon, IonItem, IonLabel, IonPopover, IonText, IonThumbnail } from '@ionic/react';
-import { cloudDownloadOutline, compassOutline, copyOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
+import { cloudDownloadOutline, compassOutline, copyOutline, eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
@@ -103,7 +103,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
           lines="none"
           className={unavailable ? 'video-unavailable' : ''}
           onClick={unavailable ? undefined : open[tap].handler}
-          // A secret channel's card only shows it by its grey: the name says it to screen readers.
+          // A secret channel's card only shows it by its grey and its mark: the name says it to screen readers.
           aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
         >
           <IonThumbnail
@@ -149,6 +149,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
                 <span className="video-channel">Unavailable</span>
               ) : (
                 <>
+                  {channel.secret && <IonIcon icon={eyeOffOutline} className="video-secret-mark" aria-hidden="true" />}
                   <span className="video-channel">
                     {channel.title}
                   </span>

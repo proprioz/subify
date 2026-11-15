@@ -655,13 +655,14 @@ ion-fab-button.ion-color-red ion-icon {
 
 .shot-secret {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
-  padding: 1px;
+  right: -2px;
+  bottom: -2px;
+  padding: 2px;
   border-radius: 50%;
-  background: var(--shot-card);
-  color: var(--shot-text);
-  font-size: 9px;
+  background: var(--shot-text);
+  color: var(--shot-card);
+  box-shadow: 0 0 0 1px var(--shot-card);
+  font-size: 8px;
 }
 
 .shot-pill {
@@ -1087,8 +1088,9 @@ ion-item.secrets-banner ion-button {
 }
 
 /* A shown secret channel's videos' cards, its chip in the strip and its row in the Channels tab: a
-   plain grey, their pictures and text as any other's. A badge on the strip's avatars would be cut by
-   the round chip. */
+   plain grey, their pictures and text as any other's. Each also bears the eye-off icon, the mark of
+   “Make secret”, of the banner and of the tour's pictures: before the channel's name on a card, as
+   a badge on the avatar elsewhere. */
 ion-card.video-secret,
 ion-item.channel-secret {
   --background: var(--app-secret-background);
@@ -1104,6 +1106,40 @@ ion-card.video-secret ion-item {
 .channel-strip ion-chip.strip-secret {
   border-color: var(--app-secret-background);
   background: var(--app-secret-background);
+}
+
+.video-card .video-secret-mark {
+  flex-shrink: 0;
+  margin-inline-end: 4px;
+  font-size: 1.15em;
+}
+
+/* On the avatar's bottom corner, in the accent's colours, as the banner, with a ring of the grey
+   around it that sets it off the picture. It sits on the avatar's edge, leaving its initials in
+   view, and, in the strip, a little further in: as a share of the avatar, it stays within the round
+   chip, which clips what goes past it. */
+ion-avatar:has(> .avatar-secret) {
+  position: relative;
+}
+
+ion-avatar > ion-icon.avatar-secret {
+  position: absolute;
+  right: -6%;
+  bottom: -6%;
+  box-sizing: border-box;
+  width: 44%;
+  height: 44%;
+  padding: 7%;
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  box-shadow: 0 0 0 1.5px var(--app-secret-background);
+  text-shadow: none;
+}
+
+.channel-strip ion-avatar > ion-icon.avatar-secret {
+  right: 5%;
+  bottom: 5%;
 }
 
 /* The fallback for copying a link: off screen, never seen. */
