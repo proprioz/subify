@@ -394,6 +394,19 @@ ion-fab-button.ion-color-red ion-icon {
   line-height: 1.25;
 }
 
+/* The project is in alpha: a badge, as open source projects usually show it, at the start of a
+   line under the headline. */
+.welcome-alpha-badge {
+  margin-inline-end: 6px;
+  vertical-align: middle;
+  font-size: 0.75rem;
+}
+
+.welcome-alpha {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
 /* Where the tour is: one dot per step, the current one in the text colour. */
 .tour-dots {
   display: flex;

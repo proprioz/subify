@@ -4,6 +4,10 @@
 
 Please don't open a public issue. Report it privately through GitHub: the repository's **Security** tab, then **Report a vulnerability**. Say what you found, how to reproduce it, and what it affects (the app, the server, or the official instance at https://subify.tv). You'll get an answer as soon as possible, and credit if you wish once it is fixed.
 
+## Supported versions
+
+Subify is in alpha and has no releases yet: fixes land on `main`, which the official instance runs. A self-hosted server gets them by updating (see [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md#update)).
+
 ## How Subify protects its users
 
 - **Nothing to steal about users.** No accounts, no identifiers, no cookies. The server stores no list of anyone's channels, everything it stores about channels is encrypted, and its logs never let anyone identify the channels someone follows (see the principles in [CONTRIBUTING.md](CONTRIBUTING.md)).

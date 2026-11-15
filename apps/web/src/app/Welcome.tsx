@@ -1,4 +1,4 @@
-import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonText, IonToolbar } from '@ionic/react';
+import { IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonText, IonToolbar } from '@ionic/react';
 import { personRemoveOutline, playCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons';
 import { useRef, useState } from 'react';
 import { ContactModal } from '../components/ContactModal';
@@ -36,6 +36,12 @@ export function Welcome({ onDone }: { onDone: (restore: boolean) => void }) {
               <img src="/api/icons/pwa-192.png" alt="" width={88} height={88} className="welcome-icon" />
               <h1 className="welcome-name">Subify</h1>
               <h2 className="welcome-headline">Follow creators, not algorithms.</h2>
+              <p className="welcome-alpha">
+                <IonBadge color="warning" className="welcome-alpha-badge">
+                  Alpha
+                </IonBadge>
+                <IonText color="medium">Expect bugs and frequent changes.</IonText>
+              </p>
             </div>
             <IonList inset>
               {BENEFITS.map(({ icon, title, text }, i) => (

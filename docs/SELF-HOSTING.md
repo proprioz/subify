@@ -1,5 +1,8 @@
 # Hosting your own Subify
 
+> [!WARNING]
+> **Subify is in alpha.** Expect bugs and frequent changes, including to the server’s configuration: read the commits since your last update before updating.
+
 Subify's app only talks to the server it was installed from. Host your own server and install the app from it: the official instance and its host then see nothing of your use. The platform still sees your server read the feeds of the channels in its catalog, as it sees the official one read them.
 
 The same code runs in two ways:

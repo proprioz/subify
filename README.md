@@ -1,5 +1,8 @@
 # Subify
 
+> [!WARNING]
+> **Subify is in alpha.** Expect bugs and frequent changes. Keep a backup of your channels (Settings › Backup), and please [report the bugs you find](https://github.com/proprioz/subify/issues).
+
 Subify is an installable web app (PWA, iOS and Android first) to follow your favourite video creators, YouTube for now, without an account and without being tracked. You see the latest videos of the channels you chose, newest first, and nothing else: no recommendations, no content you didn't ask for.
 
 Everything you follow stays on your device. A light server keeps a shared catalog of channels and their recent videos, so your device doesn't have to contact the platform itself. It keeps that catalog encrypted, never learns which channels a device follows when the catalog already has them, keeps nothing about who follows what, and anyone who would rather not trust it can host their own.
