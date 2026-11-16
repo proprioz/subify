@@ -321,6 +321,12 @@ ion-fab-button.ion-color-red ion-icon {
   font-size: 26px;
 }
 
+/* Every chip in the app is a button (the channel strip, the search's options): as on Ionic's own
+   buttons and items, a double click, such as the one on “All”, selects none of its text. */
+ion-chip {
+  user-select: none;
+}
+
 /* The channel strip above the feed: Ionic chips in one row, scrolling sideways, with room above so
    that it does not touch the subtitle. */
 .channel-strip {
