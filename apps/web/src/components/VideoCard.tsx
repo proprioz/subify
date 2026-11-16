@@ -14,7 +14,7 @@ import {
   IonThumbnail,
   useIonActionSheet,
 } from '@ionic/react';
-import { cloudDownloadOutline, compassOutline, copyOutline, eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
+import { cloudDownloadOutline, compassOutline, copyOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
@@ -24,7 +24,7 @@ import { keepsThumbnail, THUMBNAIL_KEEP_CHOICES, type ThumbnailKeep, thumbnailMa
 import { videoLink } from '../data/video-link';
 import { blurredPicture, type Hsl } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
-import { MORE_ICON, type PlatformIcon, SHARE_ICON } from '../ui/icons';
+import { MORE_ICON, type PlatformIcon, SECRET_ICON, SHARE_ICON } from '../ui/icons';
 import { openVideo, openVideoUrl, thisDevice } from '../ui/open-video';
 import { shortFill } from '../ui/short-fill';
 import { useToast } from '../ui/toast';
@@ -226,7 +226,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
                 longPress();
               }
             }}
-            // A secret channel's card only shows it by its grey and its mark: the name says it to screen readers.
+            // A secret channel's card only shows it by its grey and its badge: the name says it to screen readers.
             aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
           >
             <IonThumbnail
@@ -258,6 +258,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
                   </IonButton>
                 )
               )}
+              {channel.secret && <IonIcon icon={SECRET_ICON} className="thumbnail-secret" aria-hidden="true" />}
             </IonThumbnail>
             <IonLabel className="ion-text-wrap">
               <h3>{item.title}</h3>
@@ -272,7 +273,6 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
                   <span className="video-channel">Unavailable</span>
                 ) : (
                   <>
-                    {channel.secret && <IonIcon icon={eyeOffOutline} className="video-secret-mark" aria-hidden="true" />}
                     <span className="video-channel">
                       {channel.title}
                     </span>

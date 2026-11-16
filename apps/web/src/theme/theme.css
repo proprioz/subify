@@ -1139,9 +1139,9 @@ ion-item.secrets-banner ion-button {
 }
 
 /* A shown secret channel's videos' cards, its chip in the strip and its row in the Channels tab: a
-   plain grey, their pictures and text as any other's. Each also bears the eye-off icon, the mark of
-   “Make secret”, of the banner and of the tour's pictures: before the channel's name on a card, as
-   a badge on the avatar elsewhere. */
+   plain grey, their pictures and text as any other's. Each also bears a badge with the closed eye of
+   the logo, the mark of everything secret in the app (SECRET_ICON): in the thumbnail's bottom corner
+   on a card, on the avatar elsewhere. */
 ion-card.video-secret,
 ion-item.channel-secret {
   --background: var(--app-secret-background);
@@ -1159,38 +1159,48 @@ ion-card.video-secret ion-item {
   background: var(--app-secret-background);
 }
 
-.video-card .video-secret-mark {
-  flex-shrink: 0;
-  margin-inline-end: 4px;
-  font-size: 1.15em;
+/* The badge, the same everywhere: 18px, its eye 12px, in the accent's colours, as the banner, with a
+   ring of the grey around it that cuts it out of the picture. Ionic's icons keep their padding
+   outside their size. Above the shade iOS lays over a tapped card. */
+ion-avatar > ion-icon.avatar-secret,
+.video-thumbnail > ion-icon.thumbnail-secret {
+  position: absolute;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  box-shadow: 0 0 0 2px var(--app-secret-background);
+  text-shadow: none;
 }
 
-/* On the avatar's bottom corner, in the accent's colours, as the banner, with a ring of the grey
-   around it that sets it off the picture. It sits on the avatar's edge, leaving its initials in
-   view, and, in the strip, a little further in: as a share of the avatar, it stays within the round
-   chip, which clips what goes past it. */
+/* On an avatar, as both platforms place a status on a profile picture: its centre on the circle's
+   edge at the bottom end, at 45°, 14.6% of the avatar from its corner, whatever the avatar's size.
+   The strip's round chip lets it overlap its edge rather than clip it. */
 ion-avatar:has(> .avatar-secret) {
   position: relative;
 }
 
 ion-avatar > ion-icon.avatar-secret {
-  position: absolute;
-  right: -6%;
-  bottom: -6%;
-  box-sizing: border-box;
-  width: 44%;
-  height: 44%;
-  padding: 7%;
-  border-radius: 50%;
-  background: var(--ion-color-primary);
-  color: var(--ion-color-primary-contrast);
-  box-shadow: 0 0 0 1.5px var(--app-secret-background);
-  text-shadow: none;
+  inset-inline-end: calc(14.6% - 9px);
+  bottom: calc(14.6% - 9px);
 }
 
-.channel-strip ion-avatar > ion-icon.avatar-secret {
-  right: 5%;
-  bottom: 5%;
+.channel-strip ion-chip.strip-secret {
+  overflow: visible;
+}
+
+/* On a thumbnail, inset in its bottom end corner, as an overlay on a picture; the mark that the
+   thumbnail is on its way moves aside. */
+.video-thumbnail > ion-icon.thumbnail-secret {
+  inset-inline-end: 6px;
+  bottom: 6px;
+}
+
+.video-secret .video-thumbnail ion-button.thumbnail-coming {
+  inset-inline-end: 28px;
 }
 
 /* The fallback for copying a link: off screen, never seen. */

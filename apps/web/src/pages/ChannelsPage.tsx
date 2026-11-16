@@ -16,8 +16,6 @@ import {
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  eyeOffOutline,
-  eyeOutline,
   lockClosedOutline,
   optionsOutline,
   people,
@@ -47,7 +45,7 @@ import { refreshDictionary } from '../data/dictionary';
 import { type ChannelSort, sortChannels } from '../data/feed';
 import { ageLabel } from '../data/format';
 import { joining, unsubscribe } from '../data/subscriptions';
-import { MORE_ICON } from '../ui/icons';
+import { MORE_ICON, SECRET_ICON } from '../ui/icons';
 
 export function ChannelsPage() {
   const { db, api, gate, secretsShown, setSecretsShown, setSecretOpened } = useAppData();
@@ -116,18 +114,18 @@ export function ChannelsPage() {
 
   const optionActions: MenuAction[] = secretsShown
     ? [
-        { text: 'Hide secret channels', icon: eyeOffOutline, handler: toggleSecrets },
+        { text: 'Hide secret channels', icon: SECRET_ICON, handler: toggleSecrets },
         // A lock is optional: added here or in Settings, Lock, where it is also changed or turned off.
         ...(secretLock === 'none' ? [{ text: 'Lock secret channels…', icon: lockClosedOutline, handler: () => void lockSecrets(true) }] : []),
       ]
-    : [{ text: 'Show secret channels', icon: eyeOutline, handler: toggleSecrets }];
+    : [{ text: 'Show secret channels', icon: SECRET_ICON, handler: toggleSecrets }];
 
   const channelActions = (channel: Subscription): MenuAction[] => [
     { text: 'Show videos', icon: playOutline, handler: () => showVideos(channel) },
     { text: 'Kinds of videos…', icon: optionsOutline, handler: () => setEditingTypesOf(channel.key) },
     channel.secret
-      ? { text: 'Stop keeping secret', icon: eyeOutline, handler: () => setChannelSecret(channel.key, false) }
-      : { text: 'Make secret', icon: eyeOffOutline, handler: () => setChannelSecret(channel.key, true) },
+      ? { text: 'Stop keeping secret', icon: SECRET_ICON, handler: () => setChannelSecret(channel.key, false) }
+      : { text: 'Make secret', icon: SECRET_ICON, handler: () => setChannelSecret(channel.key, true) },
     { text: 'Remove', icon: trashOutline, danger: true, handler: () => confirmRemove(channel) },
   ];
 

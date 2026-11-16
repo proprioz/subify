@@ -1,12 +1,12 @@
 import { IonAvatar, IonIcon } from '@ionic/react';
-import { eyeOff } from 'ionicons/icons';
 import { blurredPicture } from '../ui/blurred-picture';
+import { SECRET_ICON } from '../ui/icons';
 
 /**
  * The channel's avatar, as the server sent it with the channel (a data: URL: nothing is loaded),
  * or its initials while there is none, over a blurred picture drawn from the channel's key: each
  * channel has its own, always the same, before it is followed as after. A secret channel's has the
- * eye-off badge, the mark of “Make secret” and of the tour's pictures; whoever shows the avatar says
+ * badge of the closed eye, the mark of everything secret in the app (SECRET_ICON); whoever shows the avatar says
  * “secret” to screen readers, as the avatar is hidden from them.
  */
 export function ChannelAvatar({ channel, title, avatar = null, slot, secret = false }: { channel: string; title: string; avatar?: string | null; slot?: string; secret?: boolean }) {
@@ -16,7 +16,7 @@ export function ChannelAvatar({ channel, title, avatar = null, slot, secret = fa
     .slice(0, 2)
     .map((word) => [...word][0]?.toLocaleUpperCase() ?? '')
     .join('');
-  const badge = secret && <IonIcon icon={eyeOff} className="avatar-secret" />;
+  const badge = secret && <IonIcon icon={SECRET_ICON} className="avatar-secret" />;
 
   // Only a data: URL is shown: an image from anywhere else would go online.
   if (avatar?.startsWith('data:image/') === true) {

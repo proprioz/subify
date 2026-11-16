@@ -25,7 +25,6 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   downloadOutline,
-  eyeOffOutline,
   fingerPrintOutline,
   keyOutline,
   mapOutline,
@@ -70,7 +69,7 @@ import {
 } from '../data/thumbnails';
 import { checkAppPassword, LOCK_AFTER_CHOICES, type LockAfter, readKeyring, removeBiometrics, setLockAfter } from '../data/vault';
 import { midSentence } from '../ui/biometrics';
-import { SHARE_ICON } from '../ui/icons';
+import { SECRET_ICON, SHARE_ICON } from '../ui/icons';
 import { canInstall, isIos } from '../ui/install';
 import { resetEverything } from '../ui/reset';
 import { useToast } from '../ui/toast';
@@ -525,7 +524,7 @@ export function SettingsPage() {
           </IonItem>
         )}
         <IonItem>
-          <IonIcon slot="start" icon={eyeOffOutline} aria-hidden="true" />
+          <IonIcon slot="start" icon={SECRET_ICON} aria-hidden="true" />
           <IonToggle key={`secrets-${lockChoiceDrawn}`} checked={secretsLocked} disabled={secretLock === undefined} onIonChange={(event) => toggle(lockSecrets(event.detail.checked))}>
             <IonLabel className="ion-text-wrap">
               <h2>Lock secret channels</h2>

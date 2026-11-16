@@ -1,6 +1,7 @@
 import { IonIcon } from '@ionic/react';
-import { checkmark, eyeOff, people, peopleOutline, play, playOutline, refreshOutline, searchOutline, settings, settingsOutline, syncOutline } from 'ionicons/icons';
+import { checkmark, people, peopleOutline, play, playOutline, refreshOutline, searchOutline, settings, settingsOutline, syncOutline } from 'ionicons/icons';
 import type { CSSProperties, ReactNode } from 'react';
+import { SECRET_ICON } from '../ui/icons';
 
 /**
  * The tour's pictures: small screens of the app, drawn here rather than captured, so they stay
@@ -51,7 +52,7 @@ function Avatar({ channel, secret = false }: { channel: Channel; secret?: boolea
   return (
     <span className="shot-avatar" style={{ background: channel.colour }}>
       {channel.initials}
-      {secret && <IonIcon icon={eyeOff} className="shot-secret" />}
+      {secret && <IonIcon icon={SECRET_ICON} className="shot-secret" />}
     </span>
   );
 }
