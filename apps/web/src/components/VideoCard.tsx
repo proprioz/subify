@@ -123,27 +123,24 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
   const opening = (choice: VideoTap) => (sameOpening && choice === 'browser' ? 'app' : choice);
   const others = (['copy', 'app', 'browser'] as const).filter((choice) => opening(choice) !== opening(tap) && !(sameOpening && choice === 'browser'));
 
-  const actions: CardAction[] = [
-    ...(link === null
-      ? []
-      : [
-          ...others.map((choice) => open[choice]),
-          ...(typeof navigator.share === 'function'
-            ? [{ text: 'Share…', short: 'Share', icon: SHARE_ICON, handler: () => void navigator.share({ title: item.title, url: link }).catch(() => {}) }]
-            : []),
-        ]),
-    ...(onShowChannel !== undefined
-      ? [{ text: `More from ${channel.title}`, short: 'More from', icon: personCircleOutline, handler: () => onShowChannel(channel.key) }]
-      : []),
-  ];
-  const offersActions = !unavailable && actions.length > 0;
+  const share: CardAction[] =
+    link !== null && typeof navigator.share === 'function'
+      ? [{ text: 'Share…', short: 'Share', icon: SHARE_ICON, handler: () => void navigator.share({ title: item.title, url: link }).catch(() => {}) }]
+      : [];
+  const more: CardAction[] =
+    onShowChannel !== undefined ? [{ text: `More from ${channel.title}`, short: 'More from', icon: personCircleOutline, handler: () => onShowChannel(channel.key) }] : [];
+  // Swiping reveals what the tap doesn't do, as buttons; the sheet lists every action, the tap's
+  // first, so that it is the one place that holds them all.
+  const actions: CardAction[] = [...(link === null ? [] : others.map((choice) => open[choice])), ...share, ...more];
+  const allActions: CardAction[] = [...(link === null ? [] : [open[tap], ...others.map((choice) => open[choice])]), ...share, ...more];
+  const offersActions = !unavailable && allActions.length > 0;
 
   const showActions = () => {
     void sliding.current?.close();
     void presentSheet({
       header: item.title,
       subHeader: channel.title,
-      buttons: [...actions.map(({ text, handler }) => ({ text, handler })), { text: 'Cancel', role: 'cancel' }],
+      buttons: [...allActions.map(({ text, handler }) => ({ text, handler })), { text: 'Cancel', role: 'cancel' }],
     });
   };
 
@@ -188,7 +185,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
       <IonCard className={channel.secret ? 'video-card video-secret' : 'video-card'}>
         <IonItemSliding
           ref={sliding}
-          disabled={!offersActions}
+          disabled={unavailable || actions.length === 0}
           // While the actions show, the card takes no tap: a tap beside them closes them. Not the click
           // that ends a mouse's drag, which opened them.
           onPointerDownCapture={() => {
@@ -220,6 +217,12 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
             onPointerMove={movePress}
             onPointerUp={endPress}
             onPointerCancel={endPress}
+            // The sheet opens under the finger: lifting it would click whatever action lies there.
+            onTouchEnd={(event) => {
+              if (pressed.current) {
+                event.preventDefault();
+              }
+            }}
             onContextMenu={(event) => {
               if (offersActions) {
                 event.preventDefault();
@@ -298,7 +301,7 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
               </p>
             </IonLabel>
           </IonItem>
-          {offersActions && (
+          {!unavailable && actions.length > 0 && (
             <IonItemOptions side="end">
               {actions.map((action) => (
                 <IonItemOption
