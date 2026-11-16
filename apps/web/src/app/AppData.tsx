@@ -3,10 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { close } from 'ionicons/icons';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Api, ServerError } from '../data/api';
+import { type Backup, restoreBackup } from '../data/backup';
 import { type AskConnection, CONNECTION_TRUSTS, ConnectionGate, type ConnectionTrust, isCancelled } from '../data/connection-check';
 import { SubifyDb } from '../data/db';
 import { refreshDictionary } from '../data/dictionary';
-import { runImportQueue } from '../data/follow-many';
+import { type FollowManyResult, runImportQueue } from '../data/follow-many';
 import { countryFlag, countryName } from '../data/format';
 import { loadTheme } from '../data/settings';
 import { unfinishedSync } from '../data/encrypted';
@@ -41,6 +42,12 @@ interface AppData {
    * running now (a restore), without asking again; call it before that step ends.
    */
   sync(continuing?: boolean): Promise<void>;
+  /**
+   * Restores a backup, through the connection check, then refreshes the feed: the loading bar runs
+   * from the start, while the channels' snapshots and thumbnails load, to the refresh's end.
+   */
+  restore(backup: Backup): Promise<FollowManyResult>;
+  /** Whether a refresh, or a restore and its refresh, is running. */
   syncing: boolean;
   /** How far the running sync got, in percent, when it reads several pages; 0 otherwise. */
   syncDone: number;
@@ -261,6 +268,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   resumeSync.current = () => void sync();
 
+  const [restoring, setRestoring] = useState(false);
+  const restore = useCallback(
+    (backup: Backup) =>
+      gate.run(api, async () => {
+        setRestoring(true);
+
+        try {
+          const result = await restoreBackup(db, api, backup);
+          // The channels show already, blurred: their thumbnails come in the refresh that follows,
+          // which takes the loading bar over without a gap.
+          void sync(true);
+
+          return result;
+        } finally {
+          setRestoring(false);
+        }
+      }),
+    [db, api, gate, sync],
+  );
+
   // A sync cut short when the app closed doesn't go on by itself at the next launch (D12): the
   // user is asked, once the app is open.
   const askedToResume = useRef(false);
@@ -365,7 +392,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [installEvent]);
 
   return (
-    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: async () => setVault('locked'), api, gate, sync, syncing, syncDone, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
+    <AppDataContext.Provider value={{ db, vault, vaultOpened: () => setVault('open'), lock: async () => setVault('locked'), api, gate, sync, restore, syncing: syncing || restoring, syncDone, syncError, secretsShown, setSecretsShown, secretOpened, setSecretOpened, install, promptInstall, storageKept }}>
       {children}
     </AppDataContext.Provider>
   );

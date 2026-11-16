@@ -51,7 +51,7 @@ import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
 import { Section } from '../components/Section';
 import { ServerError } from '../data/api';
-import { type Backup, exportBackup, isBackupFile, readBackup, restoreBackup } from '../data/backup';
+import { type Backup, exportBackup, isBackupFile, readBackup } from '../data/backup';
 import { BackupError, MINIMUM_PASSWORD_LENGTH } from '../data/backup-cipher';
 import { connectionCheckOn, setConnectionCheck } from '../data/connection-check';
 import { getMeta, setMeta } from '../data/db';
@@ -77,7 +77,7 @@ import { useToast } from '../ui/toast';
 type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string };
 
 export function SettingsPage() {
-  const { db, api, gate, install, lock, sync, secretsShown } = useAppData();
+  const { db, install, lock, restore, secretsShown } = useAppData();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [presentAlert] = useIonAlert();
@@ -202,13 +202,8 @@ export function SettingsPage() {
         {
           text: 'Restore',
           handler: () => {
-            void gate
-              .run(api, async () => {
-                const result = await restoreBackup(db, api, backup);
-                void toast(result.queued > 0 ? `Backup restored. ${result.queued} channels will be added one at a time.` : 'Backup restored.');
-                // The channels show already, blurred: their thumbnails come in the refresh that follows, with its bar.
-                void sync(true);
-              })
+            void restore(backup)
+              .then((result) => toast(result.queued > 0 ? `Backup restored. ${result.queued} channels will be added one at a time.` : 'Backup restored.'))
               .catch((failure: unknown) => toast(failure instanceof ServerError ? failure.message : 'Couldn’t restore the backup.'));
           },
         },
