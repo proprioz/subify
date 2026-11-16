@@ -27,7 +27,7 @@ import { EmptyState } from '../components/EmptyState';
 import { NotFetchedInfo, refreshHint, retrySentence } from '../components/InfoButton';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
-import { AllTip, SecretTour } from '../components/SecretTour';
+import { AllTip, SecretTour, Tip } from '../components/SecretTour';
 import { SecretsBanner } from '../components/SecretsBanner';
 import { VideoCard } from '../components/VideoCard';
 import { ALL_TYPES, getMeta, setMeta } from '../data/db';
@@ -72,6 +72,9 @@ export function FeedPage() {
   const subscriptions = useLiveQuery(() => db.subscriptions.toArray(), [db]);
   const sort = useLiveQuery(() => getMeta<ChannelSort>(db, 'channelSort'), [db]) ?? 'recent';
   const lastSyncAt = useLiveQuery(() => getMeta<number>(db, 'lastSyncAt'), [db]);
+  const gesturesTipSeen = useLiveQuery(() => getMeta<boolean>(db, 'gesturesTipSeen'), [db]);
+  // A touch screen shows no ⋯ on the cards (VideoCard): one tip says, once, how to reach their actions.
+  const touch = window.matchMedia('(hover: none), (pointer: coarse)').matches;
   // A secret channel opened on its own shows alone: the channel filter keeps the others out.
   const opened = requestedChannel !== null && requestedChannel === secretOpened;
   const visibleChannels = sortChannels(
@@ -118,6 +121,7 @@ export function FeedPage() {
   const showChannel = (key: string | null) => setSearchParams(key === null ? {} : { channel: key });
   const hasChannels = (subscriptions?.length ?? 0) > 0;
   const term = search.trim();
+  const installCardShown = hasChannels && canInstall(install) && installCard !== undefined && installCardDue(installCard, Date.now());
   const subtitle = !hasChannels ? (
     'Latest uploads from your channels, newest first.'
   ) : syncing ? (
@@ -199,7 +203,7 @@ export function FeedPage() {
 
       {/* Once there is something to keep: an empty feed offers to install in its empty state. The
           card waits for the user's last answer to be read rather than flash. */}
-      {hasChannels && canInstall(install) && installCard !== undefined && installCardDue(installCard, Date.now()) && (
+      {installCardShown && (
         <IonCard>
           <IonCardContent>
             <strong>Install the app.</strong> It opens full screen, and the browser is less likely to clear your channels.
@@ -278,6 +282,21 @@ export function FeedPage() {
           }>
           Refresh, or show more kinds of videos under Options.
         </EmptyState>
+      )}
+
+      {/* One message above the videos at a time: it waits for the invitation to install to be answered
+          (and for that answer to be read, rather than flash), and for the secret channels' tour to end. */}
+      {touch && gesturesTipSeen === undefined && tour === null && installCard !== undefined && !installCardShown && (feed?.entries.length ?? 0) > 0 && (
+        <Tip
+          arrow="none"
+          actions={
+            <IonButton fill="clear" size="small" onClick={() => void setMeta(db, 'gesturesTipSeen', true)}>
+              Got it
+            </IonButton>
+          }
+        >
+          Touch and hold a video, or swipe it to the left, for more choices: copy its link, share it…
+        </Tip>
       )}
 
       {feed !== undefined &&
