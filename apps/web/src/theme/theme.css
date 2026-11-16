@@ -65,6 +65,15 @@
      secondary text dark enough to stay legible on it. */
   --app-secret-background: #e5e5e5;
   --app-secret-secondary: #5c5c5c;
+  /* The actions swiping a video card reveals (VideoCard), from the lightest to the strongest. */
+  --app-swipe-1: #d4d4d4;
+  --app-swipe-1-contrast: #0f0f0f;
+  --app-swipe-2: #737373;
+  --app-swipe-2-contrast: #ffffff;
+  --app-swipe-3: #3d3d3d;
+  --app-swipe-3-contrast: #ffffff;
+  --app-swipe-4: #0f0f0f;
+  --app-swipe-4-contrast: #ffffff;
 }
 
 :root.ion-palette-dark {
@@ -112,6 +121,14 @@
   /* In the dark, a grey lighter than the cards. */
   --app-secret-background: #3a3a3a;
   --app-secret-secondary: #b5b5b5;
+  --app-swipe-1: #4d4d4d;
+  --app-swipe-1-contrast: #ffffff;
+  --app-swipe-2: #737373;
+  --app-swipe-2-contrast: #ffffff;
+  --app-swipe-3: #b5b5b5;
+  --app-swipe-3-contrast: #0a0a0a;
+  --app-swipe-4: #f1f1f1;
+  --app-swipe-4-contrast: #0f0f0f;
 }
 
 /* The platform's red, for lives and the one button that sends something online. */
@@ -1032,10 +1049,32 @@ ion-card.video-card {
   }
 }
 
-/* The actions swiping a card reveals: an icon over a word, each as wide as its word. */
+/* The actions swiping a card reveals: an icon over a word, each as wide as its word, each in its
+   own grey of the palette, the one by the card's edge the strongest, so that they read apart
+   without a colour of their own (red stays for lives, deletions and actions online). */
 .video-card ion-item-option {
   min-width: 72px;
   font-size: 0.75rem;
+}
+
+.video-card ion-item-option:nth-last-child(1) {
+  --background: var(--app-swipe-4);
+  --color: var(--app-swipe-4-contrast);
+}
+
+.video-card ion-item-option:nth-last-child(2) {
+  --background: var(--app-swipe-3);
+  --color: var(--app-swipe-3-contrast);
+}
+
+.video-card ion-item-option:nth-last-child(3) {
+  --background: var(--app-swipe-2);
+  --color: var(--app-swipe-2-contrast);
+}
+
+.video-card ion-item-option:nth-last-child(4) {
+  --background: var(--app-swipe-1);
+  --color: var(--app-swipe-1-contrast);
 }
 
 .video-card ion-item-option ion-icon {

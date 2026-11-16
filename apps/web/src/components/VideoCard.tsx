@@ -306,7 +306,6 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
               {actions.map((action) => (
                 <IonItemOption
                   key={action.text}
-                  color="medium"
                   onClick={() => {
                     void sliding.current?.close();
                     action.handler();
