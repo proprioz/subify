@@ -475,7 +475,7 @@ export function SettingsPage() {
         </IonItem>
       </Section>
 
-      <Section heading="Videos" footer="The ⋯ menu of each video offers the other choices.">
+      <Section heading="Videos" footer="Touch and hold a video or swipe it for the other choices; with a mouse, use its ⋯ or right-click it.">
         <IonItem lines="none">
           <IonIcon slot="start" icon={playOutline} aria-hidden="true" />
           <IonSelect

@@ -1,6 +1,21 @@
-import { IonBadge, IonButton, IonCard, IonContent, IonIcon, IonItem, IonLabel, IonPopover, IonText, IonThumbnail } from '@ionic/react';
+import {
+  IonBadge,
+  IonButton,
+  IonCard,
+  IonContent,
+  IonIcon,
+  IonItem,
+  IonItemOption,
+  IonItemOptions,
+  IonItemSliding,
+  IonLabel,
+  IonPopover,
+  IonText,
+  IonThumbnail,
+  useIonActionSheet,
+} from '@ionic/react';
 import { cloudDownloadOutline, compassOutline, copyOutline, eyeOffOutline, helpCircleOutline, openOutline, personCircleOutline } from 'ionicons/icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { thumbHashToDataURL } from 'thumbhash';
 import type { StoredItem, StoredThumbnail, Subscription } from '../data/db';
 import { shortAgeLabel } from '../data/format';
@@ -9,11 +24,22 @@ import { keepsThumbnail, THUMBNAIL_KEEP_CHOICES, type ThumbnailKeep, thumbnailMa
 import { videoLink } from '../data/video-link';
 import { blurredPicture, type Hsl } from '../ui/blurred-picture';
 import { copyText, platformName } from '../ui/clipboard';
-import { MORE_ICON, SHARE_ICON } from '../ui/icons';
+import { MORE_ICON, type PlatformIcon, SHARE_ICON } from '../ui/icons';
 import { openVideo, openVideoUrl, thisDevice } from '../ui/open-video';
 import { shortFill } from '../ui/short-fill';
 import { useToast } from '../ui/toast';
-import { Menu, type MenuAction } from './Menu';
+
+/** How long a touch on a card lasts before it offers the card's actions, and how far it may move. */
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP = 10;
+
+/** One of a card's actions: `text` in its sheet, `short` under its icon where swiping reveals it. */
+interface CardAction {
+  text: string;
+  short: string;
+  icon: string | PlatformIcon;
+  handler(): void;
+}
 
 /**
  * Every known kind is marked, so that a card says what it holds at a glance. The mark is a badge
@@ -39,10 +65,13 @@ interface Props {
 
 /**
  * One video. Tapping it opens it in the platform's app, opens it in the browser or copies its link,
- * as the user chose in Settings; the ⋯ menu holds the other two, and sharing. Until its thumbnail comes,
- * the card shows the blurred preview the stream gave (its ThumbHash, docs/FEATURES.md, D3) with a
- * mark that says it is on its way, and the thumbnail then fades in. Without either, the
- * placeholder holds a button that says why, since an empty frame looks like a fault.
+ * as the user chose in Settings. Its other actions (the two other ways to open it, sharing, its
+ * channel's videos) show in a sheet, which touching and holding the card, right-clicking it or its ⋯
+ * opens, and as buttons that swiping the card reveals. Touch screens show no ⋯: it stays for screen
+ * readers and keyboards only (theme.css). Until its thumbnail comes, the card shows the blurred
+ * preview the stream gave (its ThumbHash, docs/FEATURES.md, D3) with a mark that says it is on its
+ * way, and the thumbnail then fades in. Without either, the placeholder holds a button that says
+ * why, since an empty frame looks like a fault.
  */
 export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShowChannel }: Props) {
   const toast = useToast();
@@ -58,7 +87,20 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
     waited.current ||= coming;
   }, [coming]);
   const fadeIn = waited.current && image !== null;
-  const [menuFrom, setMenuFrom] = useState<Event | null>(null);
+  const [presentSheet] = useIonActionSheet();
+  const sliding = useRef<HTMLIonItemSlidingElement>(null);
+  const press = useRef<{ timer: number; x: number; y: number } | null>(null);
+  // Set once a long press opened the sheet, so that lifting the finger doesn't open the video too.
+  const pressed = useRef(false);
+  const openAtPress = useRef(false);
+  useEffect(
+    () => () => {
+      if (press.current !== null) {
+        clearTimeout(press.current.timer);
+      }
+    },
+    [],
+  );
   const [helpFrom, setHelpFrom] = useState<Event | null>(null);
   const unavailable = item.deleted === true;
   const kind = KINDS[item.type];
@@ -70,10 +112,10 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
     await toast(copied ? 'Link copied.' : 'Couldn’t copy the link.', 1500);
   };
 
-  const open: Record<VideoTap, { text: string; icon: string; handler(): void }> = {
-    app: { text: `Open in ${platformName(item.key)}`, icon: openOutline, handler: () => link !== null && openVideo(link, 'app', item.key) },
-    browser: { text: 'Open in the browser', icon: compassOutline, handler: () => link !== null && openVideo(link, 'browser', item.key) },
-    copy: { text: 'Copy link', icon: copyOutline, handler: () => void copy() },
+  const open: Record<VideoTap, CardAction> = {
+    app: { text: `Open in ${platformName(item.key)}`, short: platformName(item.key), icon: openOutline, handler: () => link !== null && openVideo(link, 'app', item.key) },
+    browser: { text: 'Open in the browser', short: 'Browser', icon: compassOutline, handler: () => link !== null && openVideo(link, 'browser', item.key) },
+    copy: { text: 'Copy link', short: 'Copy link', icon: copyOutline, handler: () => void copy() },
   };
   // On a computer, or where the app can't name the browser, both open the same link: they count as one.
   const device = thisDevice();
@@ -81,101 +123,200 @@ export function VideoCard({ item, channel, thumbnail, thumbnailKeep, tap, onShow
   const opening = (choice: VideoTap) => (sameOpening && choice === 'browser' ? 'app' : choice);
   const others = (['copy', 'app', 'browser'] as const).filter((choice) => opening(choice) !== opening(tap) && !(sameOpening && choice === 'browser'));
 
-  const actions: MenuAction[] = [
+  const actions: CardAction[] = [
     ...(link === null
       ? []
       : [
           ...others.map((choice) => open[choice]),
           ...(typeof navigator.share === 'function'
-            ? [{ text: 'Share…', icon: SHARE_ICON, handler: () => void navigator.share({ title: item.title, url: link }).catch(() => {}) }]
+            ? [{ text: 'Share…', short: 'Share', icon: SHARE_ICON, handler: () => void navigator.share({ title: item.title, url: link }).catch(() => {}) }]
             : []),
         ]),
-    ...(onShowChannel !== undefined ? [{ text: `More from ${channel.title}`, icon: personCircleOutline, handler: () => onShowChannel(channel.key) }] : []),
+    ...(onShowChannel !== undefined
+      ? [{ text: `More from ${channel.title}`, short: 'More from', icon: personCircleOutline, handler: () => onShowChannel(channel.key) }]
+      : []),
   ];
+  const offersActions = !unavailable && actions.length > 0;
 
-  // The popovers sit beside the card, not in it: the card's CSS containment would clip them.
+  const showActions = () => {
+    void sliding.current?.close();
+    void presentSheet({
+      header: item.title,
+      subHeader: channel.title,
+      buttons: [...actions.map(({ text, handler }) => ({ text, handler })), { text: 'Cancel', role: 'cancel' }],
+    });
+  };
+
+  const endPress = () => {
+    if (press.current !== null) {
+      clearTimeout(press.current.timer);
+      press.current = null;
+    }
+  };
+
+  // Android also reports a long touch as a right click: whichever comes first opens the sheet.
+  const longPress = () => {
+    endPress();
+
+    if (!pressed.current) {
+      pressed.current = true;
+      navigator.vibrate?.(10);
+      showActions();
+    }
+  };
+
+  const startPress = (event: PointerEvent) => {
+    pressed.current = false;
+    endPress();
+
+    // A mouse has its right click. Safari on iOS reports no long touch, so the card times it.
+    if (offersActions && event.pointerType !== 'mouse') {
+      press.current = { timer: window.setTimeout(longPress, LONG_PRESS_MS), x: event.clientX, y: event.clientY };
+    }
+  };
+
+  // Scrolling or swiping is no long press.
+  const movePress = (event: PointerEvent) => {
+    if (press.current !== null && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > LONG_PRESS_SLOP) {
+      endPress();
+    }
+  };
+
+  // The help popover sits beside the card, not in it: the card's CSS containment would clip it.
   return (
     <>
       <IonCard className={channel.secret ? 'video-card video-secret' : 'video-card'}>
-        <IonItem
-          button={!unavailable}
-          detail={false}
-          lines="none"
-          className={unavailable ? 'video-unavailable' : ''}
-          onClick={unavailable ? undefined : open[tap].handler}
-          // A secret channel's card only shows it by its grey and its mark: the name says it to screen readers.
-          aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
-        >
-          <IonThumbnail
-            slot="start"
-            className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : short ? ' short-thumbnail' : ''}`}
-            style={
-              image === null
-                ? { background: preview === null ? blurredPicture(item.key) : `center / cover no-repeat url(${preview})` }
-                : short
-                  ? { background: blurredPicture(item.key, fill ?? GREY) }
-                  : undefined
+        <IonItemSliding
+          ref={sliding}
+          disabled={!offersActions}
+          // While the actions show, the card takes no tap: a tap beside them closes them. Not the click
+          // that ends a mouse's drag, which opened them.
+          onPointerDownCapture={() => {
+            openAtPress.current = sliding.current?.classList.contains('item-sliding-active-options-end') ?? false;
+          }}
+          onClick={(event) => {
+            if (openAtPress.current && (event.target as Element).closest('ion-item-option') === null) {
+              void sliding.current?.close();
             }
+          }}
+        >
+          <IonItem
+            button={!unavailable}
+            detail={false}
+            lines="none"
+            className={unavailable ? 'video-unavailable' : ''}
+            onClick={
+              unavailable
+                ? undefined
+                : () => {
+                    if (pressed.current) {
+                      pressed.current = false;
+                    } else {
+                      open[tap].handler();
+                    }
+                  }
+            }
+            onPointerDown={startPress}
+            onPointerMove={movePress}
+            onPointerUp={endPress}
+            onPointerCancel={endPress}
+            onContextMenu={(event) => {
+              if (offersActions) {
+                event.preventDefault();
+                longPress();
+              }
+            }}
+            // A secret channel's card only shows it by its grey and its mark: the name says it to screen readers.
+            aria-label={unavailable ? undefined : `${open[tap].text}: ${kind === undefined ? '' : `${kind.text}, `}${item.title}${channel.secret ? ', secret channel' : ''}`}
           >
-            {image !== null ? (
-              <img src={image} alt="" {...(fadeIn ? { className: 'fade-in' } : {})} />
-            ) : (
-              !unavailable && (
-                <IonButton
-                  fill="clear"
-                  size={coming ? 'small' : 'large'}
-                  {...(coming ? { className: 'thumbnail-coming' } : {})}
-                  aria-label={coming ? 'Thumbnail on its way' : 'Why there’s no thumbnail'}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setHelpFrom(event.nativeEvent);
+            <IonThumbnail
+              slot="start"
+              className={`video-thumbnail ion-display-flex ion-align-items-center ion-justify-content-center${image === null ? ' blurred' : short ? ' short-thumbnail' : ''}`}
+              style={
+                image === null
+                  ? { background: preview === null ? blurredPicture(item.key) : `center / cover no-repeat url(${preview})` }
+                  : short
+                    ? { background: blurredPicture(item.key, fill ?? GREY) }
+                    : undefined
+              }
+            >
+              {image !== null ? (
+                <img src={image} alt="" {...(fadeIn ? { className: 'fade-in' } : {})} />
+              ) : (
+                !unavailable && (
+                  <IonButton
+                    fill="clear"
+                    size={coming ? 'small' : 'large'}
+                    {...(coming ? { className: 'thumbnail-coming' } : {})}
+                    aria-label={coming ? 'Thumbnail on its way' : 'Why there’s no thumbnail'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setHelpFrom(event.nativeEvent);
+                    }}
+                  >
+                    <IonIcon slot="icon-only" icon={coming ? cloudDownloadOutline : helpCircleOutline} />
+                  </IonButton>
+                )
+              )}
+            </IonThumbnail>
+            <IonLabel className="ion-text-wrap">
+              <h3>{item.title}</h3>
+              {/* One line, which never wraps: the channel's name is cut short before the date. */}
+              <p className="video-meta">
+                {kind !== undefined && (
+                  <IonBadge className={`kind-${item.type}`} role="img" aria-label={kind.text}>
+                    {kind.text[0]}
+                  </IonBadge>
+                )}
+                {unavailable ? (
+                  <span className="video-channel">Unavailable</span>
+                ) : (
+                  <>
+                    {channel.secret && <IonIcon icon={eyeOffOutline} className="video-secret-mark" aria-hidden="true" />}
+                    <span className="video-channel">
+                      {channel.title}
+                    </span>
+                    {/* Its date is when it was scheduled, which says nothing of when it starts. */}
+                    <span>{` · ${item.upcoming === 1 ? 'Upcoming' : shortAgeLabel(item.published)}`}</span>
+                  </>
+                )}
+                {offersActions && (
+                  <IonButton
+                    fill="clear"
+                    size="small"
+                    color="medium"
+                    className="video-more"
+                    aria-label={`More actions for ${item.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showActions();
+                    }}
+                  >
+                    <IonIcon slot="icon-only" {...MORE_ICON} />
+                  </IonButton>
+                )}
+              </p>
+            </IonLabel>
+          </IonItem>
+          {offersActions && (
+            <IonItemOptions side="end">
+              {actions.map((action) => (
+                <IonItemOption
+                  key={action.text}
+                  color="medium"
+                  onClick={() => {
+                    void sliding.current?.close();
+                    action.handler();
                   }}
                 >
-                  <IonIcon slot="icon-only" icon={coming ? cloudDownloadOutline : helpCircleOutline} />
-                </IonButton>
-              )
-            )}
-          </IonThumbnail>
-          <IonLabel className="ion-text-wrap">
-            <h3>{item.title}</h3>
-            {/* One line, which never wraps: the channel's name is cut short before the date. */}
-            <p className="video-meta">
-              {kind !== undefined && (
-                <IonBadge className={`kind-${item.type}`} role="img" aria-label={kind.text}>
-                  {kind.text[0]}
-                </IonBadge>
-              )}
-              {unavailable ? (
-                <span className="video-channel">Unavailable</span>
-              ) : (
-                <>
-                  {channel.secret && <IonIcon icon={eyeOffOutline} className="video-secret-mark" aria-hidden="true" />}
-                  <span className="video-channel">
-                    {channel.title}
-                  </span>
-                  {/* Its date is when it was scheduled, which says nothing of when it starts. */}
-                  <span>{` · ${item.upcoming === 1 ? 'Upcoming' : shortAgeLabel(item.published)}`}</span>
-                </>
-              )}
-            </p>
-          </IonLabel>
-          {!unavailable && (
-            <IonButton
-              slot="end"
-              fill="clear"
-              color="medium"
-              aria-label={`More actions for ${item.title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuFrom(event.nativeEvent);
-              }}
-            >
-              <IonIcon slot="icon-only" {...MORE_ICON} />
-            </IonButton>
+                  <IonIcon slot="top" {...(typeof action.icon === 'string' ? { icon: action.icon } : action.icon)} aria-hidden="true" />
+                  {action.short}
+                </IonItemOption>
+              ))}
+            </IonItemOptions>
           )}
-        </IonItem>
+        </IonItemSliding>
       </IonCard>
-      <Menu from={menuFrom} onClose={() => setMenuFrom(null)} actions={actions} />
       <IonPopover className="info-popover" isOpen={helpFrom !== null} event={helpFrom ?? undefined} onDidDismiss={() => setHelpFrom(null)}>
         <IonContent className="ion-padding">
           <IonText>

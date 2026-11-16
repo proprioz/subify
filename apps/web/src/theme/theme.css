@@ -960,6 +960,11 @@ ion-thumbnail.video-thumbnail {
 }
 
 /* The item takes the card's height, so the thumbnail reaches its bottom edge. */
+.feed-row .video-card ion-item-sliding {
+  display: flex;
+  flex: 1;
+}
+
 .feed-row .video-card ion-item {
   flex: 1;
 }
@@ -996,6 +1001,46 @@ ion-card.video-card {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Touching and holding a card opens its actions, without selecting its text or offering its picture. */
+.video-card ion-item {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* A card's ⋯ button (VideoCard). With a mouse, it ends the line under the title, which leaves the
+   title the card's full width. */
+.video-card ion-button.video-more {
+  flex-shrink: 0;
+  height: 24px;
+  margin-block: -4px;
+  margin-inline: auto -8px;
+}
+
+/* On a touch screen, touching and holding or swiping the card offers its actions: the button is
+   only there for screen readers and keyboards, out of sight until it takes the focus. */
+@media (hover: none), (pointer: coarse) {
+  .video-card ion-button.video-more:not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The actions swiping a card reveals: an icon over a word, each as wide as its word. */
+.video-card ion-item-option {
+  min-width: 72px;
+  font-size: 0.75rem;
+}
+
+.video-card ion-item-option ion-icon {
+  margin-block-end: 4px;
+  font-size: 1.5rem;
 }
 
 /* The kind's badge: a small tinted square the height of the line's capitals, rather than Ionic's

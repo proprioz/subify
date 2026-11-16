@@ -6,7 +6,7 @@ export async function loadTheme(db: SubifyDb): Promise<Theme> {
   return (await getMeta<Theme>(db, 'theme')) ?? 'system';
 }
 
-/** What tapping a video does (Settings, “Videos”); the card's ⋯ menu offers the others. */
+/** What tapping a video does (Settings, “Videos”); the card's other actions offer the others. */
 export type VideoTap = 'copy' | 'browser' | 'app';
 
 export const VIDEO_TAP_CHOICES: readonly { value: VideoTap; label: string }[] = [
