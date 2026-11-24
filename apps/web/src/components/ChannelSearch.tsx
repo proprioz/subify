@@ -11,10 +11,13 @@ import { isCancelled } from '../data/connection-check';
 import type { Subscription } from '../data/db';
 import { ensureDictionary, hasDictionary, type NamedChannel, searchDictionary } from '../data/dictionary';
 import { findHandle } from '../data/encrypted';
+import { type Failure, failed } from '../data/error-report';
 import { followOne } from '../data/follow-many';
 import { AlreadyFollowing, type FoundChannel, findChannel, follow, TooManyChannels } from '../data/subscriptions';
+import { useFailureToast } from '../ui/error-details';
 import { useToast } from '../ui/toast';
 import { ChannelAvatar } from './ChannelAvatar';
+import { DetailsButton } from './DetailsButton';
 import { Section } from './Section';
 
 /**
@@ -56,6 +59,8 @@ interface Wider {
   localDone: boolean;
   /** A link that names no channel. */
   nothing: boolean;
+  /** Why the search stopped, when it failed. */
+  failure?: Failure;
 }
 
 export interface ChannelSearch {
@@ -257,7 +262,7 @@ export function useChannelSearch(text: string): ChannelSearch {
         show(answer);
       } catch (failure) {
         // Cancelling the connection check leaves the list as it was.
-        show({ ...state, status: isCancelled(failure) ? 'done' : 'failed', step });
+        show(isCancelled(failure) ? { ...state, status: 'done', step } : { ...state, status: 'failed', step, failure: failed(failure) });
       }
     },
     [db, api, gate, term, current, explicit, searchable, ready, guesses, guessesDone, handles, busy],
@@ -288,6 +293,7 @@ export function ChannelSearchResults({
 }) {
   const { db, api, gate, secretsShown } = useAppData();
   const toast = useToast();
+  const failureToast = useFailureToast();
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [followedHere, setFollowedHere] = useState<ReadonlySet<string>>(new Set());
   const subscriptions = useLiveQuery(() => db.subscriptions.toArray(), [db]) ?? [];
@@ -335,8 +341,10 @@ export function ChannelSearchResults({
     try {
       await work();
     } catch (error) {
-      if (!isCancelled(error)) {
-        await toast(error instanceof TooManyChannels ? error.message : 'Couldn’t follow this channel. Try again.');
+      if (error instanceof TooManyChannels) {
+        await toast(error.message);
+      } else if (!isCancelled(error)) {
+        await failureToast('Couldn’t follow this channel. Try again.', error);
       }
     } finally {
       setBusy((current) => new Set([...current].filter((other) => other !== key)));
@@ -520,7 +528,7 @@ export function ChannelSearchResults({
       )}
       {wider?.status === 'failed' && (
         <IonNote color="medium" className="ion-display-block ion-padding-horizontal ion-padding-bottom">
-          Couldn’t search right now. Try again in a moment.
+          Couldn’t search right now. Try again in a moment. {wider.failure !== undefined && <DetailsButton failure={wider.failure} />}
         </IonNote>
       )}
     </Section>

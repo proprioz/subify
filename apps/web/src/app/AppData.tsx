@@ -13,10 +13,12 @@ import { loadTheme } from '../data/settings';
 import { unfinishedSync } from '../data/encrypted';
 import { syncToTheEnd, syncUpdates, type Visibility } from '../data/sync';
 import { dropOldThumbnails } from '../data/thumbnails';
+import { type Failure, failed } from '../data/error-report';
 import { LockedError, lockVault, readKeyring, startVault } from '../data/vault';
 import { applyTheme } from '../theme/palette';
 import { appReplaced, onAppReplaced, updateApp } from '../ui/app-update';
 import { type InstallState, installState } from '../ui/install';
+import { useErrorDetails } from '../ui/error-details';
 import { toastPlacement } from '../ui/toast';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -51,7 +53,8 @@ interface AppData {
   syncing: boolean;
   /** How far the running sync got, in percent, when it reads several pages; 0 otherwise. */
   syncDone: number;
-  syncError: string | null;
+  /** Why the last refresh stopped, with its sentence, until the next one ends. */
+  syncError: (Failure & { message: string }) | null;
   /** Whether secret channels are shown. Never saved: they hide again on another screen, or when the app leaves the screen. */
   secretsShown: boolean;
   setSecretsShown(shown: boolean): void;
@@ -123,8 +126,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [syncDone, setSyncDone] = useState(0);
   // Resumes a sync from a toast: the toast outlives the render that showed it.
   const resumeSync = useRef(() => {});
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<(Failure & { message: string }) | null>(null);
   const [presentToast] = useIonToast();
+  const showDetails = useErrorDetails();
   // Asks to load the newer version of the app, which `updateApp` does.
   const offerUpdate = useCallback(
     (message: string, button: string) =>
@@ -138,18 +142,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }),
     [presentToast],
   );
-  // A refresh that stopped: the next one picks up where it did.
+  // A refresh that stopped: the next one picks up where it did. One that failed offers its details.
   const offerResume = useCallback(
-    (message: string) =>
+    (message: string, failure?: Failure) =>
       void presentToast({
         message,
         ...toastPlacement(),
         buttons: [
+          ...(failure === undefined ? [] : [{ text: 'Details', handler: () => showDetails(failure) }]),
           { text: 'Resume', handler: () => resumeSync.current() },
           { icon: close, role: 'cancel', htmlAttributes: { 'aria-label': 'Close' } },
         ],
       }),
-    [presentToast],
+    [presentToast, showDetails],
   );
   const [secretsShown, setSecretsShown] = useState(false);
   const [secretOpened, setSecretOpened] = useState<string | null>(null);
@@ -227,10 +232,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           setSyncError(null);
           offerUpdate('This version of the app is out of date.', 'Update');
         } else {
-          const message = error instanceof ServerError ? error.message : 'Couldn’t update the feed.';
-          setSyncError(message);
+          const failure = { ...failed(error), message: error instanceof ServerError ? error.message : 'Couldn’t update the feed.' };
+          setSyncError(failure);
           // Said on every page, not only in the feed's subtitle: the user may be elsewhere.
-          offerResume(message);
+          offerResume(failure.message, failure);
         }
 
         running.current = null;

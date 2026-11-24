@@ -23,6 +23,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppData } from '../app/AppData';
 import { useSecretFlow } from '../app/SecretFlow';
 import { ChannelStrip } from '../components/ChannelStrip';
+import { DetailsButton } from '../components/DetailsButton';
 import { EmptyState } from '../components/EmptyState';
 import { NotFetchedInfo, refreshHint, retrySentence } from '../components/InfoButton';
 import { useInstallFlow } from '../components/InstallGuide';
@@ -127,7 +128,9 @@ export function FeedPage() {
   ) : syncing ? (
     'Looking for new videos…'
   ) : syncError !== null ? (
-    <IonText color="danger">{syncError}</IonText>
+    <IonText color="danger">
+      {syncError.message} <DetailsButton failure={syncError} />
+    </IonText>
   ) : (
     (updatedLabel(lastSyncAt) ?? 'Latest uploads, newest first')
   );

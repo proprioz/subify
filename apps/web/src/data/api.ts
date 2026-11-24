@@ -2,9 +2,21 @@ import type { AppType } from '@subify/server/app';
 import type { ApiError, ContactRequest } from '@subify/shared';
 import { type ClientResponse, hc } from 'hono/client';
 
+/** What went wrong with a request, beyond the sentence shown, for the error's details (see errorReport). */
+export interface RequestTrace {
+  /** The method and path, such as “GET /api/stream”: never the query, which names groups the device reads. */
+  request?: string | undefined;
+  /** The start of the server's answer, when it failed. */
+  answer?: string;
+  /** What the browser threw, for a request that got no answer. */
+  cause?: unknown;
+}
+
 /** A request the server refused or could not answer, with a sentence the app can show. */
 export class ServerError extends Error {
   override readonly name = 'ServerError';
+  readonly request: string | undefined;
+  readonly answer: string | undefined;
 
   constructor(
     message: string,
@@ -12,10 +24,16 @@ export class ServerError extends Error {
     readonly status = 0,
     /** For 'busy': how long the server asked to wait before trying again, in milliseconds, when it said. */
     readonly retryAfter?: number,
+    trace: RequestTrace = {},
   ) {
-    super(message);
+    super(message, trace.cause === undefined ? undefined : { cause: trace.cause });
+    this.request = trace.request;
+    this.answer = trace.answer;
   }
 }
+
+/** How much of a failed answer the details keep: enough for an error page's title or the API's error. */
+const ANSWER_KEPT = 500;
 
 /**
  * Retry-After in milliseconds, from a number of seconds or an HTTP date, or undefined. The rate
@@ -29,6 +47,15 @@ function retryAfter(header: string | null, now = Date.now()): number | undefined
   const ms = /^\d+$/.test(header.trim()) ? Number(header.trim()) * 1000 : Date.parse(header) - now;
 
   return Number.isFinite(ms) ? Math.max(0, ms) : undefined;
+}
+
+/** A body read as JSON, or undefined when it isn't. */
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 type Client = ReturnType<typeof hc<AppType>>;
@@ -51,6 +78,8 @@ type Answer<R> = R extends ClientResponse<infer T, 200, 'json'> ? T : never;
 export class Api {
   private readonly client: Client;
   private catalogKey: ReturnType<Api['oprfKey']> | undefined;
+  /** Each answer's request, for the details of an error it ends in. */
+  private readonly requests = new WeakMap<Response, string>();
 
   constructor(
     fetcher: typeof fetch = (input, init) => fetch(input, init),
@@ -62,7 +91,21 @@ export class Api {
      */
     private readonly onOutdated: () => void = () => {},
   ) {
-    this.client = hc<AppType>('/', { fetch: fetcher, init: { credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'same-origin' } });
+    const traced = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = new URL(input instanceof Request ? input.url : String(input), 'http://app');
+      const request = `${(init?.method ?? 'GET').toUpperCase()} ${url.pathname}`;
+
+      try {
+        const response = await fetcher(input, init);
+        this.requests.set(response, request);
+
+        return response;
+      } catch (cause) {
+        throw new ServerError('Can’t reach the server. Check your connection and try again.', 'network', 0, undefined, { request, cause });
+      }
+    };
+
+    this.client = hc<AppType>('/', { fetch: traced, init: { credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'same-origin' } });
   }
 
   health() {
@@ -165,8 +208,12 @@ export class Api {
 
     try {
       return await request();
-    } catch {
-      throw new ServerError('Can’t reach the server. Check your connection and try again.', 'network');
+    } catch (cause) {
+      if (cause instanceof ServerError) {
+        throw cause;
+      }
+
+      throw new ServerError('Can’t reach the server. Check your connection and try again.', 'network', 0, undefined, { cause });
     }
   }
 
@@ -176,11 +223,12 @@ export class Api {
    */
   private async read<R extends ClientResponse<unknown>>(request: Promise<R>): Promise<Answer<R>> {
     const response = await request;
-    let body: unknown;
+    const trace = (answer?: string): RequestTrace => ({ request: this.requests.get(response as Response), ...(answer === undefined ? {} : { answer: answer.slice(0, ANSWER_KEPT) }) });
 
     if (response.status === 429 || response.status === 503) {
       // The server's own refusals (budgets for new channels) say why; the rate limiting in front of it does not.
-      const refusal = (await response.json().catch(() => null)) as Partial<ApiError> | null;
+      const text = await response.text().catch(() => '');
+      const refusal = parsed(text) as Partial<ApiError> | null;
       const own = refusal?.v === 2 && typeof refusal.message === 'string' && refusal.error !== undefined;
 
       throw new ServerError(
@@ -188,35 +236,37 @@ export class Api {
         own ? refusal.error! : 'busy',
         response.status,
         retryAfter(response.headers.get('Retry-After')),
+        trace(text),
       );
     }
 
-    try {
-      body = await response.json();
-    } catch {
-      throw new ServerError('The server answered something unexpected.', 'unexpected', response.status);
+    const text = await response.text().catch(() => '');
+    const body = parsed(text);
+
+    if (body === undefined) {
+      throw new ServerError('The server answered something unexpected.', 'unexpected', response.status, undefined, trace(text));
     }
 
     // Errors carry the version too: a newer server may refuse what this app sends.
-    this.checkVersion((body as { v?: unknown } | null)?.v, response.status);
+    this.checkVersion((body as { v?: unknown } | null)?.v, response.status, trace(response.ok ? undefined : text));
 
     if (!response.ok) {
-      const error = body as Partial<ApiError>;
-      throw new ServerError(error.message ?? 'The server couldn’t handle this request.', error.error ?? 'unexpected', response.status);
+      const error = (body ?? {}) as Partial<ApiError>;
+      throw new ServerError(error.message ?? 'The server couldn’t handle this request.', error.error ?? 'unexpected', response.status, undefined, trace(text));
     }
 
-    if (!KNOWN_VERSIONS.includes((body as { v?: unknown }).v as number)) {
-      throw new ServerError('The server answered something unexpected.', 'unexpected', response.status);
+    if (!KNOWN_VERSIONS.includes((body as { v?: unknown } | null)?.v as number)) {
+      throw new ServerError('The server answered something unexpected.', 'unexpected', response.status, undefined, trace());
     }
 
     return body as Answer<R>;
   }
 
   /** Refuses an answer in another version than this app's, and asks for the server's version of the app. */
-  private checkVersion(version: unknown, status: number): void {
+  private checkVersion(version: unknown, status: number, trace: RequestTrace): void {
     if (typeof version === 'number' && !KNOWN_VERSIONS.includes(version)) {
       this.onOutdated();
-      throw new ServerError('This app is out of date. Close it and open it again to update it.', 'outdated', status);
+      throw new ServerError('This app is out of date. Close it and open it again to update it.', 'outdated', status, undefined, trace);
     }
   }
 }

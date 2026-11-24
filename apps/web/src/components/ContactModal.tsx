@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppData } from '../app/AppData';
 import { Api, ServerError } from '../data/api';
 import { isCancelled } from '../data/connection-check';
+import { type Failure, failed } from '../data/error-report';
+import { DetailsButton } from './DetailsButton';
 
 /** Before the app is unlocked its settings can't be read, the connection check's among them: the form asks the server directly. */
 const directApi = new Api();
@@ -40,7 +42,7 @@ function loadWidget(): Promise<void> {
   return widgetLoaded;
 }
 
-type State = { status: 'asking' } | { status: 'off' } | { status: 'form' } | { status: 'sending' } | { status: 'sent' } | { status: 'failed'; message: string };
+type State = { status: 'asking' } | { status: 'off' } | { status: 'form' } | { status: 'sending' } | { status: 'sent' } | { status: 'failed'; message: string; failure: Failure };
 
 interface Props {
   isOpen: boolean;
@@ -60,7 +62,8 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [text, setText] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  /** The sending's error: a sentence, and the details of a failure the user can't fix. */
+  const [error, setError] = useState<{ message: string; failure?: Failure } | null>(null);
   /** The solved robot check, once the box is ticked. */
   const [proof, setProof] = useState<string | null>(null);
   const trap = useRef<HTMLInputElement>(null);
@@ -99,7 +102,7 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
         return;
       }
 
-      setState({ status: 'failed', message: failure instanceof ServerError ? failure.message : 'Couldn’t reach the server.' });
+      setState({ status: 'failed', message: failure instanceof ServerError ? failure.message : 'Couldn’t reach the server.', failure: failed(failure) });
     }
   };
 
@@ -184,12 +187,12 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
         // An expired check: the box unticks, ticking it again asks for a new one, and the message stays as it was.
         setProof(null);
         widget.current?.reset();
-        setError('The robot check expired. Tick the box again.');
+        setError({ message: 'The robot check expired. Tick the box again.' });
 
         return;
       }
 
-      setError(isCancelled(failure) ? null : failure instanceof ServerError ? failure.message : 'The message couldn’t be sent.');
+      setError(isCancelled(failure) ? null : { message: failure instanceof ServerError ? failure.message : 'The message couldn’t be sent.', failure: failed(failure) });
     }
   };
 
@@ -219,7 +222,7 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
         {state.status === 'off' && <p className="ion-padding">This server doesn’t take messages.</p>}
         {state.status === 'failed' && (
           <IonNote color="danger" role="alert" className="ion-display-block ion-padding">
-            {state.message}
+            {state.message} <DetailsButton failure={state.failure} />
           </IonNote>
         )}
         {state.status === 'sent' && <p className="ion-padding">Your message was sent. Thank you!</p>}
@@ -272,7 +275,7 @@ export function ContactModal({ isOpen, onClose, unlocked }: Props) {
             </IonNote>
             {error !== null && (
               <IonNote color="danger" role="alert" className="ion-display-block ion-padding">
-                {error}
+                {error.message} {error.failure !== undefined && <DetailsButton failure={error.failure} />}
               </IonNote>
             )}
           </>

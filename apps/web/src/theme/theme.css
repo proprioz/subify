@@ -1434,3 +1434,15 @@ ion-note.strength-weak {
 .search-options-card > .search-options:last-child {
   margin-bottom: 0;
 }
+
+/* An error's details (src/ui/error-details.ts): plain text to read and copy, kept as written, in a
+   fixed-width font so a stack's frames line up. */
+.error-details .alert-message {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}

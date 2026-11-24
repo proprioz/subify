@@ -64,3 +64,25 @@ describe('a server newer than the app', () => {
     expect(outdated).toBe(0);
   });
 });
+
+// Someone helping a user reads these details: they must name the route that failed and what the
+// server answered, and never the query, which names the groups the device reads.
+describe('a failed request’s details', () => {
+  it('keep the route, the status and the answer, without the query', async () => {
+    const api = new Api(async () => Response.json({ v: 2, error: 'internal' }, { status: 500 }));
+
+    const failure = (await api.stream(1234, 56).catch((error: unknown) => error)) as ServerError;
+
+    expect(failure).toMatchObject({ request: 'GET /api/stream', status: 500, code: 'internal', answer: '{"v":2,"error":"internal"}' });
+  });
+
+  it('keep the method of a request that got no answer, and what the browser threw', async () => {
+    const thrown = new TypeError('Load failed');
+    const api = new Api(async () => Promise.reject(thrown));
+
+    const failure = (await api.evaluate(['a']).catch((error: unknown) => error)) as ServerError;
+
+    expect(failure).toMatchObject({ code: 'network', request: 'POST /api/oprf/evaluate', status: 0 });
+    expect(failure.cause).toBe(thrown);
+  });
+});

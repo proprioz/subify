@@ -3,9 +3,11 @@ import { IonButton, IonNote, IonSpinner } from '@ionic/react';
 import { useState } from 'react';
 import { useAppData } from '../app/AppData';
 import { ContactModal } from '../components/ContactModal';
+import { DetailsButton } from '../components/DetailsButton';
 import { Page } from '../components/Page';
 import { ServerError } from '../data/api';
 import { isCancelled } from '../data/connection-check';
+import { type Failure, failed } from '../data/error-report';
 
 /** What each party can see, said plainly. Keep it in step with how the app and the server work. */
 export function PrivacyPage() {
@@ -95,7 +97,7 @@ export function PrivacyPage() {
   );
 }
 
-type OperatorState = { status: 'idle' } | { status: 'asking' } | { status: 'known'; instance: InstanceResponse } | { status: 'failed'; message: string };
+type OperatorState = { status: 'idle' } | { status: 'asking' } | { status: 'known'; instance: InstanceResponse } | { status: 'failed'; message: string; failure: Failure };
 
 /**
  * The server's name and operator, which the server alone knows: the app is the same for every
@@ -112,7 +114,7 @@ function Operator() {
     try {
       setState({ status: 'known', instance: await gate.run(api, () => api.instance()) });
     } catch (failure) {
-      setState(isCancelled(failure) ? { status: 'idle' } : { status: 'failed', message: failure instanceof ServerError ? failure.message : 'Couldn’t ask the server.' });
+      setState(isCancelled(failure) ? { status: 'idle' } : { status: 'failed', message: failure instanceof ServerError ? failure.message : 'Couldn’t ask the server.', failure: failed(failure) });
     }
   };
 
@@ -148,7 +150,11 @@ function Operator() {
   return (
     <>
       <p>The app is the same on every server: only the server can say who runs it.</p>
-      {state.status === 'failed' && <IonNote color="danger" role="alert" className="ion-display-block ion-padding-bottom">{state.message}</IonNote>}
+      {state.status === 'failed' && (
+        <IonNote color="danger" role="alert" className="ion-display-block ion-padding-bottom">
+          {state.message} <DetailsButton failure={state.failure} />
+        </IonNote>
+      )}
       <IonButton size="small" disabled={state.status === 'asking'} onClick={() => void ask()}>
         {state.status === 'asking' ? <IonSpinner name="dots" aria-label="Asking…" /> : 'Show who runs this server'}
       </IonButton>

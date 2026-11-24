@@ -49,12 +49,14 @@ import { useSecretFlow } from '../app/SecretFlow';
 import { useInstallFlow } from '../components/InstallGuide';
 import { Page } from '../components/Page';
 import { ContactModal } from '../components/ContactModal';
+import { DetailsButton } from '../components/DetailsButton';
 import { Section } from '../components/Section';
 import { ServerError } from '../data/api';
 import { type Backup, exportBackup, isBackupFile, readBackup } from '../data/backup';
 import { BackupError, MINIMUM_PASSWORD_LENGTH } from '../data/backup-cipher';
 import { connectionCheckOn, setConnectionCheck } from '../data/connection-check';
 import { getMeta, setMeta } from '../data/db';
+import { type Failure, failed } from '../data/error-report';
 import { ageLabel } from '../data/format';
 import { loadTheme, loadVideoTap, type Theme, VIDEO_TAP_CHOICES, type VideoTap } from '../data/settings';
 import {
@@ -72,6 +74,7 @@ import { midSentence } from '../ui/biometrics';
 import { SECRET_ICON, SHARE_ICON } from '../ui/icons';
 import { canInstall, isIos } from '../ui/install';
 import { resetEverything } from '../ui/reset';
+import { useFailureToast } from '../ui/error-details';
 import { useToast } from '../ui/toast';
 
 type PasswordStep = { kind: 'export'; thenInstall?: boolean } | { kind: 'restore'; file: string };
@@ -83,6 +86,7 @@ export function SettingsPage() {
   const [presentAlert] = useIonAlert();
   const [presentActionSheet] = useIonActionSheet();
   const showToast = useToast();
+  const failureToast = useFailureToast();
   const backupInput = useRef<HTMLInputElement>(null);
   const [contacting, setContacting] = useState(false);
   const [passwordStep, setPasswordStep] = useState<PasswordStep | null>(null);
@@ -96,7 +100,8 @@ export function SettingsPage() {
   const [lockChoiceDrawn, setLockChoiceDrawn] = useState(0);
   const [keepChoiceDrawn, setKeepChoiceDrawn] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** The password step's error: a sentence, and the details of a failure the user can't fix. */
+  const [error, setError] = useState<{ message: string; failure?: Failure } | null>(null);
   // The install guide reopens once the backup it asked for is saved and the password dialog has gone.
   const reopenGuide = useRef(false);
 
@@ -204,7 +209,7 @@ export function SettingsPage() {
           handler: () => {
             void restore(backup)
               .then((result) => toast(result.queued > 0 ? `Backup restored. ${result.queued} channels will be added one at a time.` : 'Backup restored.'))
-              .catch((failure: unknown) => toast(failure instanceof ServerError ? failure.message : 'Couldn’t restore the backup.'));
+              .catch((failure: unknown) => failureToast(failure instanceof ServerError ? failure.message : 'Couldn’t restore the backup.', failure));
           },
         },
       ],
@@ -247,7 +252,7 @@ export function SettingsPage() {
         confirmRestore(backup);
       }
     } catch (failure) {
-      setError(failure instanceof BackupError ? failure.message : 'Something went wrong. Try again.');
+      setError(failure instanceof BackupError ? { message: failure.message } : { message: 'Something went wrong. Try again.', failure: failed(failure) });
     } finally {
       setBusy(false);
     }
@@ -424,7 +429,7 @@ export function SettingsPage() {
         </form>
         {error !== null ? (
           <IonNote color="danger" className="ion-display-block ion-padding-horizontal" role="alert">
-            {error}
+            {error.message} {error.failure !== undefined && <DetailsButton failure={error.failure} />}
           </IonNote>
         ) : (
           passwordStep?.kind !== 'restore' && (
